@@ -1,0 +1,11 @@
+services:
+  db:
+    container_name: mf_ventures-db
+    image: postgres
+    ports:
+      - ${DATABASE_PORT}:5432
+    environment:
+      - POSTGRES_USER=$DATABASE_USER
+      - POSTGRES_PASSWORD=$DATABASE_PASSWORD
+      - POSTGRES_DB=$DATABASE_NAME
+    

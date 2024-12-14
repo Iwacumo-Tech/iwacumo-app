@@ -1,0 +1,21 @@
+on:
+  push:
+    branches:
+      - main
+      - staging
+      - dev
+jobs:
+  integration:
+    name: Integration
+    uses: ./.github/workflows/integration.yml
+  update_database:
+    name: Deploy migrations and seeds
+    runs-on: ubuntu-latest
+    container: node:20
+    needs: integration
+    steps:
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+      - name: Checkout
+        uses: actions/checkout@v3

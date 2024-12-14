@@ -1,0 +1,217 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+provider = "postgresql"
+url      = env("DATABASE_URL")
+}
+
+model User {
+  id                 String     @id @default(uuid())
+  email              String     @unique
+  password           String
+  username           String?    @unique
+  first_name         String
+  last_name          String?
+  phone_number       String?
+  active             Boolean   @default(true)
+  date_of_birth      DateTime?
+  claims             Claim[]
+  created_at         DateTime   @default(now())
+  updated_at         DateTime   @updatedAt
+  deleted_at         DateTime?
+  publisher          Publisher? 
+  author             Author? 
+  customer           Customer?
+  tenantMember       Tenant[]    @relation("TenantUsers")
+
+
+  @@map("users")
+}
+
+model Claim {
+  id                String      @id @default(uuid())
+  active            Boolean     @default(true)
+  type              String // Possible values: "ROLE", "PERMISSION"
+  user_id           String
+  permission_id     String?
+  role_name         String?
+  permission        Permission? @relation(fields: [permission_id], references: [id])
+  role              Role?       @relation(fields: [role_name], references: [name])
+  user              User        @relation(fields: [user_id], references: [id])
+  tenant_slug       String?
+
+  @@unique([user_id, role_name], name: "unique_claim_role")
+  @@unique([user_id, permission_id], name: "unique_claim_permission")
+  @@map(name: "claims")
+}
+
+model Permission {
+  id          String           @id @default(uuid())
+  name        String
+  active      Boolean          @default(true)
+  module      String
+  action      String
+  resource_id String?
+  roles       PermissionRole[]
+  users       Claim[]
+
+  @@unique(name: "unique_permission", [resource_id, action, module])
+  @@map(name: "permissions")
+}
+
+model Role {
+  name        String           @id
+  active      Boolean          @default(true)
+  built_in    Boolean          @default(false)
+  permissions PermissionRole[]
+  users       Claim[]
+  deleted_at  DateTime?
+
+  @@map(name: "roles")
+}
+
+model PermissionRole {
+  id            String     @id @default(uuid())
+  active        Boolean
+  role_name     String
+  permission_id String
+  permission    Permission @relation(fields: [permission_id], references: [id])
+  role          Role       @relation(fields: [role_name], references: [name])
+
+  @@unique([id, role_name], name: "unique_permission_role")
+  @@map(name: "permission_role")
+}
+
+model Tenant {
+  id              String     @id @default(uuid())
+  name            String?     
+  custom_domain   String?    
+  contact_email   String?
+  users           User[]      @relation("TenantUsers")
+  slug            String?     @unique
+  publishers      Publisher? 
+  deleted_at      DateTime?
+  created_at      DateTime    @default(now())
+  updated_at      DateTime    @updatedAt
+  
+  @@map("tenants")
+}
+
+model Publisher {
+  id               String     @id @default(uuid())
+  custom_domain    String?  
+  bio              String?  
+  profile_picture  String?
+  social_handles   Json?
+  user_id          String     @unique
+  user             User        @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  tenant_id        String?     @unique
+  tenant           Tenant?     @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  customers        Customer[]
+  slug            String?       @unique
+  deleted_at      DateTime?
+  authors          Author[] 
+  books            Book[] 
+  created_at       DateTime   @default(now())
+  updated_at       DateTime   @updatedAt
+
+  @@map("publishers")
+}
+
+model Author {
+  id              String     @id @default(uuid())
+  name            String?
+  bio             String?
+  profile_picture String?
+  social_handles  Json?
+  user_id         String     @unique
+  user            User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  publisher_id    String?
+  slug            String?    @unique
+  publisher       Publisher? @relation(fields: [publisher_id], references: [id])
+  books           Book[]
+  customers       Customer[]
+  deleted_at      DateTime?
+  created_at      DateTime   @default(now())
+  updated_at      DateTime   @updatedAt
+
+  @@map("authors")
+}
+
+model Customer {
+
+  id               String     @id @default(uuid())
+   name            String?
+  user_id          String     @unique
+  user             User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  purchased_books  Book[]     @relation("PurchasedBooks")
+  author_id        String?
+  author           Author?    @relation(fields: [author_id], references: [id])
+  slug            String?     @unique
+  publisher_id     String?
+  publisher        Publisher? @relation(fields: [publisher_id], references: [id])
+  created_at        DateTime   @default(now())
+  updated_at        DateTime   @updatedAt
+  deleted_at         DateTime?
+  @@map("customers")
+}
+
+model Book {
+  id               String     @id @default(uuid())
+  title            String
+  description      String
+  price            Float
+  book_cover       String?
+  slug             String?    @unique
+  published        Boolean    @default(false)
+  pdf_url          String?
+  text_url         String?
+  publisher_id     String?
+  chapters         Chapter[]
+  publisher        Publisher? @relation(fields: [publisher_id], references: [id])
+  author_id        String?
+  author           Author?    @relation(fields: [author_id], references: [id])
+  purchased_by     Customer[] @relation("PurchasedBooks")
+  created_at       DateTime   @default(now())
+  updated_at       DateTime   @updatedAt
+   deleted_at      DateTime?
+  @@map("books")
+}
+
+model Chapter {
+  id               String     @id @default(uuid())
+  title            String
+  sub_title        String?
+  content          String
+  summary          String?
+  chapter_number   Int
+  word_count       Int        @default(0)
+  chapter_images   ChapterImage[]
+  book_id          String?
+  book             Book?      @relation(fields: [book_id], references: [id])
+  created_at       DateTime   @default(now())
+  updated_at       DateTime   @updatedAt
+  deleted_at       DateTime?
+  @@map("chapters")
+}
+
+model ChapterImage {
+  id               String       @id @default(uuid())
+  image_url        String
+  position         Int
+  caption          String?
+  chapter_id       String
+  chapter          Chapter      @relation(fields: [chapter_id], references: [id])
+  created_at       DateTime     @default(now())
+  updated_at       DateTime     @updatedAt
+  deleted_at       DateTime?
+  @@map("chapter_images")
+}

@@ -1,0 +1,12 @@
+[
+    {
+        "name":"publisher",
+        "active": true,
+        "module": "publisher",
+        "code": "000",
+        "action":"publish",
+        "resource_id":""
+
+    }
+]
+

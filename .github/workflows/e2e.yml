@@ -1,0 +1,53 @@
+on:
+  workflow_call:
+  push:
+    branches-ignore:
+      - main
+      - staging
+jobs:
+  e2e:
+    name: e2e
+    runs-on: ubuntu-latest
+    env:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: root
+      POSTGRES_DB: test-db
+      POSTGRES_PORT: 5432
+      DB_URL: "postgres://root:root@localhost:5432/test-db?sslmode=disable"
+    services:
+      postgres:
+        image: postgres
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: ${{ env.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
+          POSTGRES_DB: ${{ env.POSTGRES_DB }}
+          POSTGRES_PORT: ${{ env.POSTGRES_PORT }}
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+      - name: Checkout
+        uses: actions/checkout@v3
+      # - name: Install dependencies
+      #   run: |
+      #     bun install -y
+      #     bun run cypress:install
+      # - name: E2E tests (using Cypress)
+      #   uses: cypress-io/github-action@v6
+      #   with:
+      #     browser: chrome
+      #     install: false
+      #     build: bun run generate && bun run migrate:deploy && bun run seed:prod && bun run build
+      #     start: bun run start
+      #     wait-on: http://localhost:3000
+      #   env:
+      #     AUTH_SECRET: secret
+      #     POSTGRES_PRISMA_URL: ${{ env.DB_URL }}
+      #     POSTGRES_URL_NON_POOLING: ${{ env.DB_URL }}
