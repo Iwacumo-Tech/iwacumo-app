@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Facebook, Instagram, Twitter } from "lucide-react";
 import { useState } from "react";
 
-export default function Newsletter() {
+export default function Newsletter () {
   const [email, setEmail] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {

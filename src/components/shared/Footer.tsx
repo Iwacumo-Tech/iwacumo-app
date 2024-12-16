@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Facebook, Instagram, Twitter } from "lucide-react";
 
-export default function Footer() {
+export default function Footer () {
   const recentPosts = [
     {
       title: "10 Ways You Might Be Reading Your Book Wrong",

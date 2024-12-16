@@ -1,8 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: "standalone", 
-  images:  {
-    domains: ["walrus-assets.s3.amazonaws.com", "res.cloudinary.com"],
+  output: "standalone",
+  outputFileTracingRoot: process.env.NODE_ENV === "production" ? "/home/purpose/Desktop/booka" : undefined,
+  images: {
+    domains: ["walrus-assets.s3.amazonaws.com", "res.cloudinary.com", "ucarecdn.com"],
     remotePatterns: [
       {
         protocol: "https",
@@ -12,9 +13,11 @@ const nextConfig = {
         protocol: "https",
         hostname: "res.cloudinary.com"
       },
-
+      {
+        protocol: "https",
+        hostname: "ucarecdn.com"
+      }
     ],
-    // Add the domain here
   },
 };
 

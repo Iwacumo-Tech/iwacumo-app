@@ -12,7 +12,7 @@ import Authors from "@/components/home/Authors";
 import Newsletter from "@/components/home/Newsletter";
 import Footer from "@/components/shared/Footer";
 
-export default function Home() {
+export default function Home () {
   const router = useRouter();
   const { data: session, status } = useSession();
 

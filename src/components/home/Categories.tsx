@@ -3,7 +3,7 @@ import Image from "next/image";
 import { Card } from "@/components/ui/card";
 import { ChevronRight } from "lucide-react";
 
-export default function Categories() {
+export default function Categories () {
   return (
     <section className="max-w-[1200px] mx-auto px-4 mt-8">
       <div className="flex items-center justify-between mb-8">

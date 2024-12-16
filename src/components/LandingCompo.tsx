@@ -56,7 +56,7 @@ export default function Home2 ({ authors, books }: HomeProps) {
       {/* Books Section */}
       <section ref={booksRef} className="py-20 bg-gray-100">
         <div className="container mx-auto">
-          <h2 className="text-3xl font-bold text-center mb-10">{authors.user.first_name}'s Books</h2>
+          <h2 className="text-3xl font-bold text-center mb-10">{authors.user.first_name}&apos;s Books</h2>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-10">
             {authors.books.map((book) => (
               <div key={book.id} className="bg-white shadow-lg hover:shadow-2xl transition-shadow transform hover:scale-105 p-4 rounded-lg">

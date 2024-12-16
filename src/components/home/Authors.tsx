@@ -3,7 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { trpc } from "@/app/_providers/trpc-provider";
 
-export default function Authors() {
+export default function Authors () {
   const { data: authors } = trpc.getAllAuthors.useQuery();
 
   //     {
