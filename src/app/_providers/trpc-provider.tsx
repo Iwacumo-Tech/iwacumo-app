@@ -1,5 +1,6 @@
 "use client";
 
+import { getBaseUrl } from "@/lib/utils";
 import { AppRouter } from "@/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createTRPCReact, httpBatchLink } from "@trpc/react-query";
@@ -15,7 +16,7 @@ export default function TRPCProvider ({ children }: {children: React.ReactNode})
     trpc.createClient({
       links: [
         httpBatchLink({
-          url: "http://localhost:8090/api/trpc",
+          url: `${getBaseUrl()}/api/trpc`,
           transformer: superJSON,
         }),
       ],
