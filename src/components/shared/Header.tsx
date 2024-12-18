@@ -1,229 +1,182 @@
+"use client";
+
 import { useState } from "react";
 import Link from "next/link";
-import {
-  ShoppingCart,
-  Book,
-  ChevronDown,
-  Star,
-  Menu,
-  User,
-} from "lucide-react";
+import { Headphones, Menu, Search, ShoppingCart } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
-const Header = () => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+export default function Header() {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   return (
-    <div className="w-full">
-      {/* Top Bar */}
-      <div className="flex justify-between items-center px-4 py-2 text-sm border-b">
-        <div className="hidden md:flex gap-4">
-          <Link
-            className="text-muted-foreground hover:text-primary"
-            href="/login"
-          >
-            Login / Register
-          </Link>
-          <Link className="text-muted-foreground hover:text-primary" href="#">
-            FAQ
-          </Link>
-          <Link className="text-muted-foreground hover:text-primary" href="#">
-            Contact Us
-          </Link>
-        </div>
-        <div className="md:hidden">
-          <Sheet open={isUserMenuOpen} onOpenChange={setIsUserMenuOpen}>
-            <SheetTrigger asChild>
-              <Button variant="ghost" size="icon">
-                <User className="h-5 w-5" />
-                <span className="sr-only">User menu</span>
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="right">
-              <nav className="flex flex-col gap-4">
-                <Link
-                  className="text-primary hover:text-primary/80"
-                  href="/login"
-                  onClick={() => {
-                    setIsUserMenuOpen(false);
-                  }}
-                >
-                  Login / Register
-                </Link>
-                <Link
-                  className="text-muted-foreground hover:text-primary"
-                  href="#"
-                  onClick={() => setIsUserMenuOpen(false)}
-                >
-                  FAQ
-                </Link>
-                <Link
-                  className="text-muted-foreground hover:text-primary"
-                  href="#"
-                  onClick={() => setIsUserMenuOpen(false)}
-                >
-                  Contact Us
-                </Link>
-              </nav>
-            </SheetContent>
-          </Sheet>
-        </div>
-        <div className="flex items-center gap-4 md:gap-6">
-          <Link href="#" className="flex items-center gap-2 text-primary">
-            <Book className="h-4 w-4" />
-            <div className="hidden md:block">
-              <div className="font-medium">Bookshelf</div>
-              <div className="text-xs text-muted-foreground">Books</div>
-            </div>
-          </Link>
-          <Link href="#" className="flex items-center gap-2">
-            <ShoppingCart className="h-4 w-4" />
-            <div className="hidden md:block">
-              <div className="font-medium">Your Basket</div>
-              <div className="text-xs text-muted-foreground">£0.00</div>
-            </div>
-          </Link>
-        </div>
-      </div>
-
-      {/* Main Header */}
-      <header className="container mx-auto px-4 py-4">
-        <div className="flex flex-col md:flex-row items-center gap-4">
+    <header className="w-full border-b">
+      <div className="container px-4 md:px-6">
+        {/* Top Bar */}
+        <div className="flex items-center justify-between py-4">
+          {/* Logo */}
           <Link
             href="/"
-            className="text-2xl md:text-3xl font-bold text-primary"
+            className="text-2xl md:text-3xl font-bold text-green-600"
           >
-            Booka
+            Booka.
           </Link>
-          <div className="flex-1 w-full flex gap-2">
+
+          {/* Search Bar - Hidden on mobile, visible on larger screens */}
+          <div className="hidden md:flex w-[400px] lg:w-[600px]">
             <Input
-              className="flex-1"
-              placeholder="Search for the perfect book..."
+              className="rounded-r-none"
+              placeholder="Search entire store here"
               type="search"
             />
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="hidden md:flex gap-2">
-                  Browse Categories
-                  <ChevronDown className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                <DropdownMenuItem>Fiction</DropdownMenuItem>
-                <DropdownMenuItem>Non-Fiction</DropdownMenuItem>
-                <DropdownMenuItem>Children&apos;s Books</DropdownMenuItem>
-                <DropdownMenuItem>Academic</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <Button>Go</Button>
+            <Button className="rounded-l-none bg-green-600 hover:bg-green-700">
+              <Search className="h-4 w-4" />
+              <span className="ml-2 hidden sm:inline">Search</span>
+            </Button>
           </div>
-        </div>
 
-        {/* Navigation */}
-        <nav className="mt-4 flex justify-between items-center">
-          <Sheet open={isOpen} onOpenChange={setIsOpen}>
+          {/* Auth & Cart - Hidden on mobile, visible on larger screens */}
+          <div className="hidden md:flex items-center gap-4">
+            <div className="text-sm">
+              <Link href="/login" className="hover:text-green-600">
+                Login
+              </Link>
+              <span className="mx-2">or</span>
+              <Link href="/register" className="hover:text-green-600">
+                Register
+              </Link>
+            </div>
+            <div className="flex items-center gap-2">
+              <ShoppingCart className="h-5 w-5" />
+              <div>
+                <span className="text-sm text-muted-foreground">
+                  Shopping Cart
+                </span>
+                <p className="font-medium">£0.00</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Mobile Menu Trigger */}
+          <Sheet open={isMenuOpen} onOpenChange={setIsMenuOpen}>
             <SheetTrigger asChild>
-              <Button variant="outline" size="icon" className="md:hidden">
-                <Menu className="h-4 w-4" />
-                <span className="sr-only">Toggle menu</span>
+              <Button variant="ghost" size="icon" className="md:hidden">
+                <Menu className="h-6 w-6" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="left">
+            <SheetContent side="left" className="w-[300px] sm:w-[400px]">
               <nav className="flex flex-col gap-4">
                 <Link
-                  className="text-primary hover:text-primary/80"
-                  href="#"
-                  onClick={() => setIsOpen(false)}
+                  href="/"
+                  className="text-lg font-semibold hover:text-green-600"
+                  onClick={() => setIsMenuOpen(false)}
                 >
-                  Home
+                  HOME
                 </Link>
                 <Link
-                  className="text-muted-foreground hover:text-primary"
-                  href="#"
-                  onClick={() => setIsOpen(false)}
+                  href="/shop"
+                  className="text-lg font-semibold hover:text-green-600"
+                  onClick={() => setIsMenuOpen(false)}
                 >
-                  Mega Menu
+                  SHOP
                 </Link>
                 <Link
-                  className="text-muted-foreground hover:text-primary"
-                  href="#"
-                  onClick={() => setIsOpen(false)}
+                  href="/pages"
+                  className="text-lg font-semibold hover:text-green-600"
+                  onClick={() => setIsMenuOpen(false)}
                 >
-                  Shop
+                  PAGES
                 </Link>
                 <Link
-                  className="text-muted-foreground hover:text-primary"
-                  href="#"
-                  onClick={() => setIsOpen(false)}
+                  href="/blog"
+                  className="text-lg font-semibold hover:text-green-600"
+                  onClick={() => setIsMenuOpen(false)}
                 >
-                  Shortcodes
+                  BLOG
                 </Link>
                 <Link
-                  className="text-muted-foreground hover:text-primary"
-                  href="#"
-                  onClick={() => setIsOpen(false)}
+                  href="/contact"
+                  className="text-lg font-semibold hover:text-green-600"
+                  onClick={() => setIsMenuOpen(false)}
                 >
-                  News
-                </Link>
-                <Link
-                  className="text-muted-foreground hover:text-primary"
-                  href="#"
-                  onClick={() => setIsOpen(false)}
-                >
-                  Contact Us
+                  CONTACT
                 </Link>
               </nav>
+              <div className="mt-auto pt-4 border-t">
+                <Link
+                  href="/login"
+                  className="block py-2 hover:text-green-600"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  Login
+                </Link>
+                <Link
+                  href="/register"
+                  className="block py-2 hover:text-green-600"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  Register
+                </Link>
+                <div className="flex items-center gap-2 py-2">
+                  <ShoppingCart className="h-5 w-5" />
+                  <div>
+                    <span className="text-sm text-muted-foreground">
+                      Shopping Cart
+                    </span>
+                    <p className="font-medium">£0.00</p>
+                  </div>
+                </div>
+              </div>
             </SheetContent>
           </Sheet>
-          <div className="hidden md:flex gap-6">
-            <Link className="text-primary hover:text-primary/80" href="#">
-              Home
-            </Link>
-            <Link className="text-muted-foreground hover:text-primary" href="#">
-              Mega Menu
-            </Link>
-            <Link className="text-muted-foreground hover:text-primary" href="#">
-              Shop
-            </Link>
-            <Link className="text-muted-foreground hover:text-primary" href="#">
-              Shortcodes
-            </Link>
-            <Link className="text-muted-foreground hover:text-primary" href="#">
-              News
-            </Link>
-            <Link className="text-muted-foreground hover:text-primary" href="#">
-              Contact Us
-            </Link>
-          </div>
-        </nav>
-      </header>
+        </div>
 
-      {/* Promotional Banners */}
-      <div className="bg-primary/5 py-4">
-        <div className="container mx-auto grid grid-cols-1 md:grid-cols-3 gap-4 px-4">
-          <div className="bg-primary text-primary-foreground rounded-lg p-4 text-center">
-            FREE STANDARD DELIVERY ON ORDERS OVER £25
-          </div>
-          <div className="bg-primary text-primary-foreground rounded-lg p-4 text-center flex items-center justify-center gap-2">
-            <Star className="h-5 w-5 fill-current" /> SALE NOW ON! SAVE UP TO
-            75% <Star className="h-5 w-5 fill-current" />
-          </div>
-          <div className="bg-primary text-primary-foreground rounded-lg p-4 text-center">
-            SIGNUP FOR ALL THE LATEST NEWS & OFFERS
+        {/* Mobile Search - Visible only on mobile */}
+        <div className="md:hidden pb-4">
+          <div className="flex w-full">
+            <Input
+              className="rounded-r-none"
+              placeholder="Search entire store here"
+              type="search"
+            />
+            <Button className="rounded-l-none bg-green-600 hover:bg-green-700">
+              <Search className="h-4 w-4" />
+            </Button>
           </div>
         </div>
-      </div>
-    </div>
-  );
-};
 
-export default Header;
+        {/* Navigation Bar */}
+        <div className="flex items-center justify-between py-3 bg-green-600 -mx-4 md:-mx-6 px-4 md:px-6">
+          {/* Support */}
+          <div className="flex items-center text-white">
+            <Headphones className="h-5 w-5 mr-2" />
+            <div>
+              <div className="text-sm">Free Support 24/7</div>
+              <div className="font-medium">+01-202-555-0181</div>
+            </div>
+          </div>
+
+          {/* Main Navigation - Hidden on mobile, visible on larger screens */}
+          <nav className="hidden md:flex items-center gap-4 text-white">
+            <Link href="/" className="hover:text-green-100">
+              HOME
+            </Link>
+            <Link href="/shop" className="hover:text-green-100">
+              SHOP
+            </Link>
+            <Link href="/pages" className="hover:text-green-100">
+              PAGES
+            </Link>
+            <Link href="/blog" className="hover:text-green-100">
+              BLOG
+            </Link>
+            <Link href="/contact" className="hover:text-green-100">
+              CONTACT
+            </Link>
+          </nav>
+        </div>
+      </div>
+    </header>
+  );
+}

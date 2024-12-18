@@ -1,153 +1,178 @@
-import Image from "next/image";
-import Link from "next/link";
-import { Facebook, Instagram, Twitter } from "lucide-react";
+import { Facebook, Twitter, Youtube } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 export default function Footer () {
-  const recentPosts = [
-    {
-      title: "10 Ways You Might Be Reading Your Book Wrong",
-      date: "Aug 07,2017",
-      image: "/placeholder.svg?height=80&width=80",
-      slug: "reading-wrong",
-    },
-    {
-      title: "The World of Abstract Art Explained",
-      date: "Aug 07,2017",
-      image: "/placeholder.svg?height=80&width=80",
-      slug: "abstract-art",
-    },
-    {
-      title: "Why Are Books Made From Paper?",
-      date: "Aug 07,2017",
-      image: "/placeholder.svg?height=80&width=80",
-      slug: "books-paper",
-    },
-  ];
-
-  const genres = [
-    "Action",
-    "Comedy",
-    "Drama",
-    "E-Books",
-    "Horror",
-    "Kids",
-    "Romantic Comedy",
-    "Sci-Fi",
-  ];
-
   return (
-    <footer className="w-full bg-white">
-      <div className="container px-4 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+    <footer className="bg-white">
+      <div className="container mx-auto px-4 pt-16 pb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 mb-12">
           {/* Company Info */}
           <div className="space-y-4">
-            <Link href="/" className="flex items-center space-x-2">
-              <div>
-                <h2 className="text-2xl font-bold text-[#8257F6]">Booka</h2>
-                <p className="text-sm text-muted-foreground">
-                  Book Store & Reviews
-                </p>
-              </div>
-            </Link>
-            <p className="text-muted-foreground">
-              Suspendisse potenti. Nulla facilisi. Vestibulum non blandit nulla.
-              Vivamus id orci condimentum, suscipit nunc non, viverra justo.
-              Phasellus sit amet justo ac felis sagittis elementum a at dui.
-            </p>
-            <div className="flex space-x-4">
-              <Link
-                href="#"
-                className="text-muted-foreground hover:text-[#8257F6]"
-              >
-                <Facebook className="h-5 w-5" />
-                <span className="sr-only">Facebook</span>
-              </Link>
-              <Link
-                href="#"
-                className="text-muted-foreground hover:text-[#8257F6]"
-              >
-                <Instagram className="h-5 w-5" />
-                <span className="sr-only">Instagram</span>
-              </Link>
-              <Link
-                href="#"
-                className="text-muted-foreground hover:text-[#8257F6]"
-              >
-                <Twitter className="h-5 w-5" />
-                <span className="sr-only">Twitter</span>
-              </Link>
+            <h2 className="text-[#82d236] text-3xl font-bold">Booka.</h2>
+            <div className="space-y-2 text-sm">
+              <p>
+                <span className="font-semibold">Address: </span>
+                Example Street 98, HH2
+                <br />
+                Bactfa, New York, USA
+              </p>
+              <p>
+                <span className="font-semibold">Phone: </span>
+                +18088 234 5678
+              </p>
+              <p>
+                <span className="font-semibold">Email: </span>
+                suport@hastech.com
+              </p>
             </div>
           </div>
 
-          {/* Recent Posts */}
-          <div>
-            <h3 className="font-bold text-lg mb-4">RECENT POSTS</h3>
-            <div className="space-y-4">
-              {recentPosts.map((post) => (
-                <Link
-                  key={post.slug}
-                  href={`/blog/${post.slug}`}
-                  className="flex items-center space-x-4 group"
-                >
-                  <Image
-                    src={post.image}
-                    alt={post.title}
-                    width={80}
-                    height={80}
-                    className="rounded-md"
-                  />
-                  <div>
-                    <h4 className="font-medium group-hover:text-[#8257F6] transition-colors">
-                      {post.title}
-                    </h4>
-                    <p className="text-sm text-muted-foreground">{post.date}</p>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </div>
-
-          {/* Genres */}
-          <div>
-            <h3 className="font-bold text-lg mb-4">GENRES</h3>
-            <ul className="space-y-2">
-              {genres.map((genre) => (
-                <li key={genre}>
-                  <Link
-                    href={`/genres/${genre.toLowerCase()}`}
-                    className="text-muted-foreground hover:text-[#8257F6] transition-colors"
-                  >
-                    {genre}
-                  </Link>
-                </li>
-              ))}
+          {/* Information */}
+          <div className="space-y-4">
+            <h3 className="font-bold text-base">INFORMATION</h3>
+            <ul className="space-y-2 text-sm">
+              <li>
+                <a href="#" className="hover:text-[#82d236] transition-colors">
+                  Prices drop
+                </a>
+              </li>
+              <li>
+                <a href="#" className="hover:text-[#82d236] transition-colors">
+                  New products
+                </a>
+              </li>
+              <li>
+                <a href="#" className="hover:text-[#82d236] transition-colors">
+                  Best sales
+                </a>
+              </li>
+              <li>
+                <a href="#" className="hover:text-[#82d236] transition-colors">
+                  Contact us
+                </a>
+              </li>
+              <li>
+                <a href="#" className="hover:text-[#82d236] transition-colors">
+                  Sitemap
+                </a>
+              </li>
             </ul>
           </div>
 
-          {/* Contact */}
-          <div>
-            <h3 className="font-bold text-lg mb-4">CONTACT</h3>
-            <div className="space-y-2 text-muted-foreground">
-              <p className="font-medium text-foreground">Booka,</p>
-              <p>80 Crown Street,</p>
-              <p>London, WC2B 7UJ</p>
-              <div className="pt-4">
-                <p>Call: 0772 410 0110</p>
-                <p>Email: email@booka.co.uk</p>
+          {/* Extras */}
+          <div className="space-y-4">
+            <h3 className="font-bold text-base">EXTRAS</h3>
+            <ul className="space-y-2 text-sm">
+              <li>
+                <a href="#" className="hover:text-[#82d236] transition-colors">
+                  Delivery
+                </a>
+              </li>
+              <li>
+                <a href="#" className="hover:text-[#82d236] transition-colors">
+                  About Us
+                </a>
+              </li>
+              <li>
+                <a href="#" className="hover:text-[#82d236] transition-colors">
+                  Stores
+                </a>
+              </li>
+              <li>
+                <a href="#" className="hover:text-[#82d236] transition-colors">
+                  Contact us
+                </a>
+              </li>
+              <li>
+                <a href="#" className="hover:text-[#82d236] transition-colors">
+                  Sitemap
+                </a>
+              </li>
+            </ul>
+          </div>
+
+          {/* Newsletter */}
+          <div className="space-y-4">
+            <h3 className="font-bold text-base">NEWSLETTER SUBSCRIBE</h3>
+            <div className="space-y-4">
+              <Input
+                type="email"
+                placeholder="Enter Your Email Address Here.."
+                className="bg-white border-gray-200"
+              />
+              <Button className="w-full bg-[#82d236] hover:bg-[#72bc2d] text-white">
+                SUBSCRIBE
+              </Button>
+            </div>
+            <div className="pt-2">
+              <h4 className="font-bold text-base mb-4">STAY CONNECTED</h4>
+              <div className="flex gap-2">
+                <a
+                  href="#"
+                  className="bg-[#3b5998] p-2 text-white rounded hover:opacity-90 transition-opacity"
+                >
+                  <Facebook size={16} />
+                </a>
+                <a
+                  href="#"
+                  className="bg-[#1da1f2] p-2 text-white rounded hover:opacity-90 transition-opacity"
+                >
+                  <Twitter size={16} />
+                </a>
+                <a
+                  href="#"
+                  className="bg-[#ff0000] p-2 text-white rounded hover:opacity-90 transition-opacity"
+                >
+                  <Youtube size={16} />
+                </a>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Copyright */}
-      <div className="border-t">
-        <div className="container px-4 py-4 text-center text-sm text-muted-foreground">
-          Copyright © 2024{" "}
-          <Link href="#" className="text-[#8257F6] hover:underline">
-            Booka
-          </Link>
-          . All Right Reserved
+      {/* Bottom Section */}
+      <div className="bg-[#3c3c3c] text-white py-8">
+        <div className="container mx-auto px-4">
+          <div className="space-y-6">
+            <p className="text-sm text-center text-gray-300">
+              Suspendisse in auctor augue. Cras fermentum est ac fermentum
+              tempor. Etiam vel magna volutpat, posuere eros
+            </p>
+            <div className="flex justify-center gap-4">
+              <img
+                src="/placeholder.svg?height=30&width=50"
+                alt="PayPal"
+                className="h-8"
+              />
+              <img
+                src="/placeholder.svg?height=30&width=50"
+                alt="Mastercard"
+                className="h-8"
+              />
+              <img
+                src="/placeholder.svg?height=30&width=50"
+                alt="Discover"
+                className="h-8"
+              />
+              <img
+                src="/placeholder.svg?height=30&width=50"
+                alt="Visa"
+                className="h-8"
+              />
+            </div>
+            <div className="text-sm text-center text-gray-300">
+              <p>
+                Copyright © 2022{" "}
+                <a href="#" className="text-[#82d236] hover:underline">
+                  Pustok
+                </a>
+                . All Right Reserved.
+              </p>
+              <p>Design By Pustok</p>
+            </div>
+          </div>
         </div>
       </div>
     </footer>

@@ -150,7 +150,25 @@ export const createCustomerSchema = z.object({
 
 });
 
+export const heroSlideSchema = z.object({
+  title: z.string().min(1, "Title is required"),
+  subtitle: z.string().min(1, "Subtitle is required"),
+  description: z.string().min(1, "Description is required"),
+  image: z.string().min(1, "Image is required"),
+});
+
+export const bookSlideSchema = z.object({
+  title: z.string().min(1, "Title is required"),
+  price: z.number(),
+  description: z.string().min(1, "Description is required"),
+  image: z.string().min(1, "Image is required"),
+});
+
 export type  TCreateCustomerSchema = z.infer<typeof createCustomerSchema>;
+
+export type  TheroSlideSchema = z.infer<typeof heroSlideSchema>;
+
+export type  TbookSlideSchema = z.infer<typeof bookSlideSchema>;
 
 export const deleteCustomerSchema = z.object({ id: z.string() });
 

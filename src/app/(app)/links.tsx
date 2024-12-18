@@ -10,45 +10,62 @@ export const links = [
     name: "Home",
     url: "/app",
     icon: <LuLayoutDashboard className="size-5 mr-2" />,
-    requiredPermission: "super-admin, publisher, author"
+    requiredPermission: "super-admin, publisher, author",
   },
   {
     name: "Users",
     url: "/app/users",
     icon: <LuLayoutDashboard className="size-5 mr-2" />,
-    requiredPermission: "super-admin"
+    requiredPermission: "super-admin",
   },
   {
     name: "Authors",
     url: "/app/authors",
     icon: <LuLayoutDashboard className="size-5 mr-2" />,
-    requiredPermission: "super-admin, owner, publisher"
+    requiredPermission: "super-admin, owner, publisher",
   },
   {
     name: "Customers",
     url: "/app/customers",
     icon: <MdDashboardCustomize className="size-5 mr-2" />,
-    requiredPermission: "super-admin, owner, publisher, author"
+    requiredPermission: "super-admin, owner, publisher, author",
   },
   {
     name: "Books",
     url: "/app/books",
-    icon: <FaBookOpen  className="size-5 mr-2" />,
-    requiredPermission: "super-admin, owner, publisher, author"
+    icon: <FaBookOpen className="size-5 mr-2" />,
+    requiredPermission: "super-admin, owner, publisher, author",
   },
   {
     name: "Publishers",
     url: "/app/publishers",
     icon: <LuLayoutDashboard className="size-5 mr-2" />,
-    requiredPermission: "super-admin, owner"
+    requiredPermission: "super-admin, owner",
+  },
+  {
+    name: "Hero Slider",
+    url: "/app/heroslider",
+    icon: <LuLayoutDashboard className="size-5 mr-2" />,
+    requiredPermission: "super-admin",
+  },
+  {
+    name: "Book Slider",
+    url: "/app/bookslider",
+    icon: <LuLayoutDashboard className="size-5 mr-2" />,
+    requiredPermission: "super-admin",
+  },
+  {
+    name: "Featured Products",
+    url: "/app/featuredproducts",
+    icon: <LuLayoutDashboard className="size-5 mr-2" />,
+    requiredPermission: "super-admin",
   },
   {
     name: "Profile",
     url: "/app/profile",
     icon: <UserPlusIcon className="size-5 mr-2" />,
-    requiredPermission: "super-admin, owner, publisher, author"
+    requiredPermission: "super-admin, owner, publisher, author",
   },
 ];
 
 export type Links = (typeof links)[number];
-

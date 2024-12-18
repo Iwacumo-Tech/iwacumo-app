@@ -17,6 +17,9 @@ import { createBook, deleteBook, updateBook, getAllBooks, getBookById, getBookBy
 import { createChapter, updateChapter, deleteChapter, getAllChapters, viewChapterById, getAllChapterByBookId } from "./module/chapter";
 import {  updateTenant, getAllTenant, deleteTenant } from "./module/tenant";
 import { createImageUpload } from "./module/uploads";
+import { createHeroSlide, getAllHeroSlides } from "./module/slider";
+import { getAllBookSlides, createBookSlide } from "./module/bookslider";
+import { getAllFeaturedProducts, addFeaturedProducts } from "./module/featuredproducts";
 
 export const appRouter = router({
   createUser,
@@ -58,6 +61,12 @@ export const appRouter = router({
   getAllTenant,
   deleteTenant,
   createImageUpload,
+  createHeroSlide,
+  getAllHeroSlides,
+  getAllBookSlides,
+  createBookSlide,
+  getAllFeaturedProducts,
+  addFeaturedProducts,
   healthCheck: publicProcedure.query(() => {
     return { message: "API up and running..." };
   }),

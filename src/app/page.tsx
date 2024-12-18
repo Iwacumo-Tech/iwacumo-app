@@ -4,21 +4,18 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { PERMISSIONS } from "@/lib/constants";
 import { useSession } from "next-auth/react";
-import Header from "@/components/shared/Header";
 import Hero from "@/components/home/Hero";
-import Categories from "@/components/home/Categories";
-import Books from "@/components/home/Books";
-import Authors from "@/components/home/Authors";
-import Newsletter from "@/components/home/Newsletter";
+import Features from "@/components/home/Features";
+import Banner from "@/components/home/Banner";
 import Footer from "@/components/shared/Footer";
+import Product from "@/components/home/FeaturedProduct";
+import Header from "@/components/shared/Header";
 
 export default function Home () {
   const router = useRouter();
   const { data: session, status } = useSession();
 
-  const isPublisher = session?.roles.some((pe) => {
-    pe.name === PERMISSIONS.PUBLISHER;
-  });
+  const isPublisher = session?.roles.some((pe) => pe.name === PERMISSIONS.PUBLISHER);
 
   useEffect(() => {
     console.log("session: ", session);
@@ -28,7 +25,6 @@ export default function Home () {
     }
 
     if (!session) {
-      // router.push("/login");
       router.push("/");
     } else {
       if (isPublisher) {
@@ -43,10 +39,9 @@ export default function Home () {
     <main>
       <Header />
       <Hero />
-      <Categories />
-      <Books />
-      <Authors />
-      <Newsletter />
+      <Features />
+      <Banner />
+      <Product />
       <Footer />
     </main>
   );
