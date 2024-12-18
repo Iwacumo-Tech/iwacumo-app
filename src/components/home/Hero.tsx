@@ -84,7 +84,7 @@ const relatedProducts: Product[] = [
   },
 ];
 
-export default function Hero() {
+export default function Hero () {
   const [currentSlide, setCurrentSlide] = useState(0);
   const carouselRef = useRef<HTMLDivElement>(null);
 
@@ -103,7 +103,7 @@ export default function Hero() {
         <div className="lg:col-span-2 shadow-md px-3 py-1 rounded-sm">
           <Carousel className="w-full" plugins={[Autoplay({ delay: 2000 })]}>
             <CarouselContent ref={carouselRef} className="flex">
-              {heroSlides.map((slide, index) => (
+              {heroSlides.map((slide) => (
                 <CarouselItem key={slide.id} className="w-full flex-shrink-0">
                   <div className="grid gap-6 md:grid-cols-2 items-center">
                     <div className="space-y-4">

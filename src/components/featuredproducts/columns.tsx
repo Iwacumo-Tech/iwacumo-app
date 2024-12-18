@@ -12,11 +12,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { MoreHorizontal } from "lucide-react";
 
-interface ActionProps {
-  FeaturedProducts: FeaturedProducts;
-}
+// interface ActionProps {
+//   FeaturedProducts: FeaturedProducts;
+// }
 
-function Action({ FeaturedProducts }: ActionProps) {
+function Action () {
   return (
     <>
       <DropdownMenu>
@@ -97,6 +97,6 @@ export const columns: ColumnDef<FeaturedProducts>[] = [
     header: ({ column }) => (
       <DataTableColumnHeader column={column} title="Actions" />
     ),
-    cell: ({ row }) => <Action FeaturedProducts={row.original} />,
+    cell: () => <Action />,
   },
 ];

@@ -50,7 +50,7 @@ const BookSlideForm = () => {
   const { toast } = useToast();
   const utils = trpc.useUtils();
   const [open, setOpen] = useState(false);
-  const [selectedBook, setSelectedBook] = useState<Book | null>(null);
+  const [, setSelectedBook] = useState<Book | null>(null);
   const { data: books = [] } = trpc.getAllBooks.useQuery(); // Fetch books from the database
 
   const form = useForm<TbookSlideSchema>({

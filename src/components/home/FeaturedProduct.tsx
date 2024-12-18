@@ -63,7 +63,7 @@ const products: Product[] = [
   },
 ];
 
-export default function ProductTabs() {
+export default function ProductTabs () {
   return (
     <div className="container mx-auto px-4">
       <Tabs defaultValue="featured" className="w-full">
@@ -137,7 +137,7 @@ export default function ProductTabs() {
   );
 }
 
-function ProductCard({ product }: { product: Product }) {
+function ProductCard ({ product }: { product: Product }) {
   return (
     <Card className="border-none shadow-none">
       <CardContent className="p-0 space-y-3">

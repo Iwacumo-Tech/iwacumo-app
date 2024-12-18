@@ -83,7 +83,7 @@ const books: Book[] = [
 
 type ViewMode = "grid" | "grid3x3" | "list";
 
-export default function BookGrid() {
+export default function BookGrid () {
   const [viewMode, setViewMode] = useState<ViewMode>("grid3x3");
 
   return (

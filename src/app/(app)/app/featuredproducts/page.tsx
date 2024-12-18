@@ -5,8 +5,8 @@ import { DataTable } from "@/components/table/data-table";
 import { columns } from "@/components/featuredproducts/columns";
 import AddFeaturedProduct from "@/components/featuredproducts/AddFeaturedProduct";
 
-export default function Page() {
-  const featuredProduct = trpc.getAllFeaturedProducts.useQuery();
+export default function Page () {
+  const featuredProduct = trpc.getAllFeaturedProducts.useQuery ();
 
   return (
     <>

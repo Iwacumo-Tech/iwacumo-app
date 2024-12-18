@@ -2,7 +2,7 @@ import { Facebook, Twitter, Youtube } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
-export default function Footer() {
+export default function Footer () {
   return (
     <footer className="bg-white">
       <div className="container mx-auto px-4 pt-16 pb-8">

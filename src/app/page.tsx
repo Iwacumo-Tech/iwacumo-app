@@ -11,14 +11,11 @@ import Footer from "@/components/shared/Footer";
 import Product from "@/components/home/FeaturedProduct";
 import Header from "@/components/shared/Header";
 
-
-export default function Home() {
+export default function Home () {
   const router = useRouter();
   const { data: session, status } = useSession();
 
-  const isPublisher = session?.roles.some((pe) => {
-    pe.name === PERMISSIONS.PUBLISHER;
-  });
+  const isPublisher = session?.roles.some((pe) => pe.name === PERMISSIONS.PUBLISHER);
 
   useEffect(() => {
     console.log("session: ", session);
@@ -28,7 +25,6 @@ export default function Home() {
     }
 
     if (!session) {
-      // router.push("/login");
       router.push("/");
     } else {
       if (isPublisher) {

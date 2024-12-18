@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 
-export default function Banner() {
+export default function Banner () {
   return (
     <div className="container px-4 pb-8">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

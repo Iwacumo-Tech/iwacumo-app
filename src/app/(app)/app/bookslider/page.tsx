@@ -5,7 +5,7 @@ import { DataTable } from "@/components/table/data-table";
 import { columns } from "@/components/bookslider/columns";
 import BookSlideForm from "@/components/bookslider/AddBookSlider";
 
-export default function Page() {
+export default function Page () {
   const bookSlide = trpc.getAllBookSlides.useQuery();
 
   return (
@@ -22,7 +22,8 @@ export default function Page() {
           filterColumnId={""}
           action={<BookSlideForm />}
         />
+        ;
       </>
     </>
   );
-};
+}
