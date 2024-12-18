@@ -38,11 +38,19 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { trpc } from "@/app/_providers/trpc-provider";
 
+type Book = {
+  id: string;
+  title: string;
+  description: string;
+  price: number;
+  book_cover: string | null;
+};
+
 const BookSlideForm = () => {
   const { toast } = useToast();
   const utils = trpc.useUtils();
   const [open, setOpen] = useState(false);
-  const [selectedBook, setSelectedBook] = useState(null);
+  const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   const { data: books = [] } = trpc.getAllBooks.useQuery(); // Fetch books from the database
 
   const form = useForm<TbookSlideSchema>({
