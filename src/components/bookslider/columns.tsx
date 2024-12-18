@@ -1,6 +1,6 @@
 import { ColumnDef } from "@tanstack/react-table";
 import { DataTableColumnHeader } from "@/components/table/data-table-column-header";
-import { HeroSlide } from "@prisma/client";
+import { BookSlide } from "@prisma/client";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,10 +13,10 @@ import { Button } from "@/components/ui/button";
 import { MoreHorizontal } from "lucide-react";
 
 interface ActionProps {
-  heroSlide: HeroSlide;
+  BookSlide: BookSlide;
 }
 
-function Action({ heroSlide }: ActionProps) {
+function Action({ BookSlide }: ActionProps) {
   return (
     <>
       <DropdownMenu>
@@ -42,7 +42,7 @@ function Action({ heroSlide }: ActionProps) {
   );
 }
 
-export const columns: ColumnDef<HeroSlide>[] = [
+export const columns: ColumnDef<BookSlide>[] = [
   {
     id: "title",
     accessorKey: "title",
@@ -97,6 +97,6 @@ export const columns: ColumnDef<HeroSlide>[] = [
     header: ({ column }) => (
       <DataTableColumnHeader column={column} title="Actions" />
     ),
-    cell: ({ row }) => <Action heroSlide={row.original} />,
+    cell: ({ row }) => <Action BookSlide={row.original} />,
   },
 ];
