@@ -5,7 +5,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { trpc } from "@/app/_providers/trpc-provider";
-import { Book } from "@prisma/client";
 
 export default function ProductTabs() {
   const featuredBooks = trpc.getAllFeaturedBooks.useQuery();

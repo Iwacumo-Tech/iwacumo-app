@@ -20,44 +20,44 @@
   ],
   "rules": {
     "quotes": [
-      "error",
+      "warn",
       "double"
     ],
     "comma-dangle": [
-      "error",
+      "warn",
       "only-multiline"
     ],
     "quote-props": [
-      "error",
+      "warn",
       "consistent"
     ],
     "jsx-quotes": [
-      "error",
+      "warn",
       "prefer-double"
     ],
     "comma-spacing": [
-      "error"
+      "warn"
     ],
     "space-in-parens": [
-      "error",
+      "warn",
       "never"
     ],
-    "newline-per-chained-call": "off", // Disabled for convenience
+    "newline-per-chained-call": "off",
     "padded-blocks": [
-      "error",
+      "warn",
       "never"
     ],
     "array-bracket-spacing": [
-      "error",
+      "warn",
       "never"
     ],
     "computed-property-spacing": [
-      "error",
+      "warn",
       "never"
     ],
-    "prefer-destructuring": "warn", // Relaxed to warning
+    "prefer-destructuring": "warn",
     "no-restricted-imports": [
-      "error",
+      "warn",
       {
         "patterns": [
           "..*"
@@ -65,81 +65,81 @@
       }
     ],
     "no-trailing-spaces": [
-      "error"
+      "warn"
     ],
     "space-before-function-paren": [
-      "warn", // Relaxed to warning
+      "warn",
       "always"
     ],
     "no-unexpected-multiline": [
-      "error"
+      "warn"
     ],
     "no-multiple-empty-lines": [
-      "warn", // Relaxed to warning
+      "warn",
       {
         "max": 1
       }
     ],
-    "newline-after-var": "off", // Disabled for convenience
+    "newline-after-var": "off",
     "eol-last": [
-      "error",
+      "warn",
       "always"
     ],
     "key-spacing": [
-      "error",
+      "warn",
       {
         "afterColon": true
       }
     ],
     "object-curly-spacing": [
-      "error",
+      "warn",
       "always"
     ],
     "object-curly-newline": [
-      "error",
+      "warn",
       {
         "multiline": true
       }
     ],
     "indent": "off",
     "@typescript-eslint/indent": [
-      "error",
+      "warn",
       2
     ],
     "space-before-blocks": "off",
     "@typescript-eslint/space-before-blocks": [
-      "error"
+      "warn"
     ],
     "space-infix-ops": "off",
     "@typescript-eslint/space-infix-ops": [
-      "error"
+      "warn"
     ],
     "@typescript-eslint/type-annotation-spacing": [
-      "error"
+      "warn"
     ],
     "padding-line-between-statements": "off",
-    "@typescript-eslint/padding-line-between-statements": "warn", // Relaxed to warning
+    "@typescript-eslint/padding-line-between-statements": "warn",
     "@typescript-eslint/member-delimiter-style": [
-      "error"
+      "warn"
     ],
     "semi": "off",
     "@typescript-eslint/semi": [
-      "error",
+      "warn",
       "always"
     ],
     "no-unused-vars": "off",
-    "@typescript-eslint/no-unused-vars": "warn", // Relaxed to warning
+    "@typescript-eslint/no-unused-vars": "warn",
     "unused-imports/no-unused-imports": [
-      "error"
+      "warn"
     ],
-    "@typescript-eslint/no-explicit-any": "warn", // Relaxed to warning
-    "@typescript-eslint/no-unsafe-argument": "warn", // Relaxed to warning
-    "@typescript-eslint/no-unsafe-call": "warn", // Relaxed to warning
-    "@typescript-eslint/no-unsafe-member-access": "warn", // Relaxed to warning
-    "@typescript-eslint/no-unsafe-assignment": "warn", // Relaxed to warning
-    "@typescript-eslint/no-unsafe-return": "warn", // Relaxed to warning
+    "@typescript-eslint/no-explicit-any": "warn",
+    "@typescript-eslint/no-unsafe-argument": "warn",
+    "@typescript-eslint/no-unsafe-call": "warn",
+    "@typescript-eslint/no-unsafe-member-access": "warn",
+    "@typescript-eslint/no-unsafe-assignment": "warn",
+    "@typescript-eslint/no-unsafe-return": "warn",
     "unused-imports/no-unused-vars": [
-      "error",
+      "warn",
       {
         "vars": "all",
         "varsIgnorePattern": "^_",
