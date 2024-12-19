@@ -2,9 +2,9 @@ import { Facebook, Twitter, Youtube } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
-export default function Footer () {
+export default function Footer() {
   return (
-    <footer className="bg-white">
+    <footer className="bg-white max-w-[80%] mx-auto">
       <div className="container mx-auto px-4 pt-16 pb-8">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 mb-12">
           {/* Company Info */}
@@ -127,50 +127,6 @@ export default function Footer () {
                   <Youtube size={16} />
                 </a>
               </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Bottom Section */}
-      <div className="bg-[#3c3c3c] text-white py-8">
-        <div className="container mx-auto px-4">
-          <div className="space-y-6">
-            <p className="text-sm text-center text-gray-300">
-              Suspendisse in auctor augue. Cras fermentum est ac fermentum
-              tempor. Etiam vel magna volutpat, posuere eros
-            </p>
-            <div className="flex justify-center gap-4">
-              <img
-                src="/placeholder.svg?height=30&width=50"
-                alt="PayPal"
-                className="h-8"
-              />
-              <img
-                src="/placeholder.svg?height=30&width=50"
-                alt="Mastercard"
-                className="h-8"
-              />
-              <img
-                src="/placeholder.svg?height=30&width=50"
-                alt="Discover"
-                className="h-8"
-              />
-              <img
-                src="/placeholder.svg?height=30&width=50"
-                alt="Visa"
-                className="h-8"
-              />
-            </div>
-            <div className="text-sm text-center text-gray-300">
-              <p>
-                Copyright © 2022{" "}
-                <a href="#" className="text-[#82d236] hover:underline">
-                  Pustok
-                </a>
-                . All Right Reserved.
-              </p>
-              <p>Design By Pustok</p>
             </div>
           </div>
         </div>

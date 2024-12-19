@@ -90,6 +90,10 @@ export const createBookSchema = z .object({
 
 });
 
+export const toggleFeaturedSchema = z.object({
+  id: z.string(), 
+});
+
 export const createTenantSchema = z.object({
   id: z.string().optional(),
   first_name: z.string().optional(),
@@ -125,11 +129,19 @@ export const editProfileSchema = z .object({
 
 });
 
+export const createBannerSchema = z.object({
+  image: z.string(), 
+});
+
+
 export const findBookByIdSchema = z.object({ id: z.string() });
 
 export const  deleteChapterSchema = z.object ({ id: z.string () });
 
+export type TcreateBannerSchema = z.infer<typeof createBannerSchema>;
+
 export type TFindChapterByIdSchema = z.infer<typeof findChapterByIdSchema>;
+
 
 export type TCreateChapterSchema = z.infer<typeof createChapterSchema>;
 
@@ -154,7 +166,9 @@ export const heroSlideSchema = z.object({
   title: z.string().min(1, "Title is required"),
   subtitle: z.string().min(1, "Subtitle is required"),
   description: z.string().min(1, "Description is required"),
-  image: z.string().min(1, "Image is required"),
+  image: z.string(),
+  buttonText: z.string().min(1, "Button text is required"),
+  buttonRoute: z.string().min(1, "Button route is required"),
 });
 
 export const bookSlideSchema = z.object({

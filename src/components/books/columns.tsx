@@ -1,9 +1,17 @@
 import { Book } from "@prisma/client";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { MoreHorizontal } from "lucide-react";
 import DeleteBookModal from "./delete-book";
 import BookForm from "./book-form";
+import ToggleFeaturedModal from "./toggle-featured";
 import { ColumnDef } from "@tanstack/react-table";
 import { DataTableColumnHeader } from "@/components/table/data-table-column-header";
 import { ViewChapters } from "@/components/chapters/view-chapter";
@@ -12,7 +20,7 @@ interface BookActionProps {
   book: Book;
 }
 
-function Action ({ book }: BookActionProps) {
+function Action({ book }: BookActionProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -29,8 +37,11 @@ function Action ({ book }: BookActionProps) {
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
-
           <ViewChapters id={book.id} />
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <ToggleFeaturedModal id={book.id} isFeatured={book.featured} />
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
@@ -76,4 +87,3 @@ export const bookColumns: ColumnDef<Book>[] = [
     cell: ({ row }) => <Action book={row.original} />,
   },
 ];
-

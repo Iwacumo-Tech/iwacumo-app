@@ -1,6 +1,6 @@
 import { auth } from "@/auth";
 import prisma from "@/lib/prisma";
-import { createBookSchema, deleteBookSchema, findBookByIdSchema } from "@/server/dtos";
+import { createBookSchema, deleteBookSchema, findBookByIdSchema, toggleFeaturedSchema } from "@/server/dtos";
 import { publicProcedure } from "@/server/trpc";
 
 export const createBook = publicProcedure.input(createBookSchema).mutation(async (opts) => {
@@ -88,4 +88,50 @@ export const getBookByAuthor = publicProcedure.input(findBookByIdSchema).query(a
       include: { chapters: true, author: true }
     });
   }
+});
+
+
+
+export const toggleBookFeatured = publicProcedure
+  .input(toggleFeaturedSchema)
+  .mutation(async ({ input }) => {
+    const book = await prisma.book.findUnique({ where: { id: input.id } });
+
+    if (!book) {
+      throw new Error("Book not found");
+    }
+
+    return await prisma.book.update({
+      where: { id: input.id },
+      data: { featured: !book.featured },
+    });
+  });
+
+export const getAllFeaturedBooks = publicProcedure.query(async () => {
+  return await prisma.book.findMany({
+    where: { 
+      featured: true,      
+      deleted_at: null,    
+    },
+    include: { 
+      chapters: true,     
+      author: true,        
+    },
+  });
+});
+
+export const getNewArrivalBooks = publicProcedure.query(async () => {
+  return await prisma.book.findMany({
+    where: { 
+      deleted_at: null, 
+    },
+    orderBy: { 
+      created_at: "desc", 
+    },
+    include: { 
+      chapters: true,    
+      author: true,     
+    },
+    take: 12, 
+  });
 });

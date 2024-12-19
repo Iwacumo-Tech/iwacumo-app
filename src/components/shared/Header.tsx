@@ -11,8 +11,9 @@ export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   return (
-    <header className="w-full border-b">
-      <div className="container px-4 md:px-6">
+    <header className="border-b">
+      {/* Centered Content Container */}
+      <div className="max-w-[80%] mx-auto px-4 md:px-6">
         {/* Top Bar */}
         <div className="flex items-center justify-between py-4">
           {/* Logo */}
@@ -145,11 +146,13 @@ export default function Header() {
             </Button>
           </div>
         </div>
+      </div>
 
-        {/* Navigation Bar */}
-        <div className="flex items-center justify-between py-3 bg-green-600 -mx-4 md:-mx-6 px-4 md:px-6">
+      {/* Full-width Green Div */}
+      <div className="w-full bg-green-600">
+        <div className="max-w-[80%] mx-auto px-4 md:px-6 flex items-center justify-between py-3 text-white">
           {/* Support */}
-          <div className="flex items-center text-white">
+          <div className="flex items-center">
             <Headphones className="h-5 w-5 mr-2" />
             <div>
               <div className="text-sm">Free Support 24/7</div>
@@ -158,7 +161,7 @@ export default function Header() {
           </div>
 
           {/* Main Navigation - Hidden on mobile, visible on larger screens */}
-          <nav className="hidden md:flex items-center gap-4 text-white">
+          <nav className="hidden md:flex items-center gap-4">
             <Link href="/" className="hover:text-green-100">
               HOME
             </Link>

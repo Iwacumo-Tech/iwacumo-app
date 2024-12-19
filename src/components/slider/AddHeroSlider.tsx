@@ -1,10 +1,11 @@
 "use client";
 
+import type { PutBlobResult } from "@vercel/blob"; // Importing the correct type for blob result
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { heroSlideSchema, TheroSlideSchema } from "@/server/dtos";
 import {
   Dialog,
@@ -35,6 +36,7 @@ const HeroSlideForm = () => {
   const { toast } = useToast();
   const utils = trpc.useUtils();
   const [open, setOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null); // Ref for file input
 
   const form = useForm<TheroSlideSchema>({
     resolver: zodResolver(heroSlideSchema),
@@ -43,6 +45,8 @@ const HeroSlideForm = () => {
       subtitle: "",
       description: "",
       image: "",
+      buttonText: "",
+      buttonRoute: "",
     },
   });
 
@@ -70,8 +74,57 @@ const HeroSlideForm = () => {
     },
   });
 
-  const onSubmit = (values: TheroSlideSchema) => {
-    addHeroSlide.mutate(values);
+  const handleFileUpload = async (file: File): Promise<PutBlobResult> => {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const response = await fetch(`/api/avatar/upload?filename=${file.name}`, {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error("File upload response error:", error);
+      throw new Error("Failed to upload the file.");
+    }
+
+    const result = await response.json();
+    return result as PutBlobResult;
+  };
+
+  const onSubmit = async (values: TheroSlideSchema) => {
+    console.log("Form values before submission:", values);
+
+    // Upload the file if it's selected
+    let imageUrl = values.image; // Default to the existing value (if any)
+    if (fileInputRef.current?.files && fileInputRef.current.files[0]) {
+      const file = fileInputRef.current.files[0];
+      try {
+        console.log("Uploading image...");
+        const uploadResult = await handleFileUpload(file); // Upload the image
+        imageUrl = uploadResult.url; // Get the URL from the upload response
+        console.log("Image uploaded successfully:", imageUrl);
+      } catch (error) {
+        toast({
+          title: "Error",
+          variant: "destructive",
+          description: "Failed to upload the image.",
+        });
+        return; // Stop form submission if image upload fails
+      }
+    }
+
+    console.log("Final form data before mutation:", {
+      ...values,
+      image: imageUrl, // Attach the uploaded image URL
+    });
+
+    // Save the form data along with the image URL to the database
+    addHeroSlide.mutate({
+      ...values,
+      image: imageUrl, // Pass the image URL
+    });
   };
 
   return (
@@ -158,15 +211,15 @@ const HeroSlideForm = () => {
                   <div className="space-y-1">
                     <FormField
                       control={form.control}
-                      name="image"
+                      name="buttonText"
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel className="text-gray-700">
-                            Image URL
+                            Button Text
                           </FormLabel>
                           <FormControl>
                             <Input
-                              placeholder="Enter image URL"
+                              placeholder="Enter text for button"
                               {...field}
                               className="border-gray-300 rounded-md"
                             />
@@ -176,6 +229,41 @@ const HeroSlideForm = () => {
                       )}
                     />
                   </div>
+                  <div className="space-y-1">
+                    <FormField
+                      control={form.control}
+                      name="buttonRoute"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-gray-700">
+                            Button Route
+                          </FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder="Enter route for button"
+                              {...field}
+                              className="border-gray-300 rounded-md"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <FormItem>
+                      <FormLabel className="text-gray-700">Image</FormLabel>
+                      <br />
+                      <FormControl>
+                        <input
+                          type="file"
+                          ref={fileInputRef}
+                          className="border-gray-300 rounded-md p-2"
+                        />
+                      </FormControl>
+                    </FormItem>
+                  </div>
+
                   <div className="flex justify-end my-5">
                     <Button
                       disabled={form.formState.isSubmitting}
@@ -183,7 +271,9 @@ const HeroSlideForm = () => {
                       type="submit"
                       data-cy="hero-slide-submit"
                     >
-                      Create Slider
+                      {form.formState.isSubmitting
+                        ? "Submitting..."
+                        : "Create Slider"}
                     </Button>
                   </div>
                 </fieldset>

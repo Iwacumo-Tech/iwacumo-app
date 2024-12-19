@@ -49,14 +49,8 @@ export const links = [
     requiredPermission: "super-admin",
   },
   {
-    name: "Book Slider",
-    url: "/app/bookslider",
-    icon: <LuLayoutDashboard className="size-5 mr-2" />,
-    requiredPermission: "super-admin",
-  },
-  {
-    name: "Featured Products",
-    url: "/app/featuredproducts",
+    name: "Banner",
+    url: "/app/banner",
     icon: <LuLayoutDashboard className="size-5 mr-2" />,
     requiredPermission: "super-admin",
   },
