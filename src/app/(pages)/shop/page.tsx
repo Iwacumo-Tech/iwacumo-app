@@ -13,78 +13,14 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-
-interface Book {
-  id: number;
-  title: string;
-  brand: string;
-  image: string;
-  price: number;
-  originalPrice: number;
-  discount: number;
-}
-
-const books: Book[] = [
-  {
-    id: 1,
-    title: "Here Is A Quick Cure For Book",
-    brand: "Epple",
-    image: "/placeholder.svg?height=400&width=300",
-    price: 51.2,
-    originalPrice: 64.0,
-    discount: 20,
-  },
-  {
-    id: 2,
-    title: "Simple Things You To Save BOOK",
-    brand: "Lpple",
-    image: "/placeholder.svg?height=400&width=300",
-    price: 51.2,
-    originalPrice: 64.0,
-    discount: 20,
-  },
-  {
-    id: 3,
-    title: "3 Ways Create Better BOOK With",
-    brand: "Cpple",
-    image: "/placeholder.svg?height=400&width=300",
-    price: 51.2,
-    originalPrice: 64.0,
-    discount: 20,
-  },
-  {
-    id: 4,
-    title: "Simple Things You To Save BOOK",
-    brand: "Rpple",
-    image: "/placeholder.svg?height=400&width=300",
-    price: 51.2,
-    originalPrice: 64.0,
-    discount: 20,
-  },
-  {
-    id: 5,
-    title: "How Deal With Very Bad BOOK",
-    brand: "Gpple",
-    image: "/placeholder.svg?height=400&width=300",
-    price: 51.2,
-    originalPrice: 64.0,
-    discount: 20,
-  },
-  {
-    id: 6,
-    title: "The Hidden Mystery Behind",
-    brand: "Rtpple",
-    image: "/placeholder.svg?height=400&width=300",
-    price: 51.2,
-    originalPrice: 64.0,
-    discount: 20,
-  },
-];
+import { trpc } from "@/app/_providers/trpc-provider";
+import { Book } from "@prisma/client";
 
 type ViewMode = "grid" | "grid3x3" | "list";
 
-export default function BookGrid () {
+export default function BookGrid() {
   const [viewMode, setViewMode] = useState<ViewMode>("grid3x3");
+  const AllBooks = trpc.getAllBooks.useQuery();
 
   return (
     <div className="container mx-auto p-4 max-w-7xl mt-3">
@@ -140,56 +76,57 @@ export default function BookGrid () {
         </div>
       </div>
 
-      <div
-        className={cn(
-          "grid gap-2",
-          viewMode === "grid3x3" && "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3",
-          viewMode === "grid" && "grid-cols-1 sm:grid-cols-2",
-          viewMode === "list" && "grid-cols-1"
-        )}
-      >
-        {books.map((book) => (
-          <Card
-            key={book.id}
-            className={cn(viewMode === "list" && "flex flex-row")}
-          >
-            <div
-              className={cn(
-                viewMode === "list" ? "w-1/3" : "w-full",
-                "relative aspect-[4/5]"
-              )}
+      {AllBooks.data ? (
+        <div
+          className={cn(
+            "grid gap-2",
+            viewMode === "grid3x3" &&
+              "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3",
+            viewMode === "grid" && "grid-cols-1 sm:grid-cols-2",
+            viewMode === "list" && "grid-cols-1"
+          )}
+        >
+          {AllBooks.data?.map((book) => (
+            <Card
+              key={book.id}
+              className={cn(viewMode === "list" && "flex flex-row")}
             >
-              <Image
-                src={book.image}
-                alt={book.title}
-                fill
-                className="object-cover rounded-t-lg"
-              />
-            </div>
-            <div className={cn(viewMode === "list" && "w-2/3")}>
-              <CardHeader className="p-3 pb-0">
-                <p className="text-sm text-muted-foreground">{book.brand}</p>
-                <h3 className="font-semibold leading-none tracking-tight text-sm">
-                  {book.title}
-                </h3>
-              </CardHeader>
-              <CardContent className="p-3 pt-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-base font-bold">
-                    £{book.price.toFixed(2)}
-                  </span>
-                  <span className="text-xs text-muted-foreground line-through">
-                    £{book.originalPrice.toFixed(2)}
-                  </span>
-                  <span className="text-xs text-white bg-red-500 px-1.5 py-0.5 rounded">
-                    {book.discount}%
-                  </span>
-                </div>
-              </CardContent>
-            </div>
-          </Card>
-        ))}
-      </div>
+              <div
+                className={cn(
+                  viewMode === "list" ? "w-1/3" : "w-full",
+                  "relative aspect-[4/5]"
+                )}
+              >
+                <Image
+                  src={book.book_cover!}
+                  alt={book.title}
+                  fill
+                  className="object-cover rounded-t-lg"
+                />
+              </div>
+              <div className={cn(viewMode === "list" && "w-2/3")}>
+                <CardHeader className="p-3 pb-0">
+                  <p className="text-sm text-muted-foreground">
+                    {book.author?.name || "unknown Author"}
+                  </p>
+                  <h3 className="font-semibold leading-none tracking-tight text-sm">
+                    {book.title}
+                  </h3>
+                </CardHeader>
+                <CardContent className="p-3 pt-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base font-bold">
+                      ${book.price.toFixed(2)}
+                    </span>
+                  </div>
+                </CardContent>
+              </div>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <div>No data available</div>
+      )}
     </div>
   );
 }
