@@ -13,15 +13,29 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { useToast } from "@/components/ui/use-toast";
 import { trpc } from "@/app/_providers/trpc-provider";
 import { Book } from "@prisma/client";
@@ -37,7 +51,10 @@ const BookForm = ({ book, action }: BookFormProps) => {
   const { toast } = useToast();
   const utils = trpc.useUtils();
   const [open, setOpen] = useState(false);
-  const session = useSession();  const { data: authors } = trpc.getAuthorsByUser.useQuery({ id: session.data?.user.id as string });
+  const session = useSession();
+  const { data: authors } = trpc.getAuthorsByUser.useQuery({
+    id: session.data?.user.id as string,
+  });
   const [file, setFile] = useState<File | null>(null);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -65,9 +82,7 @@ const BookForm = ({ book, action }: BookFormProps) => {
         description: "Successfully added a new book",
       });
 
-      utils.getAllBooks.invalidate().then(() => {
-        setOpen(false);
-      });
+      utils.getAllBooks.invalidate();
     },
     onError: (error) => {
       console.error(error);
@@ -110,7 +125,7 @@ const BookForm = ({ book, action }: BookFormProps) => {
       updateBook.mutate({
         ...values,
         id: book.id,
-        book_cover: imageUrl
+        book_cover: imageUrl,
       });
     } else {
       addBook.mutate({ ...values, book_cover: imageUrl });
@@ -151,7 +166,9 @@ const BookForm = ({ book, action }: BookFormProps) => {
                           name="title"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel className="text-gray-700">Title</FormLabel>
+                              <FormLabel className="text-gray-700">
+                                Title
+                              </FormLabel>
                               <FormControl>
                                 <Input
                                   placeholder="Enter book title"
@@ -168,7 +185,9 @@ const BookForm = ({ book, action }: BookFormProps) => {
                           name="description"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel className="text-gray-700">Description</FormLabel>
+                              <FormLabel className="text-gray-700">
+                                Description
+                              </FormLabel>
                               <FormControl>
                                 <Input
                                   placeholder="Enter book description"
@@ -188,12 +207,16 @@ const BookForm = ({ book, action }: BookFormProps) => {
 
                             return (
                               <FormItem>
-                                <FormLabel className="text-gray-700">Price</FormLabel>
+                                <FormLabel className="text-gray-700">
+                                  Price
+                                </FormLabel>
                                 <FormControl>
                                   <Input
                                     type="number"
                                     placeholder="Enter book price"
-                                    onChange={(e) => onChange(Number(e.target.value) || 0)}
+                                    onChange={(e) =>
+                                      onChange(Number(e.target.value) || 0)
+                                    }
                                     value={value}
                                     {...restField}
                                     className="border-gray-300 rounded-md"
@@ -210,16 +233,22 @@ const BookForm = ({ book, action }: BookFormProps) => {
                           render={({ field }) => (
                             <FormItem className="mt-2">
                               <FormLabel>Select Author</FormLabel>
-                              <Select onValueChange={field.onChange} defaultValue={field.value}>
+                              <Select
+                                onValueChange={field.onChange}
+                                defaultValue={field.value}
+                              >
                                 <FormControl className="mt-1">
                                   <SelectTrigger>
                                     <SelectValue placeholder="Select Author" />
                                   </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
-
                                   {authors?.map((author) => (
-                                    <SelectItem role="option" key={author.user.first_name} value={author.id}>
+                                    <SelectItem
+                                      role="option"
+                                      key={author.user.first_name}
+                                      value={author.id}
+                                    >
                                       {author.user.first_name}
                                     </SelectItem>
                                   ))}
@@ -236,7 +265,9 @@ const BookForm = ({ book, action }: BookFormProps) => {
                             htmlFor="fileUpload"
                             className="cursor-pointer w-full px-4 py-2 text-slate-100 border rounded-md flex items-center gap-3"
                           >
-                            <span className="bg-blue-700 p-1 text-sm rounded">Upload File</span>
+                            <span className="bg-blue-700 p-1 text-sm rounded">
+                              Upload File
+                            </span>
                             {file && (
                               <p className="mt-2 text-sm text-gray-700">
                                 {file.name}
@@ -249,9 +280,7 @@ const BookForm = ({ book, action }: BookFormProps) => {
                             onChange={handleFileChange}
                             className="hidden"
                           />
-
                         </div>
-
                       </div>
                       <div className="flex justify-end my-5">
                         <Button
@@ -270,8 +299,7 @@ const BookForm = ({ book, action }: BookFormProps) => {
             </Card>
           </TabsContent>
 
-          <TabsContent value="other-details">
-          </TabsContent>
+          <TabsContent value="other-details"></TabsContent>
         </Tabs>
       </DialogContent>
     </Dialog>

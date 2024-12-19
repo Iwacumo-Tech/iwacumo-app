@@ -1,6 +1,6 @@
 import { ColumnDef } from "@tanstack/react-table";
 import { DataTableColumnHeader } from "@/components/table/data-table-column-header";
-import { BookSlide } from "@prisma/client";
+import { Banner } from "@prisma/client";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,12 +11,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { MoreHorizontal } from "lucide-react";
+import ToggleBannerVisibilityModal from "@/components/banner/ToggleShow";
 
-// interface ActionProps {
-//   BookSlide: BookSlide;
-// }
+interface ActionProps {
+  banner: Banner;
+}
 
-function Action () {
+function Action({ banner }: ActionProps) {
   return (
     <>
       <DropdownMenu>
@@ -33,7 +34,12 @@ function Action () {
         <DropdownMenuContent align="end">
           <DropdownMenuLabel>Hero Slide actions</DropdownMenuLabel>
           <DropdownMenuSeparator />
-          <DropdownMenuItem asChild>edit</DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <ToggleBannerVisibilityModal
+              id={banner.id}
+              isShow={banner.isShow}
+            />
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem asChild>delete</DropdownMenuItem>
         </DropdownMenuContent>
@@ -42,43 +48,7 @@ function Action () {
   );
 }
 
-export const columns: ColumnDef<BookSlide>[] = [
-  {
-    id: "title",
-    accessorKey: "title",
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="Title" />
-    ),
-    cell: ({ row }) => (
-      <div className="py-0.5 text-sm font-medium select-none text-nowrap">
-        {row.getValue("title")}
-      </div>
-    ),
-  },
-  {
-    id: "price",
-    accessorKey: "Price",
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="Price" />
-    ),
-    cell: ({ row }) => (
-      <div className="py-0.5 text-sm font-medium select-none text-nowrap">
-        {row.getValue("price")}
-      </div>
-    ),
-  },
-  {
-    id: "description",
-    accessorKey: "description",
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="Description" />
-    ),
-    cell: ({ row }) => (
-      <div className="py-0.5 text-sm font-medium select-none text-nowrap">
-        {row.getValue("description")}
-      </div>
-    ),
-  },
+export const columns: ColumnDef<Banner>[] = [
   {
     id: "image",
     accessorKey: "image",
@@ -97,6 +67,6 @@ export const columns: ColumnDef<BookSlide>[] = [
     header: ({ column }) => (
       <DataTableColumnHeader column={column} title="Actions" />
     ),
-    cell: () => <Action  />,
+    cell: ({ row }) => <Action banner={row.original} />,
   },
 ];

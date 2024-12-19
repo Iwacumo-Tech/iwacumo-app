@@ -13,13 +13,12 @@ import { publicProcedure, router } from "./trpc";
 import { createPublisher, deletePublisher, getAllPublisher } from "./module/publisher";
 import { createAuthor, deleteAuthor, getAllAuthors, signUpAuthor, getAuthorsByUser, getAuthorBySlug } from "./module/author";
 import { createCustomer, deleteCustomer, updateCustomer, getAllCustomers, getCustomersByUser } from "./module/customer";
-import { createBook, deleteBook, updateBook, getAllBooks, getBookById, getBookByAuthor } from "./module/book";
+import { createBook, deleteBook, updateBook, getAllBooks, getBookById, getBookByAuthor , toggleBookFeatured,getAllFeaturedBooks, getNewArrivalBooks } from "./module/book";
 import { createChapter, updateChapter, deleteChapter, getAllChapters, viewChapterById, getAllChapterByBookId } from "./module/chapter";
 import {  updateTenant, getAllTenant, deleteTenant } from "./module/tenant";
 import { createImageUpload } from "./module/uploads";
 import { createHeroSlide, getAllHeroSlides } from "./module/slider";
-import { getAllBookSlides, createBookSlide } from "./module/bookslider";
-import { getAllFeaturedProducts, addFeaturedProducts } from "./module/featuredproducts";
+import { getAllBanners, createBanner, toggleBannerVisibility } from "./module/banner";
 
 export const appRouter = router({
   createUser,
@@ -57,16 +56,18 @@ export const appRouter = router({
   getBookByAuthor,
   getBookById,
   getAllChapterByBookId,
+  toggleBookFeatured,
+  getAllFeaturedBooks,
+  getNewArrivalBooks,
   updateTenant,
   getAllTenant,
   deleteTenant,
   createImageUpload,
   createHeroSlide,
   getAllHeroSlides,
-  getAllBookSlides,
-  createBookSlide,
-  getAllFeaturedProducts,
-  addFeaturedProducts,
+  getAllBanners,
+  toggleBannerVisibility,
+  createBanner,
   healthCheck: publicProcedure.query(() => {
     return { message: "API up and running..." };
   }),

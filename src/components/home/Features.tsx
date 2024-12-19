@@ -23,14 +23,14 @@ const features = [
   },
 ];
 
-export default function Features () {
+export default function Features() {
   return (
-    <div className="container px-4 py-8">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="max-w-[80%] mx-auto px-4 py-8 md:py-12">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {features.map((feature, index) => (
           <div
             key={index}
-            className="flex items-center gap-4 p-4 bg-white rounded-lg border"
+            className="flex items-center gap-4 p-6 bg-white rounded-lg border shadow-md"
           >
             <feature.icon className="w-8 h-8 text-green-600 flex-shrink-0" />
             <div>

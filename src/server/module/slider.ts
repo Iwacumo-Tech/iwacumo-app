@@ -11,6 +11,8 @@ export const createHeroSlide = publicProcedure
         subtitle: opts.input.subtitle,
         description: opts.input.description,
         image: opts.input.image,
+        buttonText: opts.input.buttonText,
+        buttonRoute: opts.input.buttonRoute,
       },
     });
   });
