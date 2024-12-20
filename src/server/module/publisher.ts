@@ -1,13 +1,27 @@
 import prisma from "@/lib/prisma";
 import { createPublisherSchema, updatePublisherSchema, deletePublisherSchema } from "@/server/dtos";
 import { publicProcedure } from "@/server/trpc";
+import bcrypt from "bcryptjs";
+
 
 export const createPublisher = publicProcedure
-  .input(createPublisherSchema) // Define your input schema in `dtos`
+  .input(createPublisherSchema) 
   .mutation(async (opts) => {
-    const { bio, custom_domain, profile_picture,  tenant_id, user_id, slug } = opts.input;
+    const {
+      username,
+      email,
+      password,
+      phone_number,
+      first_name,
+      last_name,
+      date_of_birth,
+      bio,
+      custom_domain,
+      profile_picture,
+      tenant_id,
+      slug,
+    } = opts.input;
 
-    // Ensure the tenant exists
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenant_id },
     });
@@ -16,15 +30,40 @@ export const createPublisher = publicProcedure
       throw new Error("Tenant not found");
     }
 
-    // Ensure the user exists
-    const user = await prisma.user.findUnique({
-      where: { id: user_id },
+    // Create the user
+    const user = await prisma.user.create({
+      data: {
+        username,
+        email: email ?? "",
+        password: bcrypt.hashSync(password, 10), 
+        phone_number: phone_number ?? "",
+        first_name: first_name ?? "",
+        last_name: last_name ?? "",
+        date_of_birth: date_of_birth ?? new Date(),
+        created_at: new Date(),
+      },
     });
 
-    if (!user) {
-      throw new Error("User not found");
+    // Ensure the "Publisher" role exists
+    const publisherRole = await prisma.role.findUnique({
+      where: { name: "publisher" }, // Assuming the role name is "Publisher"
+    });
+
+    if (!publisherRole) {
+      throw new Error('Default "Publisher" role not found');
     }
 
+    // Assign the "Publisher" role to the user by creating a Claim
+    await prisma.claim.create({
+      data: {
+        user_id: user.id,
+        role_name: publisherRole.name,
+        active: true,
+        type: "ROLE",
+      },
+    });
+
+    // Create the publisher associated with the newly created user
     return await prisma.publisher.create({
       data: {
         bio: bio ?? null,
@@ -33,17 +72,18 @@ export const createPublisher = publicProcedure
         slug: slug ?? "",
         tenant: {
           connect: {
-            id: tenant_id, // Connect the publisher to the existing tenant
+            id: tenant_id,
           },
         },
         user: {
           connect: {
-            id: user_id, // Connect the publisher to the existing user
+            id: user.id,
           },
         },
       },
     });
   });
+
 
 export const updatePublisher = publicProcedure
   .input(updatePublisherSchema) 
