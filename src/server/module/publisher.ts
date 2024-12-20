@@ -5,7 +5,7 @@ import bcrypt from "bcryptjs";
 
 
 export const createPublisher = publicProcedure
-  .input(createPublisherSchema) 
+  .input(createPublisherSchema)
   .mutation(async (opts) => {
     const {
       username,
@@ -22,6 +22,7 @@ export const createPublisher = publicProcedure
       slug,
     } = opts.input;
 
+    // Retrieve tenant to check if it exists and get its slug
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenant_id },
     });
@@ -30,12 +31,14 @@ export const createPublisher = publicProcedure
       throw new Error("Tenant not found");
     }
 
+    const tenantSlug = tenant.slug; // Extract the tenant's slug
+
     // Create the user
     const user = await prisma.user.create({
       data: {
         username,
         email: email ?? "",
-        password: bcrypt.hashSync(password, 10), 
+        password: bcrypt.hashSync(password, 10),
         phone_number: phone_number ?? "",
         first_name: first_name ?? "",
         last_name: last_name ?? "",
@@ -46,22 +49,46 @@ export const createPublisher = publicProcedure
 
     // Ensure the "Publisher" role exists
     const publisherRole = await prisma.role.findUnique({
-      where: { name: "publisher" }, // Assuming the role name is "Publisher"
+      where: { name: "publisher" },
     });
 
     if (!publisherRole) {
       throw new Error('Default "Publisher" role not found');
     }
 
-    // Assign the "Publisher" role to the user by creating a Claim
+    // Assign the "Publisher" role to the user by creating a Claim with tenant_slug
     await prisma.claim.create({
       data: {
         user_id: user.id,
         role_name: publisherRole.name,
         active: true,
         type: "ROLE",
+        tenant_slug: tenantSlug, // Set the tenant_slug field in the claim
       },
     });
+
+    // Retrieve and assign the permissions associated with the "Publisher" role
+    const permissions = await prisma.permissionRole.findMany({
+      where: {
+        role_name: publisherRole.name, // Retrieve permissions associated with the "Publisher" role
+      },
+      include: {
+        permission: true, // Include the permission details
+      },
+    });
+
+    // Assign permissions to the user (by creating claims for each permission with tenant_slug)
+    for (const permissionRole of permissions) {
+      await prisma.claim.create({
+        data: {
+          user_id: user.id,
+          permission_id: permissionRole.permission.id,
+          active: true,
+          type: "PERMISSION",
+          tenant_slug: tenantSlug, // Set the tenant_slug field in the permission claim
+        },
+      });
+    }
 
     // Create the publisher associated with the newly created user
     return await prisma.publisher.create({
