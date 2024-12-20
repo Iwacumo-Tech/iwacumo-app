@@ -37,6 +37,12 @@ export const links = [
     requiredPermission: "super-admin, owner, publisher, author",
   },
   {
+    name: "Tenants",
+    url: "/app/tenants",
+    icon: <LuLayoutDashboard className="size-5 mr-2" />,
+    requiredPermission: "super-admin, owner",
+  },
+  {
     name: "Publishers",
     url: "/app/publishers",
     icon: <LuLayoutDashboard className="size-5 mr-2" />,

@@ -1,27 +1,29 @@
 "use client";
 
-// import { trpc } from "@/app/_providers/trpc-provider";
-// import { columns } from "@/components/publisher/column";
-// import PublisherForm from "@/components/publisher/publisher-form";
-// import { DataTable } from "@/components/table/data-table";
-// import { Publisher } from "@prisma/client";
+import { trpc } from "@/app/_providers/trpc-provider";
+import PublisherForm from "@/components/publisher/publisher-form";
+import { publisherColumns } from "@/components/publisher/columns";
+import { DataTable } from "@/components/table/data-table";
+import { Book } from "@prisma/client";
+import { useSession } from "next-auth/react";
 
-export default function Page () {
-  // const publisherRecord = trpc.getAllPublisher.useQuery();
+export default function Page() {
+  const session = useSession();
+  const { data: publishers } = trpc.getAllPublisher.useQuery();
 
   return (
     <>
-      {/* <div>
-        <h3 className="font-bold text-lg">Publisher</h3>
-        <p className="mb-2">Create, see and manage Publisher</p>
-      </div> */}
-      {/* <DataTable
-        data={publisherRecord?.data ?? []}
-        columns={columns}
+      <div>
+        <h3 className="font-bold text-lg">Publishers</h3>
+        <p className="mb-2">Create, see and manage Publishers</p>
+      </div>
+      <DataTable
+        data={publishers ?? []}
+        columns={publisherColumns}
         filterInputPlaceholder={""}
         filterColumnId={""}
-        action={<"" publisher={{} as Publisher} action="Add" />}
-      /> */}
+        action={<PublisherForm action="Add" />}
+      />
     </>
   );
 }
