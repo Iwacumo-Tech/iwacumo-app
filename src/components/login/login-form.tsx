@@ -158,7 +158,7 @@ export default function LoginForm() {
           </form>
         </Form>
         <div className="text-center space-y-2  py-8">
-          <p className="text-gray-500">Don't have an account?</p>
+          <p className="text-gray-500">Don&apos;t have an account?</p>
           <SignUpOption />
         </div>
       </CardContent>
