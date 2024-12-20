@@ -13,6 +13,7 @@ import DeletePublisherModal from "./delete-publisher";
 import PublisherForm from "./publisher-form";
 import { ColumnDef } from "@tanstack/react-table";
 import { DataTableColumnHeader } from "@/components/table/data-table-column-header";
+import { EditPublisherForm } from "@/components/publisher/edit-publisher";
 
 interface PublisherActionProps {
   publisher: Publisher;
@@ -35,7 +36,7 @@ function PublisherAction({ publisher }: PublisherActionProps) {
         <DropdownMenuLabel>Publisher Actions</DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
-          <PublisherForm action="Edit" publisher={publisher} />
+          <EditPublisherForm action="Edit" publisher={publisher} />
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>

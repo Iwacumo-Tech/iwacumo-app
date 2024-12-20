@@ -31,20 +31,32 @@ export const assignRoleSchema = z.object({
   role_name: z.string(),
 });
 
+
 export const createPublisherSchema = z.object({
+  // User-related fields
+  username: z.string(),
+  email: z.string().email().optional(),
+  password: z.string().min(6, "password must be atleast 6 characters"), // Minimum password length for security
+  phone_number: z.string().optional(),
+  first_name: z.string().optional(),
+  last_name: z.string().optional(),
+  date_of_birth: z.date().optional(),
+
+  // Publisher-related fields
   bio: z.string().optional(),
   custom_domain: z.string().optional(),
   profile_picture: z.string().optional(),
-  tenant_id: z.string(),
-  user_id: z.string(),
-  slug: z.string()
+  tenant_id: z.string(), // Tenant to which the publisher belongs
+  slug: z.string(), // Slug for the publisher
 });
+
 
 export const updatePublisherSchema = z.object({
   id: z.string(),
   bio: z.string().nullable().optional(),
   custom_domain: z.string().optional(),
   profile_picture: z.string().optional(),
+  tenant_id: z.string(),
   slug: z.string().nullable().optional(),
 });
 
@@ -200,6 +212,9 @@ export const deleteAuthorSchema = z.object({ id: z.string() });
 export type  TCreateAuthorSchema = z.infer<typeof createAuthorSchema>;
 
 export type TCreatePublisherSchema = z.infer<typeof createPublisherSchema>;
+
+export type TupdatePublisherSchema = z.infer<typeof updatePublisherSchema>;
+
 
 export type TSignUpAuthorSchema = z.infer<typeof signUpAuthorSchema>;
 

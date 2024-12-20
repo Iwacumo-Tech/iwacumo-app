@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { createPublisherSchema, TCreatePublisherSchema } from "@/server/dtos";
+import { updatePublisherSchema, TupdatePublisherSchema } from "@/server/dtos";
 import {
   Dialog,
   DialogContent,
@@ -41,10 +41,10 @@ import { useState, useRef, useEffect } from "react";
 
 interface PublisherFormProps {
   publisher?: Publisher;
-  action: "Add" | "Edit";
+  action: "Edit";
 }
 
-const PublisherForm = ({ publisher, action }: PublisherFormProps) => {
+export const EditPublisherForm = ({ publisher, action }: PublisherFormProps) => {
   const { toast } = useToast();
   const utils = trpc.useUtils();
   const [open, setOpen] = useState(false);
@@ -70,47 +70,21 @@ const PublisherForm = ({ publisher, action }: PublisherFormProps) => {
     return result.url;
   };
 
-  const form = useForm<TCreatePublisherSchema>({
-    resolver: zodResolver(createPublisherSchema),
+  const form = useForm<TupdatePublisherSchema>({
+    resolver: zodResolver(updatePublisherSchema),
     defaultValues: {
+      id: publisher?.id,
       custom_domain: publisher?.custom_domain ?? "",
       bio: publisher?.bio ?? "",
       profile_picture: publisher?.profile_picture ?? "",
       slug: publisher?.slug ?? "",
       tenant_id: publisher?.tenant_id ?? "",
-      email: "", // Required for user creation
-      password: "", // Required for user creation
-      first_name: "", // Required for user creation
-      last_name: "",
-      phone_number: "",
-      date_of_birth: undefined,
     },
   });
 
   useEffect(() => {
     console.log("Form State Updated:", form.formState);
   }, [form.formState]);
-
-  const addPublisher = trpc.createPublisher.useMutation({
-    onSuccess: async () => {
-      toast({
-        title: "Success",
-        variant: "default",
-        description: "Successfully added a new publisher",
-      });
-
-      utils.getAllPublisher.invalidate();
-    },
-    onError: (error) => {
-      console.error(error);
-
-      toast({
-        title: "Error",
-        variant: "destructive",
-        description: "Error adding the publisher",
-      });
-    },
-  });
 
   const updatePublisher = trpc.updatePublisher.useMutation({
     onSuccess: async () => {
@@ -135,10 +109,8 @@ const PublisherForm = ({ publisher, action }: PublisherFormProps) => {
     },
   });
 
-  const onSubmit = async (values: TCreatePublisherSchema) => {
+  const onSubmit = async (values: TupdatePublisherSchema) => {
     console.log("Form Values:", values);
-    console.log("Form State on Submit:", form.formState);
-    console.log("Hello world");
     let imageUrl = values.profile_picture; // Default to the existing value (if any)
     if (fileInputRef.current?.files && fileInputRef.current.files[0]) {
       const file = fileInputRef.current.files[0];
@@ -161,33 +133,25 @@ const PublisherForm = ({ publisher, action }: PublisherFormProps) => {
         id: publisher.id,
         profile_picture: imageUrl,
       });
-    } else {
-      addPublisher.mutate({
-        ...values,
-        profile_picture: imageUrl,
-        date_of_birth: values.date_of_birth
-          ? new Date(values.date_of_birth)
-          : undefined,
-      });
     }
   };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="sm" className={`${action === "Edit" ? "w-full" : ""}`}>
-          {action} Publisher
+        <Button size="sm" className="w-full">
+          Edit Publisher
         </Button>
       </DialogTrigger>
       <DialogContent className="max-h-[80vh] overflow-y-auto space-y-3">
         <DialogHeader>
-          <DialogTitle>{action} Publisher</DialogTitle>
+          <DialogTitle>Edit Publisher</DialogTitle>
         </DialogHeader>
         <Card>
           <CardHeader>
             <CardTitle>Publisher Details</CardTitle>
             <CardDescription>
-              Make changes to the publisher information here.
+              Update the publisher information here.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -226,121 +190,7 @@ const PublisherForm = ({ publisher, action }: PublisherFormProps) => {
                         </FormItem>
                       )}
                     />
-                    {/* User creation fields */}
-                    <FormField
-                      control={form.control}
-                      name="email"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Email</FormLabel>
-                          <FormControl>
-                            <Input {...field} placeholder="Enter email" />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="password"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Password</FormLabel>
-                          <FormControl>
-                            <Input
-                              {...field}
-                              placeholder="Enter password"
-                              type="password"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="first_name"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>First Name</FormLabel>
-                          <FormControl>
-                            <Input {...field} placeholder="Enter first name" />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="last_name"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Last Name</FormLabel>
-                          <FormControl>
-                            <Input {...field} placeholder="Enter last name" />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="username"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Username</FormLabel>
-                          <FormControl>
-                            <Input {...field} placeholder="Enter username" />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="phone_number"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Phone Number</FormLabel>
-                          <FormControl>
-                            <Input
-                              {...field}
-                              placeholder="Enter phone number"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="date_of_birth"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Date of Birth</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="date"
-                              {...field}
-                              value={
-                                field.value
-                                  ? field.value.toISOString().split("T")[0]
-                                  : ""
-                              } // Format Date to YYYY-MM-DD
-                              onChange={(e) =>
-                                field.onChange(
-                                  e.target.value
-                                    ? new Date(e.target.value)
-                                    : undefined
-                                )
-                              } // Convert string to Date
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    {/* Existing fields */}
+                    {/* Publisher-specific fields */}
                     <FormField
                       control={form.control}
                       name="custom_domain"
@@ -369,6 +219,7 @@ const PublisherForm = ({ publisher, action }: PublisherFormProps) => {
                               placeholder="Enter publisher bio"
                               {...field}
                               className="border-gray-300 rounded-md"
+                              value={field.value ?? ""}
                             />
                           </FormControl>
                           <FormMessage />
@@ -386,6 +237,7 @@ const PublisherForm = ({ publisher, action }: PublisherFormProps) => {
                               placeholder="Enter publisher slug"
                               {...field}
                               className="border-gray-300 rounded-md"
+                              value={field.value ?? ""}
                             />
                           </FormControl>
                           <FormMessage />
@@ -415,7 +267,7 @@ const PublisherForm = ({ publisher, action }: PublisherFormProps) => {
                       type="submit"
                       data-cy="publisher-submit"
                     >
-                      {action === "Add" ? "Proceed" : "Save Changes"}
+                      Save Changes
                     </Button>
                   </div>
                 </fieldset>
@@ -428,4 +280,4 @@ const PublisherForm = ({ publisher, action }: PublisherFormProps) => {
   );
 };
 
-export default PublisherForm;
+export default EditPublisherForm;
