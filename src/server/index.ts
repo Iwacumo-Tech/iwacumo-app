@@ -10,12 +10,12 @@ import {
   updateUserProfile
 } from "./module/user";
 import { publicProcedure, router } from "./trpc";
-import { createPublisher, deletePublisher, getAllPublisher } from "./module/publisher";
+import { createPublisher, deletePublisher, getAllPublisher, updatePublisher  } from "./module/publisher";
 import { createAuthor, deleteAuthor, getAllAuthors, signUpAuthor, getAuthorsByUser, getAuthorBySlug } from "./module/author";
 import { createCustomer, deleteCustomer, updateCustomer, getAllCustomers, getCustomersByUser } from "./module/customer";
 import { createBook, deleteBook, updateBook, getAllBooks, getBookById, getBookByAuthor , toggleBookFeatured,getAllFeaturedBooks, getNewArrivalBooks } from "./module/book";
 import { createChapter, updateChapter, deleteChapter, getAllChapters, viewChapterById, getAllChapterByBookId } from "./module/chapter";
-import {  updateTenant, getAllTenant, deleteTenant } from "./module/tenant";
+import {  updateTenant, getAllTenant, deleteTenant, createTenant } from "./module/tenant";
 import { createImageUpload } from "./module/uploads";
 import { createHeroSlide, getAllHeroSlides } from "./module/slider";
 import { getAllBanners, createBanner, toggleBannerVisibility } from "./module/banner";
@@ -33,6 +33,7 @@ export const appRouter = router({
   createPublisher,
   deletePublisher,
   getAllPublisher,
+  updatePublisher,
   createAuthor,
   deleteAuthor,
   signUpAuthor,
@@ -62,6 +63,7 @@ export const appRouter = router({
   updateTenant,
   getAllTenant,
   deleteTenant,
+  createTenant,
   createImageUpload,
   createHeroSlide,
   getAllHeroSlides,

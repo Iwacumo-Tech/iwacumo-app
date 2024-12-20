@@ -17,9 +17,11 @@ import { useToast } from "@/components/ui/use-toast";
 import { useRouter, useSearchParams } from "next/navigation";
 import { z } from "zod";
 import { checkPermission } from "@/lib/server";
+import Link from "next/link";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import SignUpOption from "./signup-option";
 
-export default function LoginForm () {
+export default function LoginForm() {
   const router = useRouter();
   const { toast } = useToast();
   const searchParams = useSearchParams();
@@ -35,7 +37,7 @@ export default function LoginForm () {
     },
   });
 
-  async function onSubmit (values: LoginFormInput) {
+  async function onSubmit(values: LoginFormInput) {
     try {
       const res = await signIn("credentials", { ...values, redirect: false });
 
@@ -45,7 +47,6 @@ export default function LoginForm () {
           title: "Login failed",
           description: "Check your login credentials.",
         });
-
         return;
       }
 
@@ -54,10 +55,9 @@ export default function LoginForm () {
       if (!session) {
         toast({
           variant: "destructive",
-          title: "Login failed.", // TODO: Translate text
+          title: "Login failed.",
           description: "Session not created.",
         });
-
         return;
       }
 
@@ -65,9 +65,8 @@ export default function LoginForm () {
 
       slug =
         slug ||
-        session?.permissions.find(
-          ({ resource_id }) => !!resource_id
-        )?.resource_id ||
+        session?.permissions.find(({ resource_id }) => !!resource_id)
+          ?.resource_id ||
         null;
 
       if (!checkPermission(slug, session.permissions)) {
@@ -76,7 +75,6 @@ export default function LoginForm () {
           title: "Authorization failed.",
           description: "You are not in any organization",
         });
-
         return;
       }
 
@@ -89,54 +87,81 @@ export default function LoginForm () {
       }
     } catch (error) {
       console.warn(error);
-
       toast({
         variant: "destructive",
         title: "Login failed",
         description: "Something went wrong.",
       });
-
       return;
     }
   }
 
   return (
-    <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)}>
-        <fieldset disabled={form.formState.isSubmitting}>
-          <FormField
-            name="username"
-            control={form.control}
-            render={({ field }) => (
-              <FormItem className="mb-3">
-                <FormControl>
-                  <Input placeholder="Email or Username" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            name="password"
-            control={form.control}
-            render={({ field }) => (
-              <FormItem className="mb-3">
-                <FormControl>
-                  <Input placeholder="Password" type="password" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <Button type="submit">Login</Button>
-        </fieldset>
-        <div>
-          <p>
-            Dont have an Account?
-            <SignUpOption />
-          </p>
+    <Card className="w-full max-w-md mx-auto overflow-hidden">
+      <CardHeader className="bg-[#82d236] p-6">
+        <h2 className="text-xl font-semibold text-white text-center">
+          Sign In
+        </h2>
+      </CardHeader>
+      <CardContent className="px-6 py-10 space-y-6">
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <fieldset disabled={form.formState.isSubmitting}>
+              <FormField
+                name="username"
+                control={form.control}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormControl>
+                      <Input
+                        placeholder="Email or Username"
+                        {...field}
+                        className="bg-gray-100 border-0 rounded-full px-4"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                name="password"
+                control={form.control}
+                render={({ field }) => (
+                  <FormItem className="mt-3">
+                    <FormControl>
+                      <Input
+                        placeholder="Password"
+                        type="password"
+                        {...field}
+                        className="bg-gray-100 border-0 rounded-full px-4"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <div className="text-right mt-2">
+                <Link
+                  href="/forgot-password"
+                  className="text-sm text-gray-500 hover:text-[#82d236]"
+                >
+                  Forgot Username / Password?
+                </Link>
+              </div>
+              <Button
+                type="submit"
+                className="w-full mt-4 bg-[#82d236] hover:bg-[#72bc2d] text-white rounded-full"
+              >
+                SIGN IN
+              </Button>
+            </fieldset>
+          </form>
+        </Form>
+        <div className="text-center space-y-2  py-8">
+          <p className="text-gray-500">Don't have an account?</p>
+          <SignUpOption />
         </div>
-      </form>
-    </Form>
+      </CardContent>
+    </Card>
   );
 }

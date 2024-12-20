@@ -9,6 +9,7 @@ export const updateTenant = publicProcedure.input(createTenantSchema).mutation(a
       name: opts.input.name ?? "",
       contact_email: opts.input.contact_email ??  "",
       slug: opts.input.slug ?? "",
+      custom_domain: opts.input.custom_domain?? null,
     }
   });
 });
@@ -21,5 +22,24 @@ export const deleteTenant = publicProcedure.input(deleteTenantSchema).mutation(a
 });
 
 export const getAllTenant = publicProcedure.query(async ()=> {
-  return await prisma.tenant.findMany();
+  return await prisma.tenant.findMany({  where: { 
+      deleted_at: null, 
+    }, include: { publishers: true, users: true}});
 });
+
+
+
+
+export const createTenant = publicProcedure
+  .input(createTenantSchema) 
+  .mutation(async (opts) => {
+    const { name, contact_email, custom_domain, slug } = opts.input;
+    return await prisma.tenant.create({
+      data: {
+        name: name ?? "", 
+        contact_email: contact_email ?? "", 
+        custom_domain: custom_domain ?? null, 
+        slug: slug ?? "", 
+      },
+    });
+  });

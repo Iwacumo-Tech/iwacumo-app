@@ -32,21 +32,22 @@ export const assignRoleSchema = z.object({
 });
 
 export const createPublisherSchema = z.object({
-  id: z.string().optional(),
-  name: z.string().optional(),
-  email: z.string().optional(),
-  password: z.string().optional(),
-  username: z.string ().optional(),
-  first_name: z.string().optional(),
-  last_name: z.string().optional(),
-  phone_number: z.string().optional(),
-  date_of_birth: z.date().optional(),
-  org_name: z.string().optional(),
-  org_slug: z.string().optional(),
-  slug: z.string().optional(),
-  contact_email: z.string().optional(),
-
+  bio: z.string().optional(),
+  custom_domain: z.string().optional(),
+  profile_picture: z.string().optional(),
+  tenant_id: z.string(),
+  user_id: z.string(),
+  slug: z.string()
 });
+
+export const updatePublisherSchema = z.object({
+  id: z.string(),
+  bio: z.string().nullable().optional(),
+  custom_domain: z.string().optional(),
+  profile_picture: z.string().optional(),
+  slug: z.string().nullable().optional(),
+});
+
 
 export const createAuthorSchema = z .object({
   id: z.string().optional(),
@@ -104,7 +105,7 @@ export const createTenantSchema = z.object({
   name: z.string().optional(),
   slug: z.string().optional(),
   contact_email: z.string().optional(),
-
+  custom_domain: z.string().optional(),
 });
 
 export const createChapterSchema = z.object({
@@ -145,7 +146,7 @@ export type TFindChapterByIdSchema = z.infer<typeof findChapterByIdSchema>;
 
 export type TCreateChapterSchema = z.infer<typeof createChapterSchema>;
 
-export type TCreateTenentSchema =  z.infer<typeof createTenantSchema>;
+export type TCreateTenantSchema =  z.infer<typeof createTenantSchema>;
 
 export const createCustomerSchema = z.object({
   id: z.string().optional(),
