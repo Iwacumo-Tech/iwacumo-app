@@ -78,7 +78,7 @@ export const bookColumns: ColumnDef<Book>[] = [
     cell: ({ row }) => {
       const priceValue = row.getValue<number>("price");
 
-      return <div>${priceValue.toFixed(2)}</div>;
+      return <div> ₦{priceValue.toFixed(2)}</div>;
     },
   },
   {

@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { trpc } from "@/app/_providers/trpc-provider";
+import Link from "next/link";
 
 export default function ProductTabs() {
   const featuredBooks = trpc.getAllFeaturedBooks.useQuery();
@@ -108,29 +109,31 @@ function ProductCard({ book }: { book: any }) {
   return (
     <Card className="border-none shadow-none">
       <CardContent className="p-0 space-y-3">
-        <div className="relative aspect-[3/4] bg-gray-100">
-          <Image
-            src={book.book_cover || "/placeholder.svg"}
-            alt={book.title || "No title available"}
-            fill
-            className="object-cover"
-          />
-        </div>
-        <div className="space-y-1">
-          <p className="text-sm text-muted-foreground">
-            {book?.author?.name || "Unknown Author"}
-          </p>
-          <h3 className="font-medium text-sm leading-tight">
-            {book.title || "No title available"}
-          </h3>
-          <div className="flex items-center gap-2">
-            <span className="text-base font-bold">
-              {book?.price
-                ? `$${book.price.toFixed(2)}`
-                : "Price not available"}
-            </span>
+        <Link href={`/shop/${book.id}`} className="block relative">
+          <div className="relative aspect-[3/4] bg-gray-100">
+            <Image
+              src={book.book_cover || "/bookcover.png"}
+              alt={book.title}
+              fill
+              className="object-cover"
+            />
           </div>
-        </div>
+          <div className="space-y-1">
+            <p className="text-sm text-muted-foreground">
+              {book?.author?.name || "Unknown Author"}
+            </p>
+            <h3 className="font-medium text-sm leading-tight">
+              {book.title || "No title available"}
+            </h3>
+            <div className="flex items-center gap-2">
+              <span className="text-base font-bold">
+                {book?.price
+                  ? ` ₦${book.price.toFixed(2)}`
+                  : "Price not available"}
+              </span>
+            </div>
+          </div>
+        </Link>
       </CardContent>
     </Card>
   );

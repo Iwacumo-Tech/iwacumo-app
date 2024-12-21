@@ -47,6 +47,7 @@ export const createAuthor = publicProcedure.input(createAuthorSchema).mutation(a
     data: {
       user_id: user.id,
       publisher_id: creator?.publisher?.id,
+      name: user.first_name,
 
     },
   });
