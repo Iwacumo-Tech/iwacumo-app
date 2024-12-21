@@ -1,22 +1,33 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
-  outputFileTracingRoot: process.env.NODE_ENV === "production" ? "/home/purpose/Desktop/booka" : undefined,
+  outputFileTracingRoot:
+    process.env.NODE_ENV === "production"
+      ? "/home/purpose/Desktop/booka"
+      : undefined,
   images: {
-    domains: ["walrus-assets.s3.amazonaws.com", "res.cloudinary.com", "ucarecdn.com"],
+    domains: [
+      "walrus-assets.s3.amazonaws.com",
+      "res.cloudinary.com",
+      "ucarecdn.com",
+    ],
     remotePatterns: [
       {
         protocol: "https",
-        hostname: "cloudinary.com"
+        hostname: "cloudinary.com",
       },
       {
         protocol: "https",
-        hostname: "res.cloudinary.com"
+        hostname: "res.cloudinary.com",
+      },
+      {
+        protocol: "http",
+        hostname: "res.cloudinary.com",
       },
       {
         protocol: "https",
-        hostname: "ucarecdn.com"
-      }
+        hostname: "ucarecdn.com",
+      },
     ],
   },
 };

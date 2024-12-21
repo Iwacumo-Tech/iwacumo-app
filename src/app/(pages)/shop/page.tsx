@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/app/_providers/trpc-provider";
 import { Book } from "@prisma/client";
+import Link from "next/link";
 
 type ViewMode = "grid" | "grid3x3" | "list";
 
@@ -91,36 +92,38 @@ export default function BookGrid() {
               key={book.id}
               className={cn(viewMode === "list" && "flex flex-row")}
             >
-              <div
-                className={cn(
-                  viewMode === "list" ? "w-1/3" : "w-full",
-                  "relative aspect-[4/5]"
-                )}
-              >
-                <Image
-                  src={book.book_cover!}
-                  alt={book.title}
-                  fill
-                  className="object-cover rounded-t-lg"
-                />
-              </div>
-              <div className={cn(viewMode === "list" && "w-2/3")}>
-                <CardHeader className="p-3 pb-0">
-                  <p className="text-sm text-muted-foreground">
-                    {book.author?.name || "unknown Author"}
-                  </p>
-                  <h3 className="font-semibold leading-none tracking-tight text-sm">
-                    {book.title}
-                  </h3>
-                </CardHeader>
-                <CardContent className="p-3 pt-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-base font-bold">
-                      ${book.price.toFixed(2)}
-                    </span>
-                  </div>
-                </CardContent>
-              </div>
+              <Link href={`/shop/${book.id}`} className="block relative">
+                <div
+                  className={cn(
+                    viewMode === "list" ? "w-1/3" : "w-full",
+                    "relative aspect-[4/5]"
+                  )}
+                >
+                  <Image
+                    src={book.book_cover! || "/bookcover.png"}
+                    alt={book.title}
+                    fill
+                    className="object-cover rounded-t-lg"
+                  />
+                </div>
+                <div className={cn(viewMode === "list" && "w-2/3")}>
+                  <CardHeader className="p-3 pb-0">
+                    <p className="text-sm text-muted-foreground">
+                      {book.author?.name || "unknown Author"}
+                    </p>
+                    <h3 className="font-semibold leading-none tracking-tight text-sm">
+                      {book.title}
+                    </h3>
+                  </CardHeader>
+                  <CardContent className="p-3 pt-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base font-bold">
+                        ₦{book.price.toFixed(2)}
+                      </span>
+                    </div>
+                  </CardContent>
+                </div>
+              </Link>
             </Card>
           ))}
         </div>

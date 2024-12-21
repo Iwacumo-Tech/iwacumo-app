@@ -123,7 +123,7 @@ export default function Hero() {
                         </h3>
                         <div className="mt-2 flex items-center gap-2">
                           <span className="text-green-600 font-bold">
-                            ${book.price}
+                            ₦{book.price}
                           </span>
                         </div>
                       </div>

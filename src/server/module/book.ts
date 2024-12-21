@@ -3,19 +3,59 @@ import prisma from "@/lib/prisma";
 import { createBookSchema, deleteBookSchema, findBookByIdSchema, toggleFeaturedSchema } from "@/server/dtos";
 import { publicProcedure } from "@/server/trpc";
 
+// export const createBook = publicProcedure.input(createBookSchema).mutation(async (opts) => {
+//   const session = await auth();
+
+//   if(!session) {
+//     console.error("User session not found");
+
+//     return;
+//   }
+
+//   const creator = await prisma.user.findUnique({
+//     where: { id: session.user.id },
+//     include: { publisher: true }
+//   });
+
+//   return await prisma.book.create({
+//     data: {
+//       title: opts.input.title ?? "",
+//       description: opts.input.description ?? "",
+//       price: opts.input.price ?? 0,
+//       published: opts.input.published ?? false,
+//       pdf_url: opts.input.pdf_url ?? "",
+//       text_url: opts.input.text_url ?? "",
+//       book_cover: opts.input.book_cover ,
+//       publisher_id: creator?.publisher?.id
+//     },
+//   });
+// });
+
 export const createBook = publicProcedure.input(createBookSchema).mutation(async (opts) => {
   const session = await auth();
 
-  if(!session) {
+  if (!session) {
     console.error("User session not found");
-
     return;
   }
 
   const creator = await prisma.user.findUnique({
     where: { id: session.user.id },
-    include: { publisher: true }
+    include: { publisher: true },
   });
+
+  if (!creator) {
+    throw new Error("Creator not found");
+  }
+
+  // Validate if the author exists
+  const authorExists = await prisma.author.findUnique({
+    where: { id: opts.input.author_id },
+  });
+
+  if (!authorExists) {
+    throw new Error("Author not found");
+  }
 
   return await prisma.book.create({
     data: {
@@ -25,9 +65,17 @@ export const createBook = publicProcedure.input(createBookSchema).mutation(async
       published: opts.input.published ?? false,
       pdf_url: opts.input.pdf_url ?? "",
       text_url: opts.input.text_url ?? "",
-      author_id: opts.input.author_id,
+      author: {
+        connect: {
+          id: opts.input.author_id,
+        },
+      },
       book_cover: opts.input.book_cover,
-      publisher_id: creator?.publisher?.id
+      // publisher : {
+      //   connect : {
+      //     id: opts.input.publisher_id,
+      //   }
+      // },
     },
   });
 });
@@ -56,7 +104,7 @@ export const deleteBook = publicProcedure.input(deleteBookSchema).mutation(async
 });
 
 export const getAllBooks = publicProcedure.query(async () => {
-  return await prisma.book.findMany({ where: { deleted_at: null }, include: { chapters: true, author: true } });
+  return await prisma.book.findMany({ where: { deleted_at: null }, include: { chapters: true, author: true} });
 });
 
 export const getBookById = publicProcedure.input(findBookByIdSchema).query(async (opts) => {
