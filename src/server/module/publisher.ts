@@ -1,5 +1,5 @@
 import prisma from "@/lib/prisma";
-import { createPublisherSchema, updatePublisherSchema, deletePublisherSchema } from "@/server/dtos";
+import { createPublisherSchema, updatePublisherSchema, deletePublisherSchema, getPublisherByOrgSchema } from "@/server/dtos";
 import { publicProcedure } from "@/server/trpc";
 import bcrypt from "bcryptjs";
 
@@ -145,6 +145,18 @@ export const getAllPublisher = publicProcedure.query(async () => {
   return await prisma.publisher.findMany({
     where: { deleted_at: null },
     include: { tenant: true, user: true },
+  });
+});
+
+export const getPublisherByOrganization = publicProcedure.input(getPublisherByOrgSchema).query(async (opts) => {
+  return await prisma.publisher.findMany({
+    where: {
+      tenant : {
+        name: opts.input.name,
+      },
+      deleted_at: null,
+    },
+      include: { tenant: true, user: true },
   });
 });
 

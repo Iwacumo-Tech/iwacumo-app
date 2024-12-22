@@ -60,6 +60,10 @@ export const updatePublisherSchema = z.object({
   slug: z.string().nullable().optional(),
 });
 
+export const getPublisherByOrgSchema = z.object({
+  name: z.string(),
+})
+
 
 export const createAuthorSchema = z .object({
   id: z.string().optional(),
