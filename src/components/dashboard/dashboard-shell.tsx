@@ -28,7 +28,7 @@ export default function DashboardShell({
 }) {
   const session = useSession();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const user = trpc.getUserById.useQuery({ id: session.data?.user.id! });
+  const user = trpc.getUserById.useQuery({ id: session.data?.user.id as string });
 
   const filteredLinks = links.filter((link) => {
     // Only allow "Home", "Authors", "Customers", and "Profile" if the tenant is not "Booka"

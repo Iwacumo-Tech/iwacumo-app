@@ -11,11 +11,11 @@ export default function Page() {
   const session = useSession();
   const { data: publishers } = trpc.getAllPublisher.useQuery();
   const { data: user } = trpc.getUserById.useQuery({
-    id: session.data?.user.id!,
+    id: session.data?.user.id as string,
   });
   const { data: NonBookaPublishers } = trpc.getPublisherByOrganization.useQuery(
     {
-      name: user?.publisher?.tenant?.name!,
+      name: user?.publisher?.tenant?.name as string,
     }
   );
 
