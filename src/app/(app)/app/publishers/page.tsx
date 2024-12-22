@@ -10,6 +10,20 @@ import { useSession } from "next-auth/react";
 export default function Page() {
   const session = useSession();
   const { data: publishers } = trpc.getAllPublisher.useQuery();
+  const { data: user } = trpc.getUserById.useQuery({
+    id: session.data?.user.id!,
+  });
+  const { data: NonBookaPublishers } = trpc.getPublisherByOrganization.useQuery(
+    {
+      name: user?.publisher?.tenant?.name!,
+    }
+  );
+
+  const filteredPublishers = user?.claims.some(
+    (claim) => claim.tenant_slug !== "booka"
+  )
+    ? NonBookaPublishers
+    : publishers;
 
   return (
     <>
@@ -18,7 +32,7 @@ export default function Page() {
         <p className="mb-2">Create, see and manage Publishers</p>
       </div>
       <DataTable
-        data={publishers ?? []}
+        data={filteredPublishers ?? []}
         columns={publisherColumns}
         filterInputPlaceholder={""}
         filterColumnId={""}

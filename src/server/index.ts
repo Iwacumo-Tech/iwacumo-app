@@ -10,7 +10,7 @@ import {
   updateUserProfile
 } from "./module/user";
 import { publicProcedure, router } from "./trpc";
-import { createPublisher, deletePublisher, getAllPublisher, updatePublisher  } from "./module/publisher";
+import { createPublisher, deletePublisher, getAllPublisher, updatePublisher, getPublisherByOrganization   } from "./module/publisher";
 import { createAuthor, deleteAuthor, getAllAuthors, signUpAuthor, getAuthorsByUser, getAuthorBySlug } from "./module/author";
 import { createCustomer, deleteCustomer, updateCustomer, getAllCustomers, getCustomersByUser } from "./module/customer";
 import { createBook, deleteBook, updateBook, getAllBooks, getBookById, getBookByAuthor , toggleBookFeatured,getAllFeaturedBooks, getNewArrivalBooks } from "./module/book";
@@ -34,6 +34,7 @@ export const appRouter = router({
   deletePublisher,
   getAllPublisher,
   updatePublisher,
+  getPublisherByOrganization,
   createAuthor,
   deleteAuthor,
   signUpAuthor,

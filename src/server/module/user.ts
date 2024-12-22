@@ -134,7 +134,7 @@ export const getUserById = publicProcedure.input(deleteUserSchema).query(async (
       id: opts.input.id,
       deleted_at: null,
     },
-    include: { author: true, publisher: true, claims: true, customer: true }
+    include: { author: true, publisher: { include: { tenant: true } }, claims: true, customer: true }
   });
 });
 

@@ -4,6 +4,7 @@ import React, { BaseSyntheticEvent, ReactNode, useState } from "react";
 import { FaChevronRight } from "react-icons/fa";
 import { signOut, useSession } from "next-auth/react";
 import { Sidebar, SidebarMobile } from ".";
+import { trpc } from "@/app/_providers/trpc-provider";
 
 export interface Link {
   name: string;
@@ -12,7 +13,13 @@ export interface Link {
   requiredPermission: string;
 }
 
-export default function DashboardShell ({ title, children, hideLogout, logoutRedirectTo = "/", links = [] }: {
+export default function DashboardShell({
+  title,
+  children,
+  hideLogout,
+  logoutRedirectTo = "/",
+  links = [],
+}: {
   title?: string;
   links?: Link[];
   children: React.ReactNode;
@@ -21,12 +28,20 @@ export default function DashboardShell ({ title, children, hideLogout, logoutRed
 }) {
   const session = useSession();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const user = trpc.getUserById.useQuery({ id: session.data?.user.id! });
 
-  const filteredLinks = links.filter(link => {
+  const filteredLinks = links.filter((link) => {
+    // Only allow "Home", "Authors", "Customers", and "Profile" if the tenant is not "Booka"
+    if (user.data?.claims.some((claim) => claim.tenant_slug !== "booka")) {
+      const allowedLinks = ["Home", "Authors", "Customers", "Profile"];
+      return allowedLinks.includes(link.name);
+    }
+
     const requiredPermissions = link.requiredPermission.split(",");
-
-    return requiredPermissions.some(required =>
-      session.data?.permissions.some(permission => permission.name === required.trim())
+    return requiredPermissions.some((required) =>
+      session.data?.permissions.some(
+        (permission) => permission.name === required.trim()
+      )
     );
   });
 
@@ -40,17 +55,21 @@ export default function DashboardShell ({ title, children, hideLogout, logoutRed
       <SidebarMobile
         title={title}
         logout={logout}
-        links={links}
+        links={filteredLinks}
         sidebarOpen={sidebarOpen}
         setSidebarOpen={setSidebarOpen}
       />
-      <a href="#" onClick={(e) => {
-        e.preventDefault();
-        setSidebarOpen(!sidebarOpen);
-      }} className="no-underline border border-gray-800 border-solid rounded-tr-xl rounded-br-xl grid items-center absolute bg-white py-1.5 pr-1 -left-0.5 bottom-24 shadow-lg lg:hidden">
+      <a
+        href="#"
+        onClick={(e) => {
+          e.preventDefault();
+          setSidebarOpen(!sidebarOpen);
+        }}
+        className="no-underline border border-gray-800 border-solid rounded-tr-xl rounded-br-xl grid items-center absolute bg-white py-1.5 pr-1 -left-0.5 bottom-24 shadow-lg lg:hidden"
+      >
         <FaChevronRight className="size-3" />
       </a>
-      <div className= "hidden lg:pb-5 lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:w-72 lg:flex-col border-r border-border justify-between">
+      <div className="hidden lg:pb-5 lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:w-72 lg:flex-col border-r border-border justify-between">
         <Sidebar
           title={title}
           links={filteredLinks}
@@ -59,9 +78,7 @@ export default function DashboardShell ({ title, children, hideLogout, logoutRed
         />
       </div>
       <div className="lg:pl-72 overflow-x-hidden">
-        <main className="mx-3 my-6 lg:mx-7">
-          {children}
-        </main>
+        <main className="mx-3 my-6 lg:mx-7">{children}</main>
       </div>
     </div>
   );

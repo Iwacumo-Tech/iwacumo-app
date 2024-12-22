@@ -62,6 +62,7 @@ export default function LoginForm() {
       }
 
       console.log("Session Permissions:", session.permissions);
+      console.log(session);
 
       slug =
         slug ||
