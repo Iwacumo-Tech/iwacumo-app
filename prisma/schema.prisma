@@ -31,6 +31,7 @@ model User {
   author        Author?
   customer      Customer?
   tenantMember  Tenant[]   @relation("TenantUsers")
+  Review        Review[]
 
   @@map("users")
 }
@@ -164,27 +165,53 @@ model Customer {
 }
 
 model Book {
-  id           String     @id @default(uuid())
-  title        String
-  description  String
-  price        Float
-  book_cover   String?
-  slug         String?    @unique
-  published    Boolean    @default(false)
-  pdf_url      String?
-  text_url     String?
-  publisher_id String?
-  featured     Boolean    @default(false)
-  chapters     Chapter[]
-  publisher    Publisher? @relation(fields: [publisher_id], references: [id])
-  author_id    String?
-  author       Author?    @relation(fields: [author_id], references: [id])
-  purchased_by Customer[] @relation("PurchasedBooks")
-  created_at   DateTime   @default(now())
-  updated_at   DateTime   @updatedAt
-  deleted_at   DateTime?
+  id                String     @id @default(uuid())
+  title             String
+  short_description String?
+  long_description  String?
+  price             Float
+  book_cover        String?
+  slug              String?    @unique
+  published         Boolean    @default(false)
+  book_cover2       String?
+  book_cover3       String?
+  book_cover4       String?
+  tags              String[]
+  paper_back        Boolean    @default(false)
+  e_copy            Boolean    @default(false)
+  hard_cover        Boolean    @default(false)
+  pdf_url           String?
+  text_url          String?
+  publisher_id      String?
+  featured          Boolean    @default(false)
+  chapters          Chapter[]
+  publisher         Publisher? @relation(fields: [publisher_id], references: [id])
+  author_id         String?
+  author            Author?    @relation(fields: [author_id], references: [id])
+  purchased_by      Customer[] @relation("PurchasedBooks")
+  reviews           Review[]
+  created_at        DateTime   @default(now())
+  updated_at        DateTime   @updatedAt
+  deleted_at        DateTime?
 
   @@map("books")
+}
+
+model Review {
+  id         String    @id @default(uuid())
+  rating     Int
+  comment    String
+  book_id    String
+  user_id    String
+  name       String?
+  email      String?
+  book       Book      @relation(fields: [book_id], references: [id])
+  user       User      @relation(fields: [user_id], references: [id])
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  @@map("reviews")
 }
 
 model Chapter {

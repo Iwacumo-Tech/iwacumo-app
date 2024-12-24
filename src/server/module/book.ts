@@ -57,11 +57,19 @@ export const createBook = publicProcedure.input(createBookSchema).mutation(async
     throw new Error("Author not found");
   }
 
+   const tagArray = opts.input.tags
+      ? opts.input.tags.split("*").map(tag => tag.trim())
+      : [];
   return await prisma.book.create({
     data: {
       title: opts.input.title ?? "",
-      description: opts.input.description ?? "",
+      short_description: opts.input.short_description ?? null,
+      long_description: opts.input.long_description ?? null,
       price: opts.input.price ?? 0,
+      tags: tagArray,
+      paper_back: opts.input.paper_back ?? false,
+      e_copy: opts.input.e_copy ?? false,
+      hard_cover: opts.input.hard_cover ?? false,
       published: opts.input.published ?? false,
       pdf_url: opts.input.pdf_url ?? "",
       text_url: opts.input.text_url ?? "",
@@ -71,6 +79,9 @@ export const createBook = publicProcedure.input(createBookSchema).mutation(async
         },
       },
       book_cover: opts.input.book_cover,
+      book_cover2: opts.input.book_cover2,
+      book_cover3: opts.input.book_cover3,
+      book_cover4: opts.input.book_cover4,
       // publisher : {
       //   connect : {
       //     id: opts.input.publisher_id,
@@ -81,16 +92,25 @@ export const createBook = publicProcedure.input(createBookSchema).mutation(async
 });
 
 export const updateBook = publicProcedure.input(createBookSchema).mutation(async (opts) => {
+
+   const tagArray = opts.input.tags
+      ? opts.input.tags.split("*").map(tag => tag.trim())
+      : [];
   return await prisma.book.update({
     where: { id: opts.input.id },
     data: {
       title: opts.input.title,
-      description: opts.input.description,
+      short_description: opts.input.short_description,
+      long_description: opts.input.long_description,
       price: opts.input.price,
+      tags: tagArray,
       published: opts.input.published,
       pdf_url: opts.input.pdf_url,
       text_url: opts.input.text_url,
-      book_cover: opts.input.book_cover
+      book_cover: opts.input.book_cover,
+       book_cover2: opts.input.book_cover2,
+      book_cover3: opts.input.book_cover3,
+      book_cover4: opts.input.book_cover4,
 
     },
   });

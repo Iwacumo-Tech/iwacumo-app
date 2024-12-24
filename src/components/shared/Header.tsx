@@ -1,14 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useState, BaseSyntheticEvent } from "react";
 import Link from "next/link";
 import { Headphones, Menu, Search, ShoppingCart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { useSession, signOut } from "next-auth/react";
 
 export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const session = useSession();
+
+  const logoutRedirectTo = "/";
+
+  const logout = async (e?: BaseSyntheticEvent) => {
+    e?.preventDefault();
+    await signOut({ callbackUrl: logoutRedirectTo ?? "/" });
+  };
 
   return (
     <header className="border-b">
@@ -39,15 +48,27 @@ export default function Header() {
 
           {/* Auth & Cart - Hidden on mobile, visible on larger screens */}
           <div className="hidden md:flex items-center gap-4">
-            <div className="text-sm">
-              <Link href="/login" className="hover:text-green-600">
-                Login
-              </Link>
-              <span className="mx-2">or</span>
-              <Link href="/register" className="hover:text-green-600">
-                Register
-              </Link>
-            </div>
+            {!session.data && (
+              <div className="text-sm">
+                <Link href="/login" className="hover:text-green-600">
+                  Login
+                </Link>
+                <span className="mx-2">or</span>
+                <Link href="/register" className="hover:text-green-600">
+                  Register
+                </Link>
+              </div>
+            )}
+            {session.data && (
+              <div className="text-sm">
+                <p
+                  className="hover:text-green-600 cursor-pointer"
+                  onClick={logout}
+                >
+                  Logout
+                </p>
+              </div>
+            )}
             <div className="flex items-center gap-2">
               <ShoppingCart className="h-5 w-5" />
               <div>
@@ -168,9 +189,12 @@ export default function Header() {
             <Link href="/shop" className="hover:text-green-100">
               SHOP
             </Link>
-            <Link href="/pages" className="hover:text-green-100">
-              PAGES
-            </Link>
+            {session.data && (
+              <Link href="/app" className="hover:text-green-100">
+                DASHBOARD
+              </Link>
+            )}
+
             <Link href="/blog" className="hover:text-green-100">
               BLOG
             </Link>

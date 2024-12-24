@@ -28,12 +28,14 @@ export default function DashboardShell({
 }) {
   const session = useSession();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const user = trpc.getUserById.useQuery({ id: session.data?.user.id as string });
+  const user = trpc.getUserById.useQuery({
+    id: session.data?.user.id as string,
+  });
 
   const filteredLinks = links.filter((link) => {
-    // Only allow "Home", "Authors", "Customers", and "Profile" if the tenant is not "Booka"
+    // Only allow "Home", "Authors", "Customers", and "Profile"  and "Books" if the tenant is not "Booka"
     if (user.data?.claims.some((claim) => claim.tenant_slug !== "booka")) {
-      const allowedLinks = ["Home", "Authors", "Customers", "Profile"];
+      const allowedLinks = ["Home", "Authors", "Customers", "Profile", "Books"];
       return allowedLinks.includes(link.name);
     }
 

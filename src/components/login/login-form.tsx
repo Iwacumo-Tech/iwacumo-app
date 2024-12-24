@@ -80,12 +80,13 @@ export default function LoginForm() {
       }
 
       toast({ description: "Logged in successfully" });
+      router.push("/");
 
       const { permissions } = session;
 
-      if (permissions) {
-        router.push("/app");
-      }
+      // if (permissions) {
+      //   router.push("/app");
+      // }
     } catch (error) {
       console.warn(error);
       toast({

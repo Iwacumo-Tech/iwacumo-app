@@ -90,21 +90,27 @@ export const signUpAuthorSchema = z .object({
   phone_number: z.string().optional(),
 });
 
-export const createBookSchema = z .object({
+export const createBookSchema = z.object({
   id: z.string().optional(),
-  title: z.string().min(1, "Title is required"),
-  book_cover: z.string().optional(),
-  description: z.string().optional(),
-  price: z.number().positive("Price must be positive"),
-  published: z.boolean().optional()
-    .default(false),
-  pdf_url: z.string().url()
-    .optional(),
-  text_url: z.string().url()
-    .optional(),
+  title: z.string().min(1, "Title is required"), 
+  short_description: z.string().optional(), 
+  long_description: z.string().optional(), 
+  book_cover: z.string().url("Book cover must be a valid URL").optional(), 
+  book_cover2: z.string().url("Book cover 2 must be a valid URL").optional(), 
+  book_cover3: z.string().url("Book cover 3 must be a valid URL").optional(), 
+  book_cover4: z.string().url("Book cover 4 must be a valid URL").optional(), 
+  price: z.number().positive("Price must be positive"), 
+  slug: z.string().optional(), 
+  published: z.boolean().optional().default(false), 
+  tags: z.string().optional(), 
+  paper_back: z.boolean().optional().default(false), 
+  e_copy: z.boolean().optional().default(false), 
+  hard_cover: z.boolean().optional().default(false), 
+  pdf_url: z.string().url("PDF URL must be valid").optional(), 
+  text_url: z.string().url("Text URL must be valid").optional(),
   publisher_id: z.string().optional(),
   author_id: z.string().optional(),
-
+  featured: z.boolean().optional().default(false), 
 });
 
 export const toggleFeaturedSchema = z.object({
@@ -150,6 +156,20 @@ export const createBannerSchema = z.object({
   image: z.string(), 
 });
 
+export const reviewSchema = z.object({
+  rating: z
+    .number()
+    .int()
+    .min(1, { message: "Rating must be at least 1." })
+    .max(5, { message: "Rating must be at most 5." }), 
+  comment: z
+    .string()
+    .min(1, { message: "Comment cannot be empty." }),
+  book_id: z.string(),
+  user_id: z.string(),
+  name: z.string().optional(),
+  email: z.string().optional(),
+});
 
 export const findBookByIdSchema = z.object({ id: z.string() });
 
