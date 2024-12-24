@@ -62,12 +62,14 @@ export const bookColumns: ColumnDef<Book>[] = [
   },
 
   {
-    accessorKey: "description",
+    accessorKey: "short_description",
     header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="Description" />
+      <DataTableColumnHeader column={column} title="Short Description" />
     ),
     cell: ({ row }) => (
-      <div className="max-w-xs truncate">{row.getValue("description")}</div>
+      <div className="max-w-xs truncate">
+        {row.getValue("short_description")}
+      </div>
     ),
   },
   {

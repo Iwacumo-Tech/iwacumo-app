@@ -6,6 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { createBookSchema, TCreateBookSchema } from "@/server/dtos";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -56,6 +58,9 @@ const BookForm = ({ book, action }: BookFormProps) => {
     id: session.data?.user.id as string,
   });
   const [file, setFile] = useState<File | null>(null);
+  const [file2, setFile2] = useState<File | null>(null);
+  const [file3, setFile3] = useState<File | null>(null);
+  const [file4, setFile4] = useState<File | null>(null);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0] || null;
@@ -63,14 +68,39 @@ const BookForm = ({ book, action }: BookFormProps) => {
     setFile(selectedFile);
   };
 
+  const handleFile2Change = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile2 = event.target.files?.[0] || null;
+
+    setFile2(selectedFile2);
+  };
+
+  const handleFile3Change = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile3 = event.target.files?.[0] || null;
+
+    setFile3(selectedFile3);
+  };
+
+  const handleFile4Change = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile4 = event.target.files?.[0] || null;
+
+    setFile4(selectedFile4);
+  };
+
   const form = useForm<TCreateBookSchema>({
     resolver: zodResolver(createBookSchema),
     defaultValues: {
       title: book?.title ?? "",
-      description: book?.description ?? "",
+      short_description: book?.short_description ?? "",
+      long_description: book?.long_description ?? "",
       price: book?.price ?? 0,
+      tags: book?.tags?.join("*"),
       author_id: book?.author_id ?? "",
       publisher_id: book?.publisher_id ?? "",
+      published: book?.published ?? false,
+      featured: book?.featured ?? false,
+      paper_back: book?.paper_back ?? false,
+      e_copy: book?.e_copy ?? false,
+      hard_cover: book?.hard_cover ?? false,
     },
   });
 
@@ -118,17 +148,30 @@ const BookForm = ({ book, action }: BookFormProps) => {
     },
   });
 
-  const onSubmit = async (values: TCreateBookSchema) => {
-    const imageUrl = await uploadImage(file!);
+  const onSubmit = async (values: any) => {
+    const imageUrl = file ? await uploadImage(file) : book?.book_cover ?? null;
+    const imageUrl2 = file2
+      ? await uploadImage(file2)
+      : book?.book_cover2 ?? null;
+    const imageUrl3 = file3
+      ? await uploadImage(file3)
+      : book?.book_cover3 ?? null;
+    const imageUrl4 = file4
+      ? await uploadImage(file4)
+      : book?.book_cover4 ?? null;
+
+    const payload = {
+      ...values,
+      book_cover: imageUrl as string,
+      book_cover2: imageUrl2 as string,
+      book_cover3: imageUrl3 as string,
+      book_cover4: imageUrl4 as string,
+    };
 
     if (book?.id) {
-      updateBook.mutate({
-        ...values,
-        id: book.id,
-        book_cover: imageUrl,
-      });
+      updateBook.mutate({ ...payload, id: book.id });
     } else {
-      addBook.mutate({ ...values, book_cover: imageUrl });
+      addBook.mutate(payload);
     }
   };
 
@@ -166,9 +209,7 @@ const BookForm = ({ book, action }: BookFormProps) => {
                           name="title"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel className="text-gray-700">
-                                Title
-                              </FormLabel>
+                              <FormLabel>Title</FormLabel>
                               <FormControl>
                                 <Input
                                   placeholder="Enter book title"
@@ -182,15 +223,46 @@ const BookForm = ({ book, action }: BookFormProps) => {
                         />
                         <FormField
                           control={form.control}
-                          name="description"
+                          name="tags"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel className="text-gray-700">
-                                Description
-                              </FormLabel>
+                              <FormLabel>Tags</FormLabel>
                               <FormControl>
                                 <Input
-                                  placeholder="Enter book description"
+                                  placeholder="Enter tags separated by *"
+                                  {...field}
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="short_description"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Short Description</FormLabel>
+                              <FormControl>
+                                <Input
+                                  placeholder="Enter a short description"
+                                  {...field}
+                                  className="border-gray-300 rounded-md"
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="long_description"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Long Description</FormLabel>
+                              <FormControl>
+                                <Textarea
+                                  placeholder="Enter a long description"
                                   {...field}
                                   className="border-gray-300 rounded-md"
                                 />
@@ -207,9 +279,7 @@ const BookForm = ({ book, action }: BookFormProps) => {
 
                             return (
                               <FormItem>
-                                <FormLabel className="text-gray-700">
-                                  Price
-                                </FormLabel>
+                                <FormLabel>Price</FormLabel>
                                 <FormControl>
                                   <Input
                                     type="number"
@@ -258,6 +328,68 @@ const BookForm = ({ book, action }: BookFormProps) => {
                             </FormItem>
                           )}
                         />
+                        {/* Paper Back Checkbox */}
+                        <FormField
+                          control={form.control}
+                          name="paper_back"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Paper Back</FormLabel>
+                              <FormControl>
+                                <Checkbox
+                                  checked={field.value}
+                                  onCheckedChange={(value) =>
+                                    field.onChange(value as boolean)
+                                  }
+                                  className="ml-2"
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+
+                        {/* E-Copy Checkbox */}
+                        <FormField
+                          control={form.control}
+                          name="e_copy"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>E-Copy</FormLabel>
+                              <FormControl>
+                                <Checkbox
+                                  checked={field.value}
+                                  onCheckedChange={(value) =>
+                                    field.onChange(value as boolean)
+                                  }
+                                  className="ml-2"
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+
+                        {/* Hard Cover Checkbox */}
+                        <FormField
+                          control={form.control}
+                          name="hard_cover"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Hard Cover</FormLabel>
+                              <FormControl>
+                                <Checkbox
+                                  checked={field.value}
+                                  onCheckedChange={(value) =>
+                                    field.onChange(value as boolean)
+                                  }
+                                  className="ml-2"
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
 
                         <div className="">
                           <p>Book Cover</p>
@@ -278,6 +410,72 @@ const BookForm = ({ book, action }: BookFormProps) => {
                             id="fileUpload"
                             type="file"
                             onChange={handleFileChange}
+                            className="hidden"
+                          />
+                        </div>
+                        <div className="">
+                          <p>Book Cover 2</p>
+                          <label
+                            htmlFor="fileUpload2"
+                            className="cursor-pointer w-full px-4 py-2 text-slate-100 border rounded-md flex items-center gap-3"
+                          >
+                            <span className="bg-blue-700 p-1 text-sm rounded">
+                              Upload File
+                            </span>
+                            {file2 && (
+                              <p className="mt-2 text-sm text-gray-700">
+                                {file2.name}
+                              </p>
+                            )}
+                          </label>
+                          <input
+                            id="fileUpload2"
+                            type="file"
+                            onChange={handleFile2Change}
+                            className="hidden"
+                          />
+                        </div>
+                        <div className="">
+                          <p>Book Cover 3</p>
+                          <label
+                            htmlFor="fileUpload3"
+                            className="cursor-pointer w-full px-4 py-2 text-slate-100 border rounded-md flex items-center gap-3"
+                          >
+                            <span className="bg-blue-700 p-1 text-sm rounded">
+                              Upload File
+                            </span>
+                            {file3 && (
+                              <p className="mt-2 text-sm text-gray-700">
+                                {file3.name}
+                              </p>
+                            )}
+                          </label>
+                          <input
+                            id="fileUpload3"
+                            type="file"
+                            onChange={handleFile3Change}
+                            className="hidden"
+                          />
+                        </div>
+                        <div className="">
+                          <p>Book Cover 4</p>
+                          <label
+                            htmlFor="fileUpload4"
+                            className="cursor-pointer w-full px-4 py-2 text-slate-100 border rounded-md flex items-center gap-3"
+                          >
+                            <span className="bg-blue-700 p-1 text-sm rounded">
+                              Upload File
+                            </span>
+                            {file4 && (
+                              <p className="mt-2 text-sm text-gray-700">
+                                {file4.name}
+                              </p>
+                            )}
+                          </label>
+                          <input
+                            id="fileUpload4"
+                            type="file"
+                            onChange={handleFile4Change}
                             className="hidden"
                           />
                         </div>

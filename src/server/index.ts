@@ -19,6 +19,7 @@ import {  updateTenant, getAllTenant, deleteTenant, createTenant } from "./modul
 import { createImageUpload } from "./module/uploads";
 import { createHeroSlide, getAllHeroSlides } from "./module/slider";
 import { getAllBanners, createBanner, toggleBannerVisibility } from "./module/banner";
+import { createReview, getReviewsByBook } from "./module/review";
 
 export const appRouter = router({
   createUser,
@@ -71,6 +72,8 @@ export const appRouter = router({
   getAllBanners,
   toggleBannerVisibility,
   createBanner,
+  createReview,
+  getReviewsByBook,
   healthCheck: publicProcedure.query(() => {
     return { message: "API up and running..." };
   }),
