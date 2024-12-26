@@ -12,13 +12,29 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { useSession } from "next-auth/react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 
 import { cn } from "@/lib/utils";
 import { trpc } from "@/app/_providers/trpc-provider";
 import { useToast } from "@/components/ui/use-toast";
 
 export default function ProductDetails() {
-  const [quantity, setQuantity] = useState(1);
+  const [bookQuantity, setBookQuantity] = useState(1);
   const [currentImage, setCurrentImage] = useState(0);
   const [format, setFormat] = useState("paperback");
   const [rating, setRating] = useState(0);
@@ -33,6 +49,7 @@ export default function ProductDetails() {
   const utils = trpc.useUtils();
 
   const createReviewMutation = trpc.createReview.useMutation();
+  const addBookToCart = trpc.createCart.useMutation();
   const bookreview = trpc.getReviewsByBook.useQuery({
     book_id: book?.id as string,
   });
@@ -44,6 +61,33 @@ export default function ProductDetails() {
     book?.book_cover4 || "/bookcover.png",
   ];
 
+  const handleCreateCart = async (type: string, quantity: number) => {
+    try {
+      await addBookToCart.mutateAsync({
+        userId: session.data?.user.id as string,
+        book_image: book?.book_cover as string,
+        book_title: book?.title as string,
+        book_type: type,
+        price: book?.price as number,
+        quantity: quantity,
+        total: (book?.price as number) * quantity,
+      });
+
+      toast({
+        title: "Success",
+        variant: "default",
+        description: "Book added to cart Sucessfully",
+      });
+      utils.getCartsByUser.invalidate();
+    } catch (error) {
+      console.error("Failed to add book cart:", error);
+      toast({
+        title: "Error",
+        variant: "destructive",
+        description: "Error adding book to cart",
+      });
+    }
+  };
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -281,21 +325,120 @@ export default function ProductDetails() {
 
           <p className="text-gray-600">{book?.short_description}</p>
 
-          <div className="flex items-center gap-4">
-            {/* <div className="flex items-center">
-              <span className="mr-4">Qty</span>
-              <Input
-                type="number"
-                min="1"
-                value={quantity}
-                onChange={(e) => setQuantity(parseInt(e.target.value))}
-                className="w-20"
-              />
-            </div> */}
-            <Button className="bg-[#82d236] hover:bg-[#72bc2d]">
-              + Add To Cart
-            </Button>
-          </div>
+          <Dialog>
+            <DialogTrigger>
+              <div className="flex items-center gap-4">
+                <Button className="bg-[#82d236] hover:bg-[#72bc2d]">
+                  + Add To Cart
+                </Button>
+              </div>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Select Type</DialogTitle>
+                <DialogDescription>
+                  <RadioGroup
+                    defaultValue="paperback"
+                    value={format}
+                    onValueChange={setFormat}
+                    className="flex flex-wrap gap-2 mt-4"
+                  >
+                    {book?.paper_back && (
+                      <div onClick={() => handleCreateCart("Paper-back", 1)}>
+                        <RadioGroupItem
+                          value="paperback"
+                          id="paperback"
+                          className="peer hidden"
+                        />
+                        <Label
+                          htmlFor="paperback"
+                          className={cn(
+                            "px-4 py-2 rounded-full cursor-pointer border transition-colors",
+                            "hover:border-[#82d236] hover:text-[#82d236]",
+                            "peer-checked:bg-[#82d236] peer-checked:text-white peer-checked:border-[#82d236]"
+                          )}
+                        >
+                          Paper-back
+                        </Label>
+                      </div>
+                    )}
+                    {book?.e_copy && (
+                      <div onClick={() => handleCreateCart("E-copy", 1)}>
+                        <RadioGroupItem
+                          value="ecopy"
+                          id="ecopy"
+                          className="peer hidden"
+                        />
+                        <Label
+                          htmlFor="ecopy"
+                          className={cn(
+                            "px-4 py-2 rounded-full cursor-pointer border transition-colors",
+                            "hover:border-[#82d236] hover:text-[#82d236]",
+                            "peer-checked:bg-[#82d236] peer-checked:text-white peer-checked:border-[#82d236]"
+                          )}
+                        >
+                          E-copy
+                        </Label>
+                      </div>
+                    )}
+                    {book?.hard_cover && (
+                      <Sheet>
+                        <SheetTrigger>
+                          <div>
+                            <RadioGroupItem
+                              value="hardcover"
+                              id="hardcover"
+                              className="peer hidden"
+                            />
+                            <Label
+                              htmlFor="hardcover"
+                              className={cn(
+                                "px-4 py-2 rounded-full cursor-pointer border transition-colors",
+                                "hover:border-[#82d236] hover:text-[#82d236]",
+                                "peer-checked:bg-[#82d236] peer-checked:text-white peer-checked:border-[#82d236]"
+                              )}
+                            >
+                              Hard-cover
+                            </Label>
+                          </div>
+                        </SheetTrigger>
+                        <SheetContent>
+                          <SheetHeader>
+                            <SheetTitle>Select Quantity</SheetTitle>
+                            <SheetDescription>
+                              <div className="flex items-center">
+                                <span className="mr-4">Qty</span>
+                                <Input
+                                  type="number"
+                                  min="1"
+                                  value={bookQuantity}
+                                  onChange={(e) =>
+                                    setBookQuantity(parseInt(e.target.value))
+                                  }
+                                  className="w-20"
+                                />
+                              </div>
+
+                              <div
+                                className="flex items-center gap-4 mt-5"
+                                onClick={() =>
+                                  handleCreateCart("Hard-cover", bookQuantity)
+                                }
+                              >
+                                <Button className="bg-[#82d236] hover:bg-[#72bc2d]">
+                                  + Add To Cart
+                                </Button>
+                              </div>
+                            </SheetDescription>
+                          </SheetHeader>
+                        </SheetContent>
+                      </Sheet>
+                    )}
+                  </RadioGroup>
+                </DialogDescription>
+              </DialogHeader>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
       <Tabs defaultValue="description" className="w-full">

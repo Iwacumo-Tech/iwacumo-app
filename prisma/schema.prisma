@@ -32,6 +32,7 @@ model User {
   customer      Customer?
   tenantMember  Tenant[]   @relation("TenantUsers")
   Review        Review[]
+  Cart          Cart[]
 
   @@map("users")
 }
@@ -195,6 +196,21 @@ model Book {
   deleted_at        DateTime?
 
   @@map("books")
+}
+
+model Cart {
+  id         String    @id @default(uuid())
+  book_image String
+  book_title String
+  book_type  String
+  price      Float
+  quantity   Int?
+  total      Float
+  user       User?     @relation(fields: [userId], references: [id])
+  userId     String?
+  deleted_at DateTime?
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
 }
 
 model Review {

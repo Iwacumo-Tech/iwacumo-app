@@ -7,10 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useSession, signOut } from "next-auth/react";
+import { trpc } from "@/app/_providers/trpc-provider";
 
 export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const session = useSession();
+  const userCart = trpc.getCartsByUser.useQuery({
+    user_id: session.data?.user.id as string,
+  });
 
   const logoutRedirectTo = "/";
 
@@ -69,15 +73,16 @@ export default function Header() {
                 </p>
               </div>
             )}
-            <div className="flex items-center gap-2">
-              <ShoppingCart className="h-5 w-5" />
-              <div>
-                <span className="text-sm text-muted-foreground">
-                  Shopping Cart
-                </span>
-                <p className="font-medium">£0.00</p>
+            <Link className="cursor-pointer" href="/cart">
+              <div className="flex items-center gap-2 relative">
+                <ShoppingCart className="h-5 w-5" />
+                {userCart.data && (
+                  <span className="absolute -top-2 -right-2 bg-red-600 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                    {userCart.data.length}
+                  </span>
+                )}
               </div>
-            </div>
+            </Link>
           </div>
 
           {/* Mobile Menu Trigger */}
