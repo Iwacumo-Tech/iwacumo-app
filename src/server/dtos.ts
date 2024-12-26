@@ -171,6 +171,17 @@ export const reviewSchema = z.object({
   email: z.string().optional(),
 });
 
+
+export const CartSchema = z.object({
+  book_image: z.string(),
+  book_title: z.string(),
+  book_type: z.string(), 
+  price: z.number().positive(),
+  quantity: z.number().int().positive().optional(), 
+  total: z.number().positive(), 
+  userId: z.string().optional(), 
+});
+
 export const findBookByIdSchema = z.object({ id: z.string() });
 
 export const  deleteChapterSchema = z.object ({ id: z.string () });
