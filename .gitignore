@@ -39,3 +39,8 @@ next-env.d.ts
 # Local build scripts
 tools.sh
 tools.env.sh
+
+# Firebase credentials
+firebase.json
+firebase-adminsdk-*.json
+*.serviceAccount.json
