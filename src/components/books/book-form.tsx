@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createBookSchema, TCreateBookSchema } from "@/server/dtos";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
@@ -61,6 +61,36 @@ const BookForm = ({ book, action }: BookFormProps) => {
   const [file2, setFile2] = useState<File | null>(null);
   const [file3, setFile3] = useState<File | null>(null);
   const [file4, setFile4] = useState<File | null>(null);
+  const [paperbackPrice, setPaperbackPrice] = useState<number>(0);
+  const [hardcoverPrice, setHardcoverPrice] = useState<number>(0);
+  const [ebookPrice, setEbookPrice] = useState<number>(0);
+
+  // Helper function to get initial prices from book
+  const getInitialPrices = () => {
+    if (book && (book as any).variants) {
+      const variants = (book as any).variants || [];
+      const prices: { paperback?: number; hardcover?: number; ebook?: number } = {};
+      variants.forEach((variant: any) => {
+        if (variant.format === "paperback" && variant.list_price > 0) {
+          prices.paperback = variant.list_price;
+        } else if (variant.format === "hardcover" && variant.list_price > 0) {
+          prices.hardcover = variant.list_price;
+        } else if (variant.format === "ebook" && variant.list_price > 0) {
+          prices.ebook = variant.list_price;
+        }
+      });
+      return prices;
+    } else if (book?.price && book.price > 0) {
+      return {
+        paperback: book.price,
+        hardcover: book.price,
+        ebook: book.price,
+      };
+    }
+    return {};
+  };
+
+  const initialPrices = getInitialPrices();
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0] || null;
@@ -101,8 +131,27 @@ const BookForm = ({ book, action }: BookFormProps) => {
       paper_back: book?.paper_back ?? false,
       e_copy: book?.e_copy ?? false,
       hard_cover: book?.hard_cover ?? false,
+      paperback_price: initialPrices.paperback,
+      hardcover_price: initialPrices.hardcover,
+      ebook_price: initialPrices.ebook,
     },
   });
+
+  // Initialize state from form values when editing
+  useEffect(() => {
+    if (book) {
+      if (initialPrices.paperback) {
+        setPaperbackPrice(initialPrices.paperback);
+      }
+      if (initialPrices.hardcover) {
+        setHardcoverPrice(initialPrices.hardcover);
+      }
+      if (initialPrices.ebook) {
+        setEbookPrice(initialPrices.ebook);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [book]);
 
   const addBook = trpc.createBook.useMutation({
     onSuccess: async () => {
@@ -149,23 +198,78 @@ const BookForm = ({ book, action }: BookFormProps) => {
   });
 
   const onSubmit = async (values: any) => {
-    const imageUrl = file ? await uploadImage(file) : book?.book_cover ?? null;
-    const imageUrl2 = file2
-      ? await uploadImage(file2)
-      : book?.book_cover2 ?? null;
-    const imageUrl3 = file3
-      ? await uploadImage(file3)
-      : book?.book_cover3 ?? null;
-    const imageUrl4 = file4
-      ? await uploadImage(file4)
-      : book?.book_cover4 ?? null;
+    // Upload images if files are selected, otherwise use existing or null
+    const imageUrl = file ? await uploadImage(file) : (book?.book_cover || null);
+    const imageUrl2 = file2 ? await uploadImage(file2) : (book?.book_cover2 || null);
+    const imageUrl3 = file3 ? await uploadImage(file3) : (book?.book_cover3 || null);
+    const imageUrl4 = file4 ? await uploadImage(file4) : (book?.book_cover4 || null);
+
+    // Check if at least one image is provided
+    const hasAtLeastOneImage = imageUrl || imageUrl2 || imageUrl3 || imageUrl4;
+
+    if (!hasAtLeastOneImage) {
+      toast({
+        title: "Validation Error",
+        variant: "destructive",
+        description: "Please upload at least one book cover image",
+      });
+      return;
+    }
+
+    // Check if at least one format is selected (for variant creation)
+    const hasFormat = values.paper_back || values.e_copy || values.hard_cover;
+    if (!hasFormat) {
+      toast({
+        title: "Validation Error",
+        variant: "destructive",
+        description: "Please select at least one format (Paperback, Hard Cover, or E-Copy)",
+      });
+      return;
+    }
+
+    // Validate that prices are provided for selected formats
+    // Prices are now in form values, but also check state as fallback
+    const finalPaperbackPrice = values.paperback_price || paperbackPrice;
+    const finalHardcoverPrice = values.hardcover_price || hardcoverPrice;
+    const finalEbookPrice = values.ebook_price || ebookPrice;
+
+    if (values.paper_back && (!finalPaperbackPrice || finalPaperbackPrice <= 0)) {
+      toast({
+        title: "Validation Error",
+        variant: "destructive",
+        description: "Please enter a price for Paperback",
+      });
+      return;
+    }
+    if (values.hard_cover && (!finalHardcoverPrice || finalHardcoverPrice <= 0)) {
+      toast({
+        title: "Validation Error",
+        variant: "destructive",
+        description: "Please enter a price for Hard Cover",
+      });
+      return;
+    }
+    if (values.e_copy && (!finalEbookPrice || finalEbookPrice <= 0)) {
+      toast({
+        title: "Validation Error",
+        variant: "destructive",
+        description: "Please enter a price for E-Copy",
+      });
+      return;
+    }
 
     const payload = {
       ...values,
-      book_cover: imageUrl as string,
-      book_cover2: imageUrl2 as string,
-      book_cover3: imageUrl3 as string,
-      book_cover4: imageUrl4 as string,
+      book_cover: imageUrl || null,
+      book_cover2: imageUrl2 || null,
+      book_cover3: imageUrl3 || null,
+      book_cover4: imageUrl4 || null,
+      // Set cover_image_url to the first uploaded image for new schema compatibility
+      cover_image_url: imageUrl || null,
+      // Prices are now in form values, only include if format is selected
+      paperback_price: values.paper_back ? values.paperback_price : undefined,
+      hardcover_price: values.hard_cover ? values.hardcover_price : undefined,
+      ebook_price: values.e_copy ? values.ebook_price : undefined,
     };
 
     if (book?.id) {
@@ -201,7 +305,9 @@ const BookForm = ({ book, action }: BookFormProps) => {
               </CardHeader>
               <CardContent className="space-y-2">
                 <Form {...form}>
-                  <form onSubmit={form.handleSubmit(onSubmit)}>
+                  <form onSubmit={form.handleSubmit(onSubmit, (errors) => {
+                    console.log("Errors: ", errors);
+                  })}>
                     <fieldset disabled={form.formState.isSubmitting}>
                       <div className="grid gap-6">
                         <FormField
@@ -334,16 +440,41 @@ const BookForm = ({ book, action }: BookFormProps) => {
                           name="paper_back"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Paper Back</FormLabel>
-                              <FormControl>
-                                <Checkbox
-                                  checked={field.value}
-                                  onCheckedChange={(value) =>
-                                    field.onChange(value as boolean)
-                                  }
-                                  className="ml-2"
-                                />
-                              </FormControl>
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center space-x-2">
+                                  <FormLabel>Paper Back</FormLabel>
+                                  <FormControl>
+                                    <Checkbox
+                                      checked={field.value}
+                                      onCheckedChange={(value) =>
+                                        field.onChange(value as boolean)
+                                      }
+                                      className="ml-2"
+                                    />
+                                  </FormControl>
+                                </div>
+                                {field.value && (
+                                  <div className="flex-1 max-w-[200px] ml-4">
+                                    <FormField
+                                      control={form.control}
+                                      name="paperback_price"
+                                      render={({ field: priceField }) => (
+                                        <Input
+                                          type="number"
+                                          placeholder="Price"
+                                          value={priceField.value || ""}
+                                          onChange={(e) => {
+                                            const value = Number(e.target.value) || 0;
+                                            priceField.onChange(value);
+                                            setPaperbackPrice(value);
+                                          }}
+                                          className="border-gray-300 rounded-md"
+                                        />
+                                      )}
+                                    />
+                                  </div>
+                                )}
+                              </div>
                               <FormMessage />
                             </FormItem>
                           )}
@@ -355,16 +486,41 @@ const BookForm = ({ book, action }: BookFormProps) => {
                           name="e_copy"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>E-Copy</FormLabel>
-                              <FormControl>
-                                <Checkbox
-                                  checked={field.value}
-                                  onCheckedChange={(value) =>
-                                    field.onChange(value as boolean)
-                                  }
-                                  className="ml-2"
-                                />
-                              </FormControl>
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center space-x-2">
+                                  <FormLabel>E-Copy</FormLabel>
+                                  <FormControl>
+                                    <Checkbox
+                                      checked={field.value}
+                                      onCheckedChange={(value) =>
+                                        field.onChange(value as boolean)
+                                      }
+                                      className="ml-2"
+                                    />
+                                  </FormControl>
+                                </div>
+                                {field.value && (
+                                  <div className="flex-1 max-w-[200px] ml-4">
+                                    <FormField
+                                      control={form.control}
+                                      name="ebook_price"
+                                      render={({ field: priceField }) => (
+                                        <Input
+                                          type="number"
+                                          placeholder="Price"
+                                          value={priceField.value || ""}
+                                          onChange={(e) => {
+                                            const value = Number(e.target.value) || 0;
+                                            priceField.onChange(value);
+                                            setEbookPrice(value);
+                                          }}
+                                          className="border-gray-300 rounded-md"
+                                        />
+                                      )}
+                                    />
+                                  </div>
+                                )}
+                              </div>
                               <FormMessage />
                             </FormItem>
                           )}
@@ -376,16 +532,41 @@ const BookForm = ({ book, action }: BookFormProps) => {
                           name="hard_cover"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Hard Cover</FormLabel>
-                              <FormControl>
-                                <Checkbox
-                                  checked={field.value}
-                                  onCheckedChange={(value) =>
-                                    field.onChange(value as boolean)
-                                  }
-                                  className="ml-2"
-                                />
-                              </FormControl>
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center space-x-2">
+                                  <FormLabel>Hard Cover</FormLabel>
+                                  <FormControl>
+                                    <Checkbox
+                                      checked={field.value}
+                                      onCheckedChange={(value) =>
+                                        field.onChange(value as boolean)
+                                      }
+                                      className="ml-2"
+                                    />
+                                  </FormControl>
+                                </div>
+                                {field.value && (
+                                  <div className="flex-1 max-w-[200px] ml-4">
+                                    <FormField
+                                      control={form.control}
+                                      name="hardcover_price"
+                                      render={({ field: priceField }) => (
+                                        <Input
+                                          type="number"
+                                          placeholder="Price"
+                                          value={priceField.value || ""}
+                                          onChange={(e) => {
+                                            const value = Number(e.target.value) || 0;
+                                            priceField.onChange(value);
+                                            setHardcoverPrice(value);
+                                          }}
+                                          className="border-gray-300 rounded-md"
+                                        />
+                                      )}
+                                    />
+                                  </div>
+                                )}
+                              </div>
                               <FormMessage />
                             </FormItem>
                           )}

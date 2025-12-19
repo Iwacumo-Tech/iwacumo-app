@@ -19,3 +19,15 @@ export function getBaseUrl () {
   // assume localhost
   return `http://localhost:${process.env.PORT ?? 8079}`;
 }
+
+export function formatDate(date: Date | string | null | undefined): string {
+  if (!date) return "N/A";
+  const d = new Date(date);
+  return d.toLocaleDateString("en-US", { 
+    year: "numeric", 
+    month: "short", 
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}

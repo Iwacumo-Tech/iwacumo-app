@@ -2,7 +2,6 @@
 
 import { trpc } from "@/app/_providers/trpc-provider";
 import { useParams } from "next/navigation";
-import "react-quill/dist/quill.snow.css";
 import { chapterColumns } from "@/components/chapters/columns";
 import ChapterForm from "@/components/chapters/chapter-form";
 import { ChapterDataTable } from "./data-table";

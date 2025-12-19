@@ -12,5 +12,6 @@ declare module "next-auth" {
     user: User;
     permissions: Permission[];
     roles: Role[];
+    tenantSlug: string | null;
   }
 }

@@ -61,26 +61,98 @@ export default function ProductDetails() {
     book?.book_cover4 || "/bookcover.png",
   ];
 
+  // Helper function to get price for a variant format
+  const getVariantPrice = (formatType: string): number => {
+    if (!book?.variants || book.variants.length === 0) {
+      return book?.price || 0;
+    }
+
+    // Map format types to variant format values
+    const formatMap: Record<string, string> = {
+      "Paper-back": "paperback",
+      "E-copy": "ebook",
+      "Hard-cover": "hardcover",
+      "paperback": "paperback",
+      "ecopy": "ebook",
+      "hardcover": "hardcover",
+    };
+
+    const variantFormat = formatMap[formatType] || formatType.toLowerCase();
+    
+    const variant = book.variants.find(
+      (v) => v.format.toLowerCase() === variantFormat.toLowerCase()
+    );
+
+    if (variant) {
+      // Use discount_price if available, otherwise use list_price
+      return variant.discount_price ?? variant.list_price;
+    }
+
+    // Fallback to book price if no variant found
+    return book?.price || 0;
+  };
+
+  // Get current selected format price
+  const getCurrentPrice = (): number => {
+    const formatMap: Record<string, string> = {
+      "paperback": "Paper-back",
+      "ecopy": "E-copy",
+      "hardcover": "Hard-cover",
+    };
+    const type = formatMap[format] || format;
+    return getVariantPrice(type);
+  };
+
   const handleCreateCart = async (type: string, quantity: number) => {
     try {
-      await addBookToCart.mutateAsync({
-        userId: session.data?.user.id as string,
-        book_image: book?.book_cover as string,
-        book_title: book?.title as string,
-        book_type: type,
-        price: book?.price as number,
-        quantity: quantity,
-        total: (book?.price as number) * quantity,
-      });
+      const variantPrice = getVariantPrice(type);
+      const totalPrice = variantPrice * quantity;
 
-      toast({
-        title: "Success",
-        variant: "default",
-        description: "Book added to cart Sucessfully",
-      });
-      utils.getCartsByUser.invalidate();
+      // If user is authenticated, add to database cart
+      if (session.data?.user?.id) {
+        await addBookToCart.mutateAsync({
+          userId: session.data.user.id,
+          book_image: book?.book_cover as string,
+          book_title: book?.title as string,
+          book_type: type,
+          price: variantPrice,
+          quantity: quantity,
+          total: totalPrice,
+        });
+
+        toast({
+          title: "Success",
+          variant: "default",
+          description: "Book added to cart successfully",
+        });
+        utils.getCartsByUser.invalidate();
+      } else {
+        // If guest, add to localStorage
+        const guestCartKey = "guest_cart_items";
+        const existingCart = localStorage.getItem(guestCartKey);
+        const cartItems = existingCart ? JSON.parse(existingCart) : [];
+        
+        const newCartItem = {
+          id: `${Date.now()}-${Math.random()}`,
+          book_image: book?.book_cover as string,
+          book_title: book?.title as string,
+          book_type: type,
+          price: variantPrice,
+          quantity: quantity,
+          total: totalPrice,
+        };
+
+        cartItems.push(newCartItem);
+        localStorage.setItem(guestCartKey, JSON.stringify(cartItems));
+
+        toast({
+          title: "Success",
+          variant: "default",
+          description: "Book added to cart successfully",
+        });
+      }
     } catch (error) {
-      console.error("Failed to add book cart:", error);
+      console.error("Failed to add book to cart:", error);
       toast({
         title: "Error",
         variant: "destructive",
@@ -228,12 +300,15 @@ export default function ProductDetails() {
                   <Label
                     htmlFor="paperback"
                     className={cn(
-                      "px-4 py-2 rounded-full cursor-pointer border transition-colors",
+                      "px-4 py-2 rounded-full cursor-pointer border transition-colors flex items-center gap-2",
                       "hover:border-[#82d236] hover:text-[#82d236]",
                       "peer-checked:bg-[#82d236] peer-checked:text-white peer-checked:border-[#82d236]"
                     )}
                   >
-                    Paper-back
+                    <span>Paper-back</span>
+                    <span className="text-xs font-semibold">
+                      ₦{getVariantPrice("Paper-back").toLocaleString()}
+                    </span>
                   </Label>
                 </div>
               )}
@@ -247,12 +322,15 @@ export default function ProductDetails() {
                   <Label
                     htmlFor="ecopy"
                     className={cn(
-                      "px-4 py-2 rounded-full cursor-pointer border transition-colors",
+                      "px-4 py-2 rounded-full cursor-pointer border transition-colors flex items-center gap-2",
                       "hover:border-[#82d236] hover:text-[#82d236]",
                       "peer-checked:bg-[#82d236] peer-checked:text-white peer-checked:border-[#82d236]"
                     )}
                   >
-                    E-copy
+                    <span>E-copy</span>
+                    <span className="text-xs font-semibold">
+                      ₦{getVariantPrice("E-copy").toLocaleString()}
+                    </span>
                   </Label>
                 </div>
               )}
@@ -266,12 +344,15 @@ export default function ProductDetails() {
                   <Label
                     htmlFor="hardcover"
                     className={cn(
-                      "px-4 py-2 rounded-full cursor-pointer border transition-colors",
+                      "px-4 py-2 rounded-full cursor-pointer border transition-colors flex items-center gap-2",
                       "hover:border-[#82d236] hover:text-[#82d236]",
                       "peer-checked:bg-[#82d236] peer-checked:text-white peer-checked:border-[#82d236]"
                     )}
                   >
-                    Hard-cover
+                    <span>Hard-cover</span>
+                    <span className="text-xs font-semibold">
+                      ₦{getVariantPrice("Hard-cover").toLocaleString()}
+                    </span>
                   </Label>
                 </div>
               )}
@@ -319,8 +400,13 @@ export default function ProductDetails() {
 
           <div className="flex items-center gap-4">
             <span className="text-3xl font-bold text-[#82d236]">
-              ₦ {book?.price}
+              ₦ {getCurrentPrice().toLocaleString()}
             </span>
+            {book?.variants && book.variants.length > 0 && (
+              <span className="text-sm text-gray-500">
+                (Price varies by format)
+              </span>
+            )}
           </div>
 
           <p className="text-gray-600">{book?.short_description}</p>
@@ -353,12 +439,15 @@ export default function ProductDetails() {
                         <Label
                           htmlFor="paperback"
                           className={cn(
-                            "px-4 py-2 rounded-full cursor-pointer border transition-colors",
+                            "px-4 py-2 rounded-full cursor-pointer border transition-colors flex items-center gap-2",
                             "hover:border-[#82d236] hover:text-[#82d236]",
                             "peer-checked:bg-[#82d236] peer-checked:text-white peer-checked:border-[#82d236]"
                           )}
                         >
-                          Paper-back
+                          <span>Paper-back</span>
+                          <span className="text-xs font-semibold">
+                            ₦{getVariantPrice("Paper-back").toLocaleString()}
+                          </span>
                         </Label>
                       </div>
                     )}
@@ -372,12 +461,15 @@ export default function ProductDetails() {
                         <Label
                           htmlFor="ecopy"
                           className={cn(
-                            "px-4 py-2 rounded-full cursor-pointer border transition-colors",
+                            "px-4 py-2 rounded-full cursor-pointer border transition-colors flex items-center gap-2",
                             "hover:border-[#82d236] hover:text-[#82d236]",
                             "peer-checked:bg-[#82d236] peer-checked:text-white peer-checked:border-[#82d236]"
                           )}
                         >
-                          E-copy
+                          <span>E-copy</span>
+                          <span className="text-xs font-semibold">
+                            ₦{getVariantPrice("E-copy").toLocaleString()}
+                          </span>
                         </Label>
                       </div>
                     )}
@@ -393,12 +485,15 @@ export default function ProductDetails() {
                             <Label
                               htmlFor="hardcover"
                               className={cn(
-                                "px-4 py-2 rounded-full cursor-pointer border transition-colors",
+                                "px-4 py-2 rounded-full cursor-pointer border transition-colors flex items-center gap-2",
                                 "hover:border-[#82d236] hover:text-[#82d236]",
                                 "peer-checked:bg-[#82d236] peer-checked:text-white peer-checked:border-[#82d236]"
                               )}
                             >
-                              Hard-cover
+                              <span>Hard-cover</span>
+                              <span className="text-xs font-semibold">
+                                ₦{getVariantPrice("Hard-cover").toLocaleString()}
+                              </span>
                             </Label>
                           </div>
                         </SheetTrigger>
@@ -406,17 +501,31 @@ export default function ProductDetails() {
                           <SheetHeader>
                             <SheetTitle>Select Quantity</SheetTitle>
                             <SheetDescription>
-                              <div className="flex items-center">
-                                <span className="mr-4">Qty</span>
-                                <Input
-                                  type="number"
-                                  min="1"
-                                  value={bookQuantity}
-                                  onChange={(e) =>
-                                    setBookQuantity(parseInt(e.target.value))
-                                  }
-                                  className="w-20"
-                                />
+                              <div className="space-y-4 mt-4">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-sm font-medium">Price per unit:</span>
+                                  <span className="text-lg font-bold text-[#82d236]">
+                                    ₦{getVariantPrice("Hard-cover").toLocaleString()}
+                                  </span>
+                                </div>
+                                <div className="flex items-center">
+                                  <span className="mr-4">Qty</span>
+                                  <Input
+                                    type="number"
+                                    min="1"
+                                    value={bookQuantity}
+                                    onChange={(e) =>
+                                      setBookQuantity(parseInt(e.target.value) || 1)
+                                    }
+                                    className="w-20"
+                                  />
+                                </div>
+                                <div className="flex items-center justify-between pt-2 border-t">
+                                  <span className="text-sm font-medium">Total:</span>
+                                  <span className="text-lg font-bold">
+                                    ₦{(getVariantPrice("Hard-cover") * bookQuantity).toLocaleString()}
+                                  </span>
+                                </div>
                               </div>
 
                               <div
@@ -425,7 +534,7 @@ export default function ProductDetails() {
                                   handleCreateCart("Hard-cover", bookQuantity)
                                 }
                               >
-                                <Button className="bg-[#82d236] hover:bg-[#72bc2d]">
+                                <Button className="bg-[#82d236] hover:bg-[#72bc2d] w-full">
                                   + Add To Cart
                                 </Button>
                               </div>

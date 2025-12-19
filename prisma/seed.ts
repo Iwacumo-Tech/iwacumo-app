@@ -171,12 +171,41 @@ async function seedUsers () {
 
     const bookaTenant = await prisma.tenant.findUnique({ where: {  slug: "booka" } });
 
-    await prisma.publisher.create({
-      data: {
-        user_id: superAdmin.id,
-        tenant_id: bookaTenant?.id
-      }
+    // Check if a publisher with this user_id already exists
+    const existingPublisherWithUser = await prisma.publisher.findUnique({ 
+      where: { user_id: superAdmin.id } 
     });
+
+    // Check if a publisher with this tenant_id already exists
+    const existingPublisherWithTenant = bookaTenant?.id 
+      ? await prisma.publisher.findUnique({ where: { tenant_id: bookaTenant.id } })
+      : null;
+
+    if (existingPublisherWithUser) {
+      // Publisher with this user_id exists, just update tenant_id if needed
+      if (existingPublisherWithUser.tenant_id !== bookaTenant?.id) {
+        // Only update if tenant_id is different and no other publisher has that tenant_id
+        if (!existingPublisherWithTenant || existingPublisherWithTenant.id === existingPublisherWithUser.id) {
+          await prisma.publisher.update({
+            where: { user_id: superAdmin.id },
+            data: { tenant_id: bookaTenant?.id }
+          });
+        }
+      }
+    } else if (existingPublisherWithTenant) {
+      // Publisher with tenant_id exists but different user_id
+      // We can't change user_id if another publisher already uses it
+      // So we'll skip creating/updating in this case
+      console.log(`Publisher with tenant_id ${bookaTenant?.id} already exists with different user_id. Skipping.`);
+    } else {
+      // No conflicts, safe to create
+      await prisma.publisher.create({
+        data: {
+          user_id: superAdmin.id,
+          tenant_id: bookaTenant?.id
+        }
+      });
+    }
   } catch (err) {
     console.log("seed user error: ", err);
   }
@@ -200,21 +229,35 @@ async function seedPermissionsAndRoles () {
       },
     });
 
+    // Only try to link permissions if they exist (some roles like 'admin', 'staff', 'default' may not have permissions)
     const permission = await prisma.permission.findFirst({ where: { name } });
 
     if (permission) {
-      await prisma.permissionRole.upsert({
-        where: { id: permission.id },
-        update: { active: true },
-        create: {
+      // Check if PermissionRole already exists
+      const existingPermissionRole = await prisma.permissionRole.findFirst({
+        where: {
           role_name: name,
           permission_id: permission.id,
-          active: true,
         },
       });
-    } else {
-      console.warn(`Permission with name ${name} not found.`);
+
+      if (!existingPermissionRole) {
+        await prisma.permissionRole.create({
+          data: {
+            role_name: name,
+            permission_id: permission.id,
+            active: true,
+          },
+        });
+      } else {
+        // Update if exists
+        await prisma.permissionRole.update({
+          where: { id: existingPermissionRole.id },
+          data: { active: true },
+        });
+      }
     }
+    // Silently skip roles without permissions (like 'admin', 'staff', 'default')
   }
 
   console.log("Roles seeding complete");

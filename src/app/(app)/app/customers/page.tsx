@@ -9,7 +9,11 @@ import { useSession } from "next-auth/react";
 
 export default function Page () {
   const session = useSession();
-  const { data: customers } = trpc.getCustomersByUser.useQuery({ id: session.data?.user.id as string });
+  const userId = session.data?.user.id as string;
+  const { data: customers } = trpc.getCustomersByUser.useQuery(
+    { id: userId },
+    { enabled: !!userId }
+  );
 
   return (
     <>

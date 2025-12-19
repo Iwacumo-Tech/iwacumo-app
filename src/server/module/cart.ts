@@ -39,9 +39,24 @@ export const getCartsByUser = publicProcedure
     return await prisma.cart.findMany({
       where: {
         userId: opts.input.user_id,
+        deleted_at: null, // Only get non-deleted items
       },
       include: {
         user: true, // Include user details
       },
+    });
+  });
+
+export const deleteCartItem = publicProcedure
+  .input(
+    z.object({
+      id: z.string(),
+    })
+  )
+  .mutation(async (opts) => {
+    // Soft delete by setting deleted_at
+    return await prisma.cart.update({
+      where: { id: opts.input.id },
+      data: { deleted_at: new Date() },
     });
   });

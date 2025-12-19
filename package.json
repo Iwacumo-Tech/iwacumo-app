@@ -68,6 +68,7 @@
     "react-editor-js": "^2.1.0",
     "react-hook-form": "^7.51.5",
     "react-quill": "^2.0.0",
+    "react-quill-new": "^3.6.0",
     "react-toastify": "^10.0.6",
     "reactjs-editor": "^10.0.1",
     "slate": "^0.103.0",

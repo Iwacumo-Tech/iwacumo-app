@@ -4,7 +4,12 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { createPublisherSchema, TCreatePublisherSchema } from "@/server/dtos";
+import { 
+  createPublisherSchema, 
+  updatePublisherSchema,
+  TCreatePublisherSchema,
+  TupdatePublisherSchema 
+} from "@/server/dtos";
 import {
   Dialog,
   DialogContent,
@@ -70,26 +75,36 @@ const PublisherForm = ({ publisher, action }: PublisherFormProps) => {
     return result.url;
   };
 
-  const form = useForm<TCreatePublisherSchema>({
-    resolver: zodResolver(createPublisherSchema),
-    defaultValues: {
-      custom_domain: publisher?.custom_domain ?? "",
-      bio: publisher?.bio ?? "",
-      profile_picture: publisher?.profile_picture ?? "",
-      slug: publisher?.slug ?? "",
-      tenant_id: publisher?.tenant_id ?? "",
-      email: "", // Required for user creation
-      password: "", // Required for user creation
-      first_name: "", // Required for user creation
-      last_name: "",
-      phone_number: "",
-      date_of_birth: undefined,
-    },
+  const isEditMode = action === "Edit" && publisher?.id;
+
+  const form = useForm<TCreatePublisherSchema | TupdatePublisherSchema>({
+    resolver: zodResolver(isEditMode ? updatePublisherSchema : createPublisherSchema),
+    defaultValues: isEditMode
+      ? {
+          id: publisher.id,
+          custom_domain: publisher?.custom_domain ?? "",
+          bio: publisher?.bio ?? "",
+          profile_picture: publisher?.profile_picture ?? "",
+          slug: publisher?.slug ?? "",
+          tenant_id: publisher?.tenant_id ?? "",
+        }
+      : {
+          custom_domain: "",
+          bio: "",
+          profile_picture: "",
+          slug: "",
+          tenant_id: "",
+          tenant_name: "",
+          email: "",
+          password: "",
+          first_name: "",
+          last_name: "",
+          phone_number: "",
+          date_of_birth: undefined,
+          username: "",
+        },
   });
 
-  useEffect(() => {
-    console.log("Form State Updated:", form.formState);
-  }, [form.formState]);
 
   const addPublisher = trpc.createPublisher.useMutation({
     onSuccess: async () => {
@@ -99,7 +114,11 @@ const PublisherForm = ({ publisher, action }: PublisherFormProps) => {
         description: "Successfully added a new publisher",
       });
 
-      utils.getAllPublisher.invalidate();
+      await Promise.all([
+        utils.getAllPublisher.invalidate(),
+        utils.getPublisherByOrganization.invalidate(),
+      ]);
+      setOpen(false);
     },
     onError: (error) => {
       console.error(error);
@@ -120,9 +139,11 @@ const PublisherForm = ({ publisher, action }: PublisherFormProps) => {
         description: "Successfully updated the publisher",
       });
 
-      utils.getAllPublisher.invalidate().then(() => {
-        setOpen(false);
-      });
+      await Promise.all([
+        utils.getAllPublisher.invalidate(),
+        utils.getPublisherByOrganization.invalidate(),
+      ]);
+      setOpen(false);
     },
     onError: (error) => {
       console.error(error);
@@ -135,11 +156,8 @@ const PublisherForm = ({ publisher, action }: PublisherFormProps) => {
     },
   });
 
-  const onSubmit = async (values: TCreatePublisherSchema) => {
-    console.log("Form Values:", values);
-    console.log("Form State on Submit:", form.formState);
-    console.log("Hello world");
-    let imageUrl = values.profile_picture; // Default to the existing value (if any)
+  const onSubmit = async (values: TCreatePublisherSchema | TupdatePublisherSchema) => {
+    let imageUrl = values.profile_picture ?? ""; // Default to the existing value (if any)
     if (fileInputRef.current?.files && fileInputRef.current.files[0]) {
       const file = fileInputRef.current.files[0];
       try {
@@ -155,18 +173,23 @@ const PublisherForm = ({ publisher, action }: PublisherFormProps) => {
       }
     }
 
-    if (publisher?.id) {
+    if (isEditMode) {
+      const updateValues = values as TupdatePublisherSchema;
       updatePublisher.mutate({
-        ...values,
-        id: publisher.id,
+        id: publisher!.id,
+        bio: updateValues.bio ?? null,
+        custom_domain: updateValues.custom_domain ?? "",
         profile_picture: imageUrl,
+        tenant_id: updateValues.tenant_id,
+        slug: updateValues.slug ?? null,
       });
     } else {
+      const createValues = values as TCreatePublisherSchema;
       addPublisher.mutate({
-        ...values,
+        ...createValues,
         profile_picture: imageUrl,
-        date_of_birth: values.date_of_birth
-          ? new Date(values.date_of_birth)
+        date_of_birth: createValues.date_of_birth
+          ? new Date(createValues.date_of_birth)
           : undefined,
       });
     }
@@ -226,121 +249,143 @@ const PublisherForm = ({ publisher, action }: PublisherFormProps) => {
                         </FormItem>
                       )}
                     />
-                    {/* User creation fields */}
-                    <FormField
-                      control={form.control}
-                      name="email"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Email</FormLabel>
-                          <FormControl>
-                            <Input {...field} placeholder="Enter email" />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="password"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Password</FormLabel>
-                          <FormControl>
-                            <Input
-                              {...field}
-                              placeholder="Enter password"
-                              type="password"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="first_name"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>First Name</FormLabel>
-                          <FormControl>
-                            <Input {...field} placeholder="Enter first name" />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="last_name"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Last Name</FormLabel>
-                          <FormControl>
-                            <Input {...field} placeholder="Enter last name" />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="username"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Username</FormLabel>
-                          <FormControl>
-                            <Input {...field} placeholder="Enter username" />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="phone_number"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Phone Number</FormLabel>
-                          <FormControl>
-                            <Input
-                              {...field}
-                              placeholder="Enter phone number"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="date_of_birth"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Date of Birth</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="date"
-                              {...field}
-                              value={
-                                field.value
-                                  ? field.value.toISOString().split("T")[0]
-                                  : ""
-                              } // Format Date to YYYY-MM-DD
-                              onChange={(e) =>
-                                field.onChange(
-                                  e.target.value
-                                    ? new Date(e.target.value)
-                                    : undefined
-                                )
-                              } // Convert string to Date
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    {/* Existing fields */}
+                    {!isEditMode && (
+                      <FormField
+                        control={form.control}
+                        name="tenant_name"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Or enter new Organization name</FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                placeholder="e.g., New Organization Inc."
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+                    {/* User creation fields - only show when creating */}
+                    {!isEditMode && (
+                      <>
+                        <FormField
+                          control={form.control}
+                          name="email"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Email</FormLabel>
+                              <FormControl>
+                                <Input {...field} placeholder="Enter email" />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="password"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Password</FormLabel>
+                              <FormControl>
+                                <Input
+                                  {...field}
+                                  placeholder="Enter password"
+                                  type="password"
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="first_name"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>First Name</FormLabel>
+                              <FormControl>
+                                <Input {...field} placeholder="Enter first name" />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="last_name"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Last Name</FormLabel>
+                              <FormControl>
+                                <Input {...field} placeholder="Enter last name" />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="username"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Username</FormLabel>
+                              <FormControl>
+                                <Input {...field} placeholder="Enter username" />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="phone_number"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Phone Number</FormLabel>
+                              <FormControl>
+                                <Input
+                                  {...field}
+                                  placeholder="Enter phone number"
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="date_of_birth"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Date of Birth</FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="date"
+                                  {...field}
+                                  value={
+                                    field.value
+                                      ? field.value.toISOString().split("T")[0]
+                                      : ""
+                                  } // Format Date to YYYY-MM-DD
+                                  onChange={(e) =>
+                                    field.onChange(
+                                      e.target.value
+                                        ? new Date(e.target.value)
+                                        : undefined
+                                    )
+                                  } // Convert string to Date
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </>
+                    )}
+                    {/* Publisher fields */}
                     <FormField
                       control={form.control}
                       name="custom_domain"
@@ -361,36 +406,44 @@ const PublisherForm = ({ publisher, action }: PublisherFormProps) => {
                     <FormField
                       control={form.control}
                       name="bio"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel className="text-gray-700">Bio</FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder="Enter publisher bio"
-                              {...field}
-                              className="border-gray-300 rounded-md"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
+                      render={({ field }) => {
+                        const { value, ...rest } = field;
+                        return (
+                          <FormItem>
+                            <FormLabel className="text-gray-700">Bio</FormLabel>
+                            <FormControl>
+                              <Input
+                                placeholder="Enter publisher bio"
+                                {...rest}
+                                value={(value ?? "") as string}
+                                className="border-gray-300 rounded-md"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        );
+                      }}
                     />
                     <FormField
                       control={form.control}
                       name="slug"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel className="text-gray-700">Slug</FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder="Enter publisher slug"
-                              {...field}
-                              className="border-gray-300 rounded-md"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
+                      render={({ field }) => {
+                        const { value, ...rest } = field;
+                        return (
+                          <FormItem>
+                            <FormLabel className="text-gray-700">Slug</FormLabel>
+                            <FormControl>
+                              <Input
+                                placeholder="Enter publisher slug"
+                                {...rest}
+                                value={(value ?? "") as string}
+                                className="border-gray-300 rounded-md"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        );
+                      }}
                     />
                     <div className="space-y-1">
                       <FormItem>

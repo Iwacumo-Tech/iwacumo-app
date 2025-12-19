@@ -62,15 +62,23 @@ export default function LoginForm() {
       }
 
       console.log("Session Permissions:", session.permissions);
+      console.log("Session Roles:", session.roles);
+      console.log("Session Tenant Slug:", session.tenantSlug);
       console.log(session);
 
+      // Get tenant_slug from permissions (resource_id) or from session.tenantSlug (from ROLE claims)
       slug =
         slug ||
         session?.permissions.find(({ resource_id }) => !!resource_id)
           ?.resource_id ||
+        session?.tenantSlug ||
         null;
 
-      if (!checkPermission(slug, session.permissions)) {
+      // Check if user has permission OR if they have a tenant_slug from role claims
+      const hasPermission = checkPermission(slug, session.permissions);
+      const hasTenantSlug = !!session.tenantSlug || !!slug;
+
+      if (!hasPermission && !hasTenantSlug) {
         toast({
           variant: "destructive",
           title: "Authorization failed.",

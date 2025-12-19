@@ -5,12 +5,27 @@
     "active": true
   },
   {
+    "name": "admin",
+    "built_in": true,
+    "active": true
+  },
+  {
     "name": "publisher",
     "built_in": true,
     "active": true
   },
   {
     "name": "default",
+    "built_in": true,
+    "active": true
+  },
+  {
+    "name": "staff",
+    "built_in": true,
+    "active": true
+  },
+  {
+    "name": "customer",
     "built_in": true,
     "active": true
   }

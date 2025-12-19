@@ -35,41 +35,41 @@ function Action ({ customer }: CustomerActionProps) {
   );
 }
 
-export const columns: ColumnDef<Customer>[] = [
+export const columns: ColumnDef<Customer & { user?: { username?: string | null; email?: string; phone_number?: string | null; first_name?: string } }>[] = [
   {
-    accessorKey: "username",
+    accessorKey: "user.username",
     header: ({ column }) => (
       <DataTableColumnHeader column={column} title="Username" />
     ),
     cell: ({ row }) => (
-      <div className="max-w-xs truncate">{row.getValue("username")}</div>
+      <div className="max-w-xs truncate">{row.original.user?.username || "-"}</div>
     ),
   },
   {
-    accessorKey: "email",
+    accessorKey: "user.email",
     header: ({ column }) => (
       <DataTableColumnHeader column={column} title="Email" />
     ),
     cell: ({ row }) => (
-      <div className="max-w-xs truncate">{row.getValue("email")}</div>
+      <div className="max-w-xs truncate">{row.original.user?.email || "-"}</div>
     ),
   },
   {
-    accessorKey: "password",
+    accessorKey: "user.first_name",
     header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="Password" />
+      <DataTableColumnHeader column={column} title="Name" />
     ),
     cell: ({ row }) => (
-      <div className="max-w-xs truncate">{row.getValue("password")}</div>
+      <div className="max-w-xs truncate">{row.original.user?.first_name || "-"}</div>
     ),
   },
   {
-    accessorKey: "phone_number",
+    accessorKey: "user.phone_number",
     header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="phoneNumber" />
+      <DataTableColumnHeader column={column} title="Phone Number" />
     ),
     cell: ({ row }) => (
-      <div className="max-w-xs truncate">{row.getValue("phone_number")}</div>
+      <div className="max-w-xs truncate">{row.original.user?.phone_number || "-"}</div>
     ),
   },
   {

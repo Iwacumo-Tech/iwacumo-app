@@ -32,6 +32,7 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { trpc } from "@/app/_providers/trpc-provider";
 import { Author } from "@prisma/client";
+import { useSession } from "next-auth/react";
 
 interface AuthorFormProps {
   author?: Author;
@@ -41,6 +42,7 @@ interface AuthorFormProps {
 const AuthorForm = ({ author, action }: AuthorFormProps) => {
   const { toast } = useToast();
   const utils = trpc.useUtils();
+  const session = useSession();
   const [open, setOpen] = useState(false);
 
   console.log("author", author);
@@ -58,9 +60,14 @@ const AuthorForm = ({ author, action }: AuthorFormProps) => {
         description: "Successfully created an Author",
       });
 
-      utils.getAllAuthors.invalidate().then(() => {
-        setOpen(false);
-      });
+      // Invalidate the query used by the authors page to refresh the table
+      const userId = session.data?.user.id as string;
+      if (userId) {
+        await utils.getAuthorsByUser.invalidate({ id: userId });
+      }
+      // Also invalidate getAllAuthors as fallback
+      await utils.getAllAuthors.invalidate();
+      setOpen(false);
     },
     onError: (error) => {
       console.error(error);

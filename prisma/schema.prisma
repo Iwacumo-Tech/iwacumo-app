@@ -69,12 +69,17 @@ model Permission {
 }
 
 model Role {
-  name        String           @id
-  active      Boolean          @default(true)
-  built_in    Boolean          @default(false)
-  permissions PermissionRole[]
-  users       Claim[]
-  deleted_at  DateTime?
+  name            String           @id
+  active          Boolean          @default(true)
+  built_in        Boolean          @default(false)
+  description     String?
+  scope           String?          // global, publisher
+  publisher_id    String?
+  publisher       Publisher?       @relation(fields: [publisher_id], references: [id])
+  permissions     PermissionRole[]
+  users           Claim[]
+  admin_users     AdminUserRole[]
+  deleted_at      DateTime?
 
   @@map(name: "roles")
 }
@@ -97,6 +102,8 @@ model Tenant {
   custom_domain String?
   contact_email String?
   users         User[]     @relation("TenantUsers")
+  admin_users   AdminUser[]
+  admin_user_roles AdminUserRole[]
   slug          String?    @unique
   publishers    Publisher?
   deleted_at    DateTime?
@@ -107,22 +114,25 @@ model Tenant {
 }
 
 model Publisher {
-  id              String     @id @default(uuid())
+  id              String          @id @default(uuid())
   custom_domain   String?
   bio             String?
   profile_picture String?
   social_handles  Json?
-  user_id         String     @unique
-  user            User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  tenant_id       String?    @unique
-  tenant          Tenant?    @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  user_id         String          @unique
+  user            User            @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  tenant_id       String?         @unique
+  tenant          Tenant?         @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
   customers       Customer[]
-  slug            String?    @unique
+  slug            String?         @unique
   deleted_at      DateTime?
   authors         Author[]
   books           Book[]
-  created_at      DateTime   @default(now())
-  updated_at      DateTime   @updatedAt
+  orders          Order[]
+  admin_user_roles AdminUserRole[]
+  roles           Role[]
+  created_at      DateTime        @default(now())
+  updated_at      DateTime        @updatedAt
 
   @@map("publishers")
 }
@@ -139,6 +149,7 @@ model Author {
   slug            String?    @unique
   publisher       Publisher? @relation(fields: [publisher_id], references: [id])
   books           Book[]
+  primary_books   Book[]     @relation("PrimaryAuthor")
   customers       Customer[]
   deleted_at      DateTime?
   created_at      DateTime   @default(now())
@@ -158,6 +169,7 @@ model Customer {
   slug            String?    @unique
   publisher_id    String?
   publisher       Publisher? @relation(fields: [publisher_id], references: [id])
+  orders          Order[]
   created_at      DateTime   @default(now())
   updated_at      DateTime   @updatedAt
   deleted_at      DateTime?
@@ -166,36 +178,78 @@ model Customer {
 }
 
 model Book {
-  id                String     @id @default(uuid())
+  id                String        @id @default(uuid())
   title             String
+  subtitle          String?
+  slug              String?       @unique
+  description       String?
+  synopsis          String?
+  cover_image_url   String?
+  genre             String?
+  subject_tags      String[]
+  edition           String?
+  publication_date  DateTime?
+  default_language  String        @default("en")
+  page_count        Int?
+  reading_age_min   Int?
+  reading_age_max   Int?
+  status            String        @default("draft") // draft, pending_review, published, archived
   short_description String?
   long_description  String?
   price             Float
   book_cover        String?
-  slug              String?    @unique
-  published         Boolean    @default(false)
+  published         Boolean       @default(false)
   book_cover2       String?
   book_cover3       String?
   book_cover4       String?
   tags              String[]
-  paper_back        Boolean    @default(false)
-  e_copy            Boolean    @default(false)
-  hard_cover        Boolean    @default(false)
+  paper_back        Boolean       @default(false)
+  e_copy            Boolean       @default(false)
+  hard_cover        Boolean       @default(false)
   pdf_url           String?
   text_url          String?
   publisher_id      String?
-  featured          Boolean    @default(false)
+  featured          Boolean       @default(false)
+  primary_author_id String?
+  primary_author    Author?       @relation("PrimaryAuthor", fields: [primary_author_id], references: [id])
+  metadata          Json?
   chapters          Chapter[]
-  publisher         Publisher? @relation(fields: [publisher_id], references: [id])
+  variants          BookVariant[]
+  publisher         Publisher?    @relation(fields: [publisher_id], references: [id])
   author_id         String?
-  author            Author?    @relation(fields: [author_id], references: [id])
-  purchased_by      Customer[] @relation("PurchasedBooks")
+  author            Author?        @relation(fields: [author_id], references: [id])
+  purchased_by      Customer[]    @relation("PurchasedBooks")
   reviews           Review[]
-  created_at        DateTime   @default(now())
-  updated_at        DateTime   @updatedAt
+  created_at        DateTime      @default(now())
+  updated_at        DateTime      @updatedAt
+  published_at      DateTime?
+  archived_at       DateTime?
   deleted_at        DateTime?
 
   @@map("books")
+}
+
+model BookVariant {
+  id                String    @id @default(uuid())
+  book_id           String
+  book              Book      @relation(fields: [book_id], references: [id], onDelete: Cascade)
+  format            String    // hardcover, paperback, ebook, audiobook, etc.
+  isbn13            String?   @unique
+  language          String    @default("en")
+  list_price        Float
+  currency          String    @default("USD")
+  discount_price    Float?
+  stock_quantity    Int       @default(0)
+  sku               String?   @unique
+  digital_asset_url String?
+  weight_grams      Int?
+  dimensions        Json?     // {width, height, depth}
+  status            String    @default("active") // active, inactive, archived
+  order_lineitems   OrderLineItem[]
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @updatedAt
+
+  @@map("book_variants")
 }
 
 model Cart {
@@ -286,4 +340,127 @@ model Banner {
   deleted_at DateTime?
 
   @@map("banner")
+}
+
+model Order {
+  id                  String            @id @default(uuid())
+  order_number        String            @unique
+  customer_id         String
+  customer            Customer          @relation(fields: [customer_id], references: [id])
+  publisher_id        String?
+  publisher           Publisher?        @relation(fields: [publisher_id], references: [id])
+  total_amount        Float
+  currency            String            @default("USD")
+  subtotal_amount     Float
+  tax_amount          Float             @default(0)
+  shipping_amount     Float             @default(0)
+  discount_amount     Float             @default(0)
+  status              String            @default("draft") // draft, pending, paid, fulfilled, cancelled, refunded
+  payment_status      String            @default("pending") // pending, authorized, captured, refunded, failed
+  channel             String?           // web, mobile, wholesale, etc.
+  notes               String?
+  shipping_address_id String?
+  billing_address_id  String?
+  line_items          OrderLineItem[]
+  transactions        TransactionHistory[]
+  deliveries          DeliveryTracking[]
+  created_at          DateTime          @default(now())
+  updated_at          DateTime          @updatedAt
+
+  @@map("orders")
+}
+
+model OrderLineItem {
+  id                  String            @id @default(uuid())
+  order_id            String
+  order               Order             @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  book_variant_id     String
+  book_variant        BookVariant       @relation(fields: [book_variant_id], references: [id])
+  quantity            Int
+  unit_price          Float
+  currency            String            @default("USD")
+  total_price         Float
+  fulfillment_status  String            @default("unfulfilled") // unfulfilled, in_progress, shipped, delivered, cancelled
+  metadata            Json?
+  deliveries          DeliveryTracking[]
+  created_at          DateTime          @default(now())
+  updated_at          DateTime          @updatedAt
+
+  @@map("order_lineitems")
+}
+
+model TransactionHistory {
+  id                    String    @id @default(uuid())
+  order_id              String
+  order                 Order     @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  type                  String    // authorization, capture, refund, payout, chargeback
+  amount                Float
+  currency              String     @default("USD")
+  payment_provider      String?    // Stripe, PayPal, etc.
+  provider_reference    String?
+  status                String     @default("pending") // pending, succeeded, failed
+  processor_response    Json?
+  recorded_by_admin_id  String?
+  recorded_by_admin     AdminUser? @relation(fields: [recorded_by_admin_id], references: [id])
+  created_at            DateTime   @default(now())
+  updated_at            DateTime   @updatedAt
+
+  @@map("transaction_history")
+}
+
+model DeliveryTracking {
+  id                  String          @id @default(uuid())
+  order_id            String
+  order               Order           @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  order_lineitem_id   String?
+  order_lineitem      OrderLineItem?   @relation(fields: [order_lineitem_id], references: [id])
+  carrier             String
+  service_level       String?          // standard, express, overnight, etc.
+  tracking_number     String          @unique
+  tracking_url        String?
+  estimated_delivery_at DateTime?
+  shipped_at          DateTime?
+  delivered_at        DateTime?
+  status              String           @default("pending") // pending, in_transit, out_for_delivery, delivered, delayed, failed
+  proof_of_delivery   Json?
+  created_at          DateTime         @default(now())
+  updated_at          DateTime         @updatedAt
+
+  @@map("delivery_tracking")
+}
+
+model AdminUser {
+  id            String            @id @default(uuid())
+  tenant_id     String            // Required: AdminUser belongs to a Tenant/Organization
+  tenant        Tenant            @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  email         String            @unique
+  password_hash String?
+  first_name    String?
+  last_name     String?
+  status        String            @default("invited") // invited, active, suspended, archived
+  last_login_at DateTime?
+  roles         AdminUserRole[]
+  transactions  TransactionHistory[]
+  created_at    DateTime          @default(now())
+  updated_at    DateTime          @updatedAt
+
+  @@map("admin_users")
+}
+
+model AdminUserRole {
+  id            String    @id @default(uuid())
+  admin_user_id String
+  admin_user    AdminUser @relation(fields: [admin_user_id], references: [id], onDelete: Cascade)
+  tenant_id     String    // Required: AdminUserRole belongs to a Tenant
+  tenant        Tenant    @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  role_name     String
+  role          Role      @relation(fields: [role_name], references: [name], onDelete: Cascade)
+  publisher_id  String?
+  publisher     Publisher? @relation(fields: [publisher_id], references: [id])
+  expires_at    DateTime?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  @@unique([admin_user_id, role_name, publisher_id, tenant_id])
+  @@map("admin_user_roles")
 }

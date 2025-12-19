@@ -42,14 +42,20 @@ export const { handlers, auth } = NextAuth({
       return token;
     },
     async session ({ session, token }) {
+      if (!token.sub) {
+        return session;
+      }
+
+      const claims = await getUserClaims(token.sub);
+      
       return {
         ...session,
         user: {
           id: token.sub,
-          first_name: token.name as string,
-          email: token.email,
+          first_name: (token.name as string) || "",
+          email: (token.email as string) || "",
         },
-        ...(token?.sub ? await getUserClaims(token.sub) : {}),
+        ...claims,
       };
     },
   },
@@ -58,9 +64,11 @@ export const { handlers, auth } = NextAuth({
 async function getUserClaims (userId: string): Promise<{
   permissions: Permission[];
   roles: Role[];
+  tenantSlug: string | null;
 }> {
   const permissions = new Set<Permission>();
   const roles = new Set<Role>();
+  let tenantSlug: string | null = null;
 
   const claims = await prisma.claim.findMany({
     where: { user_id: userId, active: true },
@@ -68,8 +76,20 @@ async function getUserClaims (userId: string): Promise<{
   });
 
   claims.forEach(({ role, permission, tenant_slug }) => {
-    if (permission?.active) permissions.add({ ...permission, resource_id: tenant_slug as string });
-    if (role) roles.add(role);
+    if (permission?.active) {
+      permissions.add({ ...permission, resource_id: tenant_slug as string });
+      // If we have a tenant_slug from permission claim, use it
+      if (tenant_slug && !tenantSlug) {
+        tenantSlug = tenant_slug;
+      }
+    }
+    if (role) {
+      roles.add(role);
+      // If we have a tenant_slug from role claim, use it
+      if (tenant_slug && !tenantSlug) {
+        tenantSlug = tenant_slug;
+      }
+    }
   });
 
   const rolePermissions = await prisma.permissionRole.findMany({
@@ -86,5 +106,6 @@ async function getUserClaims (userId: string): Promise<{
   return {
     permissions: [...permissions],
     roles: [...roles],
+    tenantSlug,
   };
 }

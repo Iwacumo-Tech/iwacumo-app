@@ -34,7 +34,13 @@ export const links = [
     name: "Books",
     url: "/app/books",
     icon: <FaBookOpen className="size-5 mr-2" />,
-    requiredPermission: "super-admin, owner, publisher, author",
+    requiredPermission: "super-admin, owner, publisher, author, customer",
+  },
+  {
+    name: "Orders",
+    url: "/app/orders",
+    icon: <LuLayoutDashboard className="size-5 mr-2" />,
+    requiredPermission: "super-admin, owner, publisher",
   },
   {
     name: "Tenants",

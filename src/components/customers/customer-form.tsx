@@ -24,6 +24,8 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { useToast } from "@/components/ui/use-toast";
 import { trpc } from "@/app/_providers/trpc-provider";
 import { Customer } from "@prisma/client";
+import { useSession } from "next-auth/react";
+import { useEffect } from "react";
 
 interface CustomerFormProps {
   customer?: Customer;
@@ -33,12 +35,29 @@ interface CustomerFormProps {
 const CustomerForm = ({ customer, action }: CustomerFormProps) => {
   const { toast } = useToast();
   const utils = trpc.useUtils();
+  const session = useSession();
   const [open, setOpen] = useState(false);
+  const userId = session.data?.user.id as string;
+
+  // Get current user to determine publisher_id
+  const { data: currentUser } = trpc.getUserById.useQuery(
+    { id: userId },
+    { enabled: !!userId }
+  );
 
   const form = useForm<TCreateCustomerSchema>({
     resolver: zodResolver(createCustomerSchema),
-    defaultValues: { id: customer?.id ?? "" },
+    defaultValues: { 
+      id: customer?.id ?? "",
+    },
   });
+
+  // Update publisher_id when currentUser loads (for new customers)
+  useEffect(() => {
+    if (!customer?.id && currentUser?.publisher?.id) {
+      form.setValue("publisher_id", currentUser.publisher.id);
+    }
+  }, [currentUser, customer, form]);
 
   const addCustomer = trpc.createCustomer.useMutation({
     onSuccess: async () => {
@@ -48,9 +67,11 @@ const CustomerForm = ({ customer, action }: CustomerFormProps) => {
         description: "Successfully created a Customer",
       });
 
-      utils.getAllCustomers.invalidate().then(() => {
-        setOpen(false);
-      });
+      await Promise.all([
+        utils.getCustomersByUser.invalidate({ id: userId }),
+        utils.getAllCustomers.invalidate(), // Also invalidate all customers as fallback
+      ]);
+      setOpen(false);
     },
     onError: (error) => {
       console.error(error);
@@ -71,9 +92,11 @@ const CustomerForm = ({ customer, action }: CustomerFormProps) => {
         description: "Successfully updated Customer",
       });
 
-      utils.getAllCustomers.invalidate().then(() => {
-        setOpen(false);
-      });
+      await Promise.all([
+        utils.getCustomersByUser.invalidate({ id: userId }),
+        utils.getAllCustomers.invalidate(), // Also invalidate all customers as fallback
+      ]);
+      setOpen(false);
     },
     onError: (error) => {
       console.error(error);
@@ -87,13 +110,19 @@ const CustomerForm = ({ customer, action }: CustomerFormProps) => {
   });
 
   const onSubmit = (values: TCreateCustomerSchema) => {
+    // Automatically set publisher_id if current user is a publisher
+    const finalValues = {
+      ...values,
+      publisher_id: values.publisher_id ?? currentUser?.publisher?.id ?? undefined,
+    };
+
     if (customer?.id) {
       updateCustomer.mutate({
-        ...values,
+        ...finalValues,
         id: customer.id,
       });
     } else {
-      addCustomer.mutate(values);
+      addCustomer.mutate(finalValues);
     }
   };
 
@@ -129,13 +158,51 @@ const CustomerForm = ({ customer, action }: CustomerFormProps) => {
                       <div className="grid gap-6">
                         <FormField
                           control={form.control}
+                          name="first_name"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="text-gray-700">First Name</FormLabel>
+                              <FormControl>
+                                <Input
+                                  placeholder="Enter first name"
+                                  {...field}
+                                  className="border-gray-300 rounded-md"
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <FormField
+                          control={form.control}
+                          name="last_name"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="text-gray-700">Last Name</FormLabel>
+                              <FormControl>
+                                <Input
+                                  placeholder="Enter last name"
+                                  {...field}
+                                  className="border-gray-300 rounded-md"
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                      <div className="grid gap-6">
+                        <FormField
+                          control={form.control}
                           name="username"
                           render={({ field }) => (
                             <FormItem>
                               <FormLabel className="text-gray-700">UserName</FormLabel>
                               <FormControl>
                                 <Input
-                                  placeholder="Enter customer name"
+                                  placeholder="Enter username"
                                   {...field}
                                   className="border-gray-300 rounded-md"
                                 />

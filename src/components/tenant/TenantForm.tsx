@@ -53,7 +53,8 @@ const TenantForm = ({ tenant, action }: TenantFormProps) => {
         description: "Successfully added a new tenant",
       });
 
-      utils.getAllTenant.invalidate();
+      await utils.getAllTenant.invalidate();
+      setOpen(false);
     },
     onError: (error) => {
       console.error(error);

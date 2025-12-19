@@ -15,8 +15,13 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import TextFile from "./editor";
+import dynamic from "next/dynamic";
 import { Chapter } from "@prisma/client";
+
+const TextFile = dynamic(() => import("./editor"), { 
+  ssr: false,
+  loading: () => <div className="h-96 border rounded-md p-4">Loading editor...</div>
+});
 
 interface ChapterFormProps {
   chapter?: Chapter;
@@ -56,9 +61,9 @@ const ChapterForm = ({ chapter, action, setShowForm, bookId }: ChapterFormProps)
         description: "Successfully added a chapter",
       });
 
-      utils.getAllChapters.invalidate().then(() => {
-        setShowForm(false);
-      });
+      // Invalidate the query for chapters by book ID to refresh the table
+      await utils.getAllChapterByBookId.invalidate({ book_id: bookId });
+      setShowForm(false);
     },
     onError: (error) => {
       console.error(error);
@@ -79,9 +84,9 @@ const ChapterForm = ({ chapter, action, setShowForm, bookId }: ChapterFormProps)
         description: "Successfully updated the chapter",
       });
 
-      utils.getAllChapters.invalidate().then(() => {
-        setShowForm(false);
-      });
+      // Invalidate the query for chapters by book ID to refresh the table
+      await utils.getAllChapterByBookId.invalidate({ book_id: bookId });
+      setShowForm(false);
     },
     onError: (error) => {
       console.error(error);

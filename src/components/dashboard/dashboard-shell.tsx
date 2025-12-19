@@ -33,6 +33,15 @@ export default function DashboardShell({
   });
 
   const filteredLinks = links.filter((link) => {
+    // Check if user is a customer (has "customer" role)
+    const isCustomer = session.data?.roles.some((role) => role.name === "customer");
+    
+    // If customer, allow "Home", "Books", and "Profile"
+    if (isCustomer) {
+      const customerAllowedLinks = ["Home", "Books", "Profile"];
+      return customerAllowedLinks.includes(link.name);
+    }
+
     // Only allow "Home", "Authors", "Customers", and "Profile"  and "Books" if the tenant is not "Booka"
     if (user.data?.claims.some((claim) => claim.tenant_slug !== "booka")) {
       const allowedLinks = ["Home", "Authors", "Customers", "Profile", "Books"];

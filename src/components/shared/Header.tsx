@@ -12,9 +12,15 @@ import { trpc } from "@/app/_providers/trpc-provider";
 export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const session = useSession();
-  const userCart = trpc.getCartsByUser.useQuery({
-    user_id: session.data?.user.id as string,
-  });
+  const userId = session.data?.user.id as string;
+  const userCart = trpc.getCartsByUser.useQuery(
+    {
+      user_id: userId,
+    },
+    {
+      enabled: !!userId, // Only fetch when user_id is available
+    }
+  );
 
   const logoutRedirectTo = "/";
 

@@ -41,7 +41,7 @@ export function DataTable<TData, TValue> ({
   itemCypressTag,
 }: DataTableProps<TData, TValue>) {
   const table = useReactTable({
-    data,
+    data: data || [],
     columns,
     enableRowSelection: true,
     manualPagination: true,
