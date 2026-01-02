@@ -1,7 +1,8 @@
 import bcrypt from "bcryptjs";
+import { hash } from "bcryptjs";
 import prisma from "@/lib/prisma";
 import { publicProcedure } from "@/server/trpc";
-import { assignRoleSchema, createRoleSchema, createUserSchema, deleteUserSchema, editProfileSchema } from "@/server/dtos";
+import { assignRoleSchema, createRoleSchema, createUserSchema, deleteUserSchema, editProfileSchema, signUpSchema } from "@/server/dtos";
 
 export const createUser = publicProcedure.input(createUserSchema).mutation(async (opts)=>{
   const user = await prisma.user.create({
@@ -167,3 +168,47 @@ export const updateUserProfile = publicProcedure.input(editProfileSchema).mutati
 
   return user;
 });
+
+
+export const signUpCustomer = publicProcedure
+  .input(signUpSchema)
+  .mutation(async ({ input }) => {
+    // 1. Check if user already exists
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        OR: [{ email: input.email }, { username: input.username }]
+      }
+    });
+
+    if (existingUser) {
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: "User with this email or username already exists",
+      });
+    }
+
+    // 2. Hash password and create User + Customer
+    const hashedPassword = await hash(input.password, 12);
+
+    return await prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          email: input.email,
+          username: input.username,
+          password: hashedPassword,
+          first_name: input.first_name,
+          last_name: input.last_name,
+          active: true,
+        },
+      });
+
+      const customer = await tx.customer.create({
+        data: {
+          user_id: user.id,
+          name: `${input.first_name} ${input.last_name}`,
+        },
+      });
+
+      return { success: true, userId: user.id };
+    });
+  });

@@ -7,16 +7,17 @@ import {
   getAllUsers,
   getUserById,
   updateUser,
-  updateUserProfile
+  updateUserProfile,
+  signUpCustomer,
 } from "./module/user";
 import { publicProcedure, router } from "./trpc";
-import { createPublisher, deletePublisher, getAllPublisher, updatePublisher, getPublisherByOrganization   } from "./module/publisher";
-import { createAuthor, deleteAuthor, getAllAuthors, signUpAuthor, getAuthorsByUser, getAuthorBySlug } from "./module/author";
+import { createPublisher, deletePublisher, getAllPublisher, updatePublisher, getPublisherByOrganization, getPublisherDashboardStats } from "./module/publisher";
+import { createAuthor, deleteAuthor, getAllAuthors, signUpAuthor, getAuthorsByUser, getAuthorBySlug, getAuthorDashboardStats } from "./module/author";
 import { createCustomer, deleteCustomer, updateCustomer, getAllCustomers, getCustomersByUser, registerGuestAndTransferCart } from "./module/customer";
-import { createBook, deleteBook, updateBook, getAllBooks, getBookById, getBookByAuthor , toggleBookFeatured,getAllFeaturedBooks, getNewArrivalBooks, getPurchasedBooksByCustomer } from "./module/book";
+import { createBook, deleteBook, updateBook, getAllBooks, getBookById, getBookByAuthor , toggleBookFeatured,getAllFeaturedBooks, getNewArrivalBooks, getPurchasedBooksByCustomer, generateWatermarkedEbook } from "./module/book";
 import { createChapter, updateChapter, deleteChapter, getAllChapters, viewChapterById, getAllChapterByBookId } from "./module/chapter";
-import {  updateTenant, getAllTenant, deleteTenant, createTenant } from "./module/tenant";
-import { createImageUpload } from "./module/uploads";
+import {  updateTenant, getAllTenant, deleteTenant, createTenant, getTenantBySlug } from "./module/tenant";
+import { imageUpload, createImageUpload } from "./module/uploads";
 import { createHeroSlide, getAllHeroSlides } from "./module/slider";
 import { getAllBanners, createBanner, toggleBannerVisibility } from "./module/banner";
 import { createReview, getReviewsByBook } from "./module/review";
@@ -31,6 +32,7 @@ import {
   getAdminUserById,
   deleteAdminUser,
   getAdminRoles,
+  getGlobalPlatformStats
 } from "./module/admin";
 import {
   createOrderFromCart,
@@ -52,12 +54,15 @@ import {
   createTransaction,
   getTransactionsByOrder,
 } from "./module/payment";
+// import { generateWatermarkedEbook } from "./module/watermark";
+import { getChapterContent } from "./module/reader";
 
 export const appRouter = router({
   createUser,
   updateUser,
   getAllUsers,
   updateUserProfile,
+  signUpCustomer,
   deleteUser,
   getUserById,
   createRole,
@@ -66,6 +71,7 @@ export const appRouter = router({
   createPublisher,
   deletePublisher,
   getAllPublisher,
+  getPublisherDashboardStats,
   updatePublisher,
   getPublisherByOrganization,
   createAuthor,
@@ -73,6 +79,7 @@ export const appRouter = router({
   signUpAuthor,
   getAuthorBySlug,
   getAuthorsByUser,
+  getAuthorDashboardStats,
   getAllAuthors,
   createCustomer,
   updateCustomer,
@@ -97,9 +104,11 @@ export const appRouter = router({
   getAllFeaturedBooks,
   getNewArrivalBooks,
   updateTenant,
+  getTenantBySlug,
   getAllTenant,
   deleteTenant,
   createTenant,
+  imageUpload,
   createImageUpload,
   createHeroSlide,
   getAllHeroSlides,
@@ -129,6 +138,10 @@ export const appRouter = router({
   verifyPayment,
   createTransaction,
   getTransactionsByOrder,
+  // Watermark management
+  generateWatermarkedEbook,
+  // Reader management
+  getChapterContent,
   // AdminUser management
   createAdminUser,
   updateAdminUser,
@@ -139,6 +152,7 @@ export const appRouter = router({
   getAdminUserById,
   deleteAdminUser,
   getAdminRoles,
+  getGlobalPlatformStats,
   healthCheck: publicProcedure.query(() => {
     return { message: "API up and running..." };
   }),

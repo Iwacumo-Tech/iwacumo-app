@@ -6,6 +6,8 @@ declare module "next-auth" {
     id: string;
     first_name: string;
     email: string;
+    author_id?: string;
+    publisher_id?: string;
   }
 
   interface Session extends DefaultSession {

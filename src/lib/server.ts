@@ -1,33 +1,38 @@
+// revelation/src/lib/server.ts
 import { Permission } from "@prisma/client";
-import axios from "axios";
-
-interface CloudinaryResponse {
-  url: string;
-}
 
 export function checkPermission (slug: string | null, permissions: Permission[]) {
   try {
     if (!slug || !permissions.some(({ resource_id, module }) => (module == "publisher" || module == "author") && resource_id == slug)) {
       return false;
     }
-
     return true;
   } catch (error) {
     console.error("Error checking permission:", error);
-
     return false;
   }
 }
 
-export async function uploadImage (file: File) {
+/**
+ * Augmented uploadImage (now handles images, PDFs, and DOCX)
+ * Uses the internal /api/avatar/upload route which leverages Vercel Blob
+ */
+export async function uploadImage (file: File): Promise<string> {
   const formData = new FormData();
+  formData.append("file", file);
 
-  formData.append("file", file!);
-  formData.append("upload_preset", "ewf7xmbi");
+  // Call the existing Vercel Blob API route
+  const response = await fetch(`/api/avatar/upload?filename=${encodeURIComponent(file.name)}`, {
+    method: "POST",
+    body: formData,
+  });
 
-  const response = await axios.post<CloudinaryResponse>("https://api.cloudinary.com/v1_1/dws9ykgky/image/upload", formData);
-  const imgUrl = response.data.url;
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.error || "Failed to upload file");
+  }
 
-  return imgUrl;
+  const data = await response.json();
+  // Vercel Blob returns the public URL in the 'url' property
+  return data.url;
 }
-

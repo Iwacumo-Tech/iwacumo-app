@@ -280,3 +280,31 @@ export const getCustomersByUser = publicProcedure.input(findBookByIdSchema).quer
   // Return empty array if user is neither customer, publisher nor author
   return [];
 });
+
+export const getCustomerDashboardStats = publicProcedure
+  .input(z.object({ user_id: z.string() }))
+  .query(async ({ input }) => {
+    const customer = await prisma.customer.findUnique({
+      where: { user_id: input.user_id },
+      include: {
+        orders: {
+          where: { payment_status: "captured" },
+          orderBy: { created_at: "desc" },
+          take: 5,
+          include: { line_items: { include: { book_variant: { include: { book: true } } } } }
+        },
+        _count: {
+          select: { orders: { where: { payment_status: "captured" } } }
+        }
+      }
+    });
+
+    if (!customer) return null;
+
+    return {
+      totalPurchases: customer._count.orders,
+      recentOrders: customer.orders,
+      // Total amount spent
+      totalSpent: customer.orders.reduce((acc, order) => acc + order.total_amount, 0),
+    };
+  });

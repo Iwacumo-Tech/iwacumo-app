@@ -1,76 +1,78 @@
-// NB: Do not add "use client" to this file if you want to build links
-// using server side session data like user roles or permissions
-import { LuLayoutDashboard } from "react-icons/lu";
+import { LuLayoutDashboard, LuUsers, LuUserPlus, LuSettings, LuShoppingBag, LuFileText, LuLayers } from "react-icons/lu";
 import { FaBookOpen } from "react-icons/fa";
 import { MdDashboardCustomize } from "react-icons/md";
-import { UserPlusIcon } from "lucide-react";
+import { UserPlusIcon, Image as ImageIcon, Sliders as SliderIcon } from "lucide-react";
 
+/**
+ * Navigation Links Configuration
+ * requiredPermission: comma-separated list of roles allowed to see the link.
+ */
 export const links = [
   {
-    name: "Home",
+    name: "Dashboard",
     url: "/app",
     icon: <LuLayoutDashboard className="size-5 mr-2" />,
-    requiredPermission: "super-admin, publisher, author",
+    requiredPermission: "super-admin, tenant-admin, publisher, author, customer",
   },
   {
     name: "Users",
     url: "/app/users",
-    icon: <LuLayoutDashboard className="size-5 mr-2" />,
+    icon: <LuUsers className="size-5 mr-2" />,
     requiredPermission: "super-admin",
+  },
+  {
+    name: "Tenants",
+    url: "/app/tenants",
+    icon: <LuLayers className="size-5 mr-2" />,
+    requiredPermission: "super-admin",
+  },
+  {
+    name: "Publishers",
+    url: "/app/publishers",
+    icon: <LuUserPlus className="size-5 mr-2" />,
+    requiredPermission: "super-admin, tenant-admin",
   },
   {
     name: "Authors",
     url: "/app/authors",
-    icon: <LuLayoutDashboard className="size-5 mr-2" />,
-    requiredPermission: "super-admin, owner, publisher",
-  },
-  {
-    name: "Customers",
-    url: "/app/customers",
-    icon: <MdDashboardCustomize className="size-5 mr-2" />,
-    requiredPermission: "super-admin, owner, publisher, author",
+    icon: <UserPlusIcon className="size-5 mr-2" />,
+    requiredPermission: "super-admin, tenant-admin, publisher",
   },
   {
     name: "Books",
     url: "/app/books",
     icon: <FaBookOpen className="size-5 mr-2" />,
-    requiredPermission: "super-admin, owner, publisher, author, customer",
+    requiredPermission: "super-admin, tenant-admin, publisher, author, customer",
   },
   {
     name: "Orders",
     url: "/app/orders",
-    icon: <LuLayoutDashboard className="size-5 mr-2" />,
-    requiredPermission: "super-admin, owner, publisher",
+    icon: <LuShoppingBag className="size-5 mr-2" />,
+    requiredPermission: "super-admin, tenant-admin, publisher, author",
   },
   {
-    name: "Tenants",
-    url: "/app/tenants",
-    icon: <LuLayoutDashboard className="size-5 mr-2" />,
-    requiredPermission: "super-admin, owner",
-  },
-  {
-    name: "Publishers",
-    url: "/app/publishers",
-    icon: <LuLayoutDashboard className="size-5 mr-2" />,
-    requiredPermission: "super-admin, owner",
+    name: "Customers",
+    url: "/app/customers",
+    icon: <MdDashboardCustomize className="size-5 mr-2" />,
+    requiredPermission: "super-admin, tenant-admin, publisher, author",
   },
   {
     name: "Hero Slider",
     url: "/app/heroslider",
-    icon: <LuLayoutDashboard className="size-5 mr-2" />,
+    icon: <SliderIcon className="size-5 mr-2" />,
     requiredPermission: "super-admin",
   },
   {
     name: "Banner",
     url: "/app/banner",
-    icon: <LuLayoutDashboard className="size-5 mr-2" />,
+    icon: <ImageIcon className="size-5 mr-2" />,
     requiredPermission: "super-admin",
   },
   {
     name: "Profile",
     url: "/app/profile",
-    icon: <UserPlusIcon className="size-5 mr-2" />,
-    requiredPermission: "super-admin, owner, publisher, author",
+    icon: <LuSettings className="size-5 mr-2" />,
+    requiredPermission: "super-admin, tenant-admin, publisher, author, customer",
   },
 ];
 

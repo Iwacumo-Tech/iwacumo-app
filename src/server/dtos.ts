@@ -16,7 +16,6 @@ export const createUserSchema = z.object({
   custom_domain: z.string().optional(),
   website: z.string().optional(),
   author_name: z.string().optional(),
-
 });
 
 export const createRoleSchema = z.object({
@@ -30,7 +29,6 @@ export const assignRoleSchema = z.object({
   user_id: z.string(),
   role_name: z.string(),
 });
-
 
 export const createPublisherSchema = z
   .object({
@@ -66,7 +64,6 @@ export const createPublisherSchema = z
     }
   );
 
-
 export const updatePublisherSchema = z.object({
   id: z.string(),
   bio: z.string().nullable().optional(),
@@ -78,15 +75,14 @@ export const updatePublisherSchema = z.object({
 
 export const getPublisherByOrgSchema = z.object({
   name: z.string(),
-})
+});
 
-
-export const createAuthorSchema = z .object({
+export const createAuthorSchema = z.object({
   id: z.string().optional(),
   custom_domain: z.string().optional(),
   email: z.string().optional(),
   password: z.string().optional(),
-  username: z.string ().optional(),
+  username: z.string().optional(),
   first_name: z.string().optional(),
   publisher_id: z.string().optional(),
   last_name: z.string().optional(),
@@ -96,7 +92,7 @@ export const createAuthorSchema = z .object({
 
 export const imageUploadSchema = z.object({ file: z.instanceof(File).optional() });
 
-export const signUpAuthorSchema = z .object({
+export const signUpAuthorSchema = z.object({
   email: z.string().optional(),
   password: z.string().optional(),
   first_name: z.string().optional(),
@@ -161,8 +157,10 @@ export const createBookSchema = z.object({
   paper_back: z.boolean().optional().default(false), // Legacy - will be converted to variant
   e_copy: z.boolean().optional().default(false), // Legacy - will be converted to variant
   hard_cover: z.boolean().optional().default(false), // Legacy - will be converted to variant
-  pdf_url: z.string().url("PDF URL must be valid").optional(), 
-  text_url: z.string().url("Text URL must be valid").optional(),
+  pdf_url: z.string().url("PDF URL must be valid").nullable().optional(), 
+  text_url: z.string().url("Text URL must be valid").nullable().optional(),
+  docx_url: z.string().url("DOCX URL must be valid").nullable().optional(), // Added for reader content
+  reader_url: z.string().url("Reader URL must be valid").nullable().optional(), // Fallback
   publisher_id: z.string().optional(),
   author_id: z.string().optional(),
   primary_author_id: z.string().optional(),
@@ -203,11 +201,10 @@ export const findChapterByIdSchema = z.object({
   book_id: z.string(),
 });
 
-export const editProfileSchema = z .object({
+export const editProfileSchema = z.object({
   id: z.string().optional(),
   profilePicture: z.string().optional(),
   bio: z.string().optional(),
-
 });
 
 export const createBannerSchema = z.object({
@@ -229,7 +226,6 @@ export const reviewSchema = z.object({
   email: z.string().optional(),
 });
 
-
 export const CartSchema = z.object({
   book_image: z.string(),
   book_title: z.string(),
@@ -242,16 +238,12 @@ export const CartSchema = z.object({
 
 export const findBookByIdSchema = z.object({ id: z.string() });
 
-export const  deleteChapterSchema = z.object ({ id: z.string () });
+export const deleteChapterSchema = z.object({ id: z.string() });
 
 export type TcreateBannerSchema = z.infer<typeof createBannerSchema>;
-
 export type TFindChapterByIdSchema = z.infer<typeof findChapterByIdSchema>;
-
-
 export type TCreateChapterSchema = z.infer<typeof createChapterSchema>;
-
-export type TCreateTenantSchema =  z.infer<typeof createTenantSchema>;
+export type TCreateTenantSchema = z.infer<typeof createTenantSchema>;
 
 export const createCustomerSchema = z.object({
   id: z.string().optional(),
@@ -260,12 +252,11 @@ export const createCustomerSchema = z.object({
   publisher_id: z.string().optional(),
   email: z.string().optional(),
   password: z.string().optional(),
-  username: z.string ().optional(),
+  username: z.string().optional(),
   first_name: z.string().optional(),
   last_name: z.string().optional(),
   phone_number: z.string().optional(),
   date_of_birth: z.date().optional(),
-
 });
 
 export const heroSlideSchema = z.object({
@@ -284,39 +275,26 @@ export const bookSlideSchema = z.object({
   image: z.string().min(1, "Image is required"),
 });
 
-export type  TCreateCustomerSchema = z.infer<typeof createCustomerSchema>;
-
-export type  TheroSlideSchema = z.infer<typeof heroSlideSchema>;
-
-export type  TbookSlideSchema = z.infer<typeof bookSlideSchema>;
+export type TCreateCustomerSchema = z.infer<typeof createCustomerSchema>;
+export type TheroSlideSchema = z.infer<typeof heroSlideSchema>;
+export type TbookSlideSchema = z.infer<typeof bookSlideSchema>;
 
 export const deleteCustomerSchema = z.object({ id: z.string() });
-
 export const deleteBookSchema = z.object({ id: z.string() });
-
 export const deleteTenantSchema = z.object({ id: z.string() });
 
-export type  TCreateBookSchema = z.infer<typeof createBookSchema>;
-
-export type  TEditProfileSchema = z.infer<typeof editProfileSchema>;
+export type TCreateBookSchema = z.infer<typeof createBookSchema>;
+export type TEditProfileSchema = z.infer<typeof editProfileSchema>;
 
 export const deleteAuthorSchema = z.object({ id: z.string() });
-
-export type  TCreateAuthorSchema = z.infer<typeof createAuthorSchema>;
-
+export type TCreateAuthorSchema = z.infer<typeof createAuthorSchema>;
 export type TCreatePublisherSchema = z.infer<typeof createPublisherSchema>;
-
 export type TupdatePublisherSchema = z.infer<typeof updatePublisherSchema>;
-
-
 export type TSignUpAuthorSchema = z.infer<typeof signUpAuthorSchema>;
 
 export const deletePublisherSchema = z.object({ id: z.string() });
-
 export const deleteUserSchema = z.object({ id: z.string() });
-
 export type TCreateUserSchema = z.infer<typeof createUserSchema>;
-
 export type TAssignRoleSchema = z.infer<typeof assignRoleSchema>;
 
 // AdminUser schemas
@@ -480,6 +458,16 @@ export const updateDeliveryTrackingSchema = z.object({
   status: z.enum(["pending", "in_transit", "out_for_delivery", "delivered", "delayed", "failed"]).optional(),
   proof_of_delivery: z.record(z.any()).optional(),
 });
+
+export const signUpSchema = z.object({
+  first_name: z.string().min(2, "First name is required"),
+  last_name: z.string().min(2, "Last name is required"),
+  email: z.string().email("Invalid email address"),
+  username: z.string().min(3, "Username must be at least 3 characters"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+});
+
+export type TSignUpSchema = z.infer<typeof signUpSchema>;
 
 export const getDeliveriesByOrderSchema = z.object({
   order_id: z.string(),

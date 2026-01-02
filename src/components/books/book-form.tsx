@@ -65,6 +65,9 @@ const BookForm = ({ book, action }: BookFormProps) => {
   const [hardcoverPrice, setHardcoverPrice] = useState<number>(0);
   const [ebookPrice, setEbookPrice] = useState<number>(0);
 
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [docxFile, setDocxFile] = useState<File | null>(null);
+
   // Helper function to get initial prices from book
   const getInitialPrices = () => {
     if (book && (book as any).variants) {
@@ -161,7 +164,9 @@ const BookForm = ({ book, action }: BookFormProps) => {
         description: "Successfully added a new book",
       });
 
-      utils.getAllBooks.invalidate();
+      utils.getAllBooks.invalidate().then(() => {
+        setOpen(false); // Closes the Dialog 
+      });
     },
     onError: (error) => {
       console.error(error);
@@ -197,16 +202,22 @@ const BookForm = ({ book, action }: BookFormProps) => {
     },
   });
 
+  const uploadMutation = trpc.imageUpload.useMutation();  
+
   const onSubmit = async (values: any) => {
-    // Upload images if files are selected, otherwise use existing or null
+  try {
+    // 1. Upload Images (Restoring your working logic)
     const imageUrl = file ? await uploadImage(file) : (book?.book_cover || null);
     const imageUrl2 = file2 ? await uploadImage(file2) : (book?.book_cover2 || null);
     const imageUrl3 = file3 ? await uploadImage(file3) : (book?.book_cover3 || null);
     const imageUrl4 = file4 ? await uploadImage(file4) : (book?.book_cover4 || null);
 
-    // Check if at least one image is provided
-    const hasAtLeastOneImage = imageUrl || imageUrl2 || imageUrl3 || imageUrl4;
+    // 2. NEW: Upload Ebook Documents (PDF and DOCX)
+    const pdfUrl = pdfFile ? await uploadImage(pdfFile) : (book?.pdf_url || null);
+    const docxUrl = docxFile ? await uploadImage(docxFile) : (book?.text_url || null);
 
+    // 3. Validation: Images
+    const hasAtLeastOneImage = imageUrl || imageUrl2 || imageUrl3 || imageUrl4;
     if (!hasAtLeastOneImage) {
       toast({
         title: "Validation Error",
@@ -216,7 +227,7 @@ const BookForm = ({ book, action }: BookFormProps) => {
       return;
     }
 
-    // Check if at least one format is selected (for variant creation)
+    // 4. Validation: Formats
     const hasFormat = values.paper_back || values.e_copy || values.hard_cover;
     if (!hasFormat) {
       toast({
@@ -227,49 +238,37 @@ const BookForm = ({ book, action }: BookFormProps) => {
       return;
     }
 
-    // Validate that prices are provided for selected formats
-    // Prices are now in form values, but also check state as fallback
+    // 5. Validation: Pricing
     const finalPaperbackPrice = values.paperback_price || paperbackPrice;
     const finalHardcoverPrice = values.hardcover_price || hardcoverPrice;
     const finalEbookPrice = values.ebook_price || ebookPrice;
 
     if (values.paper_back && (!finalPaperbackPrice || finalPaperbackPrice <= 0)) {
-      toast({
-        title: "Validation Error",
-        variant: "destructive",
-        description: "Please enter a price for Paperback",
-      });
+      toast({ title: "Validation Error", variant: "destructive", description: "Please enter a price for Paperback" });
       return;
     }
     if (values.hard_cover && (!finalHardcoverPrice || finalHardcoverPrice <= 0)) {
-      toast({
-        title: "Validation Error",
-        variant: "destructive",
-        description: "Please enter a price for Hard Cover",
-      });
+      toast({ title: "Validation Error", variant: "destructive", description: "Please enter a price for Hard Cover" });
       return;
     }
     if (values.e_copy && (!finalEbookPrice || finalEbookPrice <= 0)) {
-      toast({
-        title: "Validation Error",
-        variant: "destructive",
-        description: "Please enter a price for E-Copy",
-      });
+      toast({ title: "Validation Error", variant: "destructive", description: "Please enter a price for E-Copy" });
       return;
     }
 
+    // 6. Prepare Final Payload
     const payload = {
       ...values,
-      book_cover: imageUrl || null,
-      book_cover2: imageUrl2 || null,
-      book_cover3: imageUrl3 || null,
-      book_cover4: imageUrl4 || null,
-      // Set cover_image_url to the first uploaded image for new schema compatibility
-      cover_image_url: imageUrl || null,
-      // Prices are now in form values, only include if format is selected
-      paperback_price: values.paper_back ? values.paperback_price : undefined,
-      hardcover_price: values.hard_cover ? values.hardcover_price : undefined,
-      ebook_price: values.e_copy ? values.ebook_price : undefined,
+      book_cover: imageUrl,
+      book_cover2: imageUrl2,
+      book_cover3: imageUrl3,
+      book_cover4: imageUrl4,
+      cover_image_url: imageUrl, // Compatibility with new schema
+      pdf_url: pdfUrl,
+      docx_url: docxUrl, // This will trigger chapter creation in the backend
+      paperback_price: values.paper_back ? finalPaperbackPrice : undefined,
+      hardcover_price: values.hard_cover ? finalHardcoverPrice : undefined,
+      ebook_price: values.e_copy ? finalEbookPrice : undefined,
     };
 
     if (book?.id) {
@@ -277,7 +276,15 @@ const BookForm = ({ book, action }: BookFormProps) => {
     } else {
       addBook.mutate(payload);
     }
-  };
+  } catch (error) {
+    console.error("Submission Error:", error);
+    toast({
+      title: "Upload Error",
+      variant: "destructive",
+      description: "There was a problem uploading your files. Please try again.",
+    });
+  }
+};
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -571,6 +578,17 @@ const BookForm = ({ book, action }: BookFormProps) => {
                             </FormItem>
                           )}
                         />
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <FormLabel>Downloadable PDF (for Watermarking)</FormLabel>
+                            <Input type="file" accept=".pdf" onChange={(e) => setPdfFile(e.target.files?.[0] || null)} />
+                          </div>
+                          <div className="space-y-2">
+                            <FormLabel>Reader Document (DOCX)</FormLabel>
+                            <Input type="file" accept=".docx" onChange={(e) => setDocxFile(e.target.files?.[0] || null)} />
+                          </div>
+                        </div>
 
                         <div className="">
                           <p>Book Cover</p>

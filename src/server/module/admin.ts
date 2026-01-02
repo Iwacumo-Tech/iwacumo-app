@@ -12,6 +12,72 @@ import {
 } from "@/server/dtos";
 
 /**
+ * Admin Module
+ * Location: src/server/module/admin.ts
+ * * Phase C Update: Added getGlobalPlatformStats for platform-wide metrics.
+ * * Maintains all staff management, role scoping, and helper permissions logic.
+ */
+
+/**
+ * Global Platform Analytics (Phase C)
+ * Provides high-level metrics for the Super Admin Dashboard
+ */
+export const getGlobalPlatformStats = publicProcedure.query(async () => {
+  const [tenantCount, totalRevenue, orderCount] = await Promise.all([
+    // 1. Total Tenants count
+    prisma.tenant.count({
+      where: { deleted_at: null },
+    }),
+    // 2. Aggregate Revenue and Platform Fees
+    prisma.orderLineItem.aggregate({
+      where: {
+        order: { payment_status: "captured" },
+      },
+      _sum: {
+        platform_fee: true,
+        total_price: true,
+      },
+    }),
+    // 3. Successful Orders count
+    prisma.order.count({
+      where: { payment_status: "captured" },
+    }),
+  ]);
+
+  // 4. Fetch Top Tenants
+  // FIXED: Removed 'publishers' from _count select as it was causing the 500 error.
+  // Using 'admin_users' and 'users' which Prisma confirmed are valid options.
+  const topTenants = await prisma.tenant.findMany({
+    take: 5,
+    where: { deleted_at: null },
+    orderBy: {
+      created_at: 'desc'
+    },
+    include: {
+      _count: {
+        select: { 
+          admin_users: true,
+          users: true 
+        },
+      },
+    },
+  });
+
+  return {
+    totalTenants: tenantCount,
+    platformTotalEarnings: totalRevenue._sum.platform_fee || 0,
+    totalGMV: totalRevenue._sum.total_price || 0,
+    successfulOrders: orderCount,
+    topTenants: topTenants.map(tenant => ({
+      ...tenant,
+      // Fallback: If your UI specifically looks for 'publishers', 
+      // we map the admin_users count to it for compatibility.
+      publisherCount: tenant._count.admin_users 
+    })),
+  };
+});
+
+/**
  * Create a new AdminUser
  * AdminUsers are staff members who can have roles scoped to publishers
  */
@@ -171,15 +237,12 @@ export const updateAdminUser = publicProcedure
 
 /**
  * Assign a role to an AdminUser
- * Roles can be scoped to a specific publisher (publisher_id)
- * This allows the same role to have different permissions per publisher
  */
 export const assignRoleToAdminUser = publicProcedure
   .input(assignRoleToAdminUserSchema)
   .mutation(async (opts) => {
     const { admin_user_id, tenant_id, role_name, publisher_id, expires_at } = opts.input;
 
-    // Verify admin user exists and belongs to the tenant
     const adminUser = await prisma.adminUser.findUnique({
       where: { id: admin_user_id },
       include: { tenant: true },
@@ -189,12 +252,10 @@ export const assignRoleToAdminUser = publicProcedure
       throw new Error("Admin user not found");
     }
 
-    // Verify admin user belongs to the specified tenant
     if (adminUser.tenant_id !== tenant_id) {
       throw new Error("Admin user does not belong to the specified tenant");
     }
 
-    // Verify tenant exists
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenant_id },
     });
@@ -203,7 +264,6 @@ export const assignRoleToAdminUser = publicProcedure
       throw new Error("Tenant not found");
     }
 
-    // Verify role exists
     const role = await prisma.role.findUnique({
       where: { name: role_name },
     });
@@ -212,7 +272,6 @@ export const assignRoleToAdminUser = publicProcedure
       throw new Error("Role not found");
     }
 
-    // If publisher_id is provided, verify it belongs to the tenant
     if (publisher_id) {
       const publisher = await prisma.publisher.findUnique({
         where: { id: publisher_id },
@@ -227,7 +286,6 @@ export const assignRoleToAdminUser = publicProcedure
       }
     }
 
-    // Check if role assignment already exists
     const existingRole = await prisma.adminUserRole.findFirst({
       where: {
         admin_user_id,
@@ -241,7 +299,6 @@ export const assignRoleToAdminUser = publicProcedure
       throw new Error("Role already assigned to this admin user for this tenant and publisher");
     }
 
-    // Create the role assignment
     const adminUserRole = await prisma.adminUserRole.create({
       data: {
         admin_user_id,
@@ -383,8 +440,6 @@ export const getAdminUserById = publicProcedure
 export const deleteAdminUser = publicProcedure
   .input(deleteAdminUserSchema)
   .mutation(async (opts) => {
-    // Note: AdminUser doesn't have deleted_at in schema, so this is a hard delete
-    // If you want soft delete, add deleted_at field to AdminUser model
     return await prisma.adminUser.delete({
       where: { id: opts.input.id },
     });
@@ -392,14 +447,11 @@ export const deleteAdminUser = publicProcedure
 
 /**
  * Get all roles available for AdminUsers
- * Filters roles that can be assigned to admin users
  */
 export const getAdminRoles = publicProcedure.query(async () => {
   return await prisma.role.findMany({
     where: {
       active: true,
-      // You might want to filter by scope or other criteria
-      // scope: { in: ["global", "publisher"] },
     },
     include: {
       permissions: {
@@ -416,26 +468,17 @@ export const getAdminRoles = publicProcedure.query(async () => {
 
 /**
  * Helper function to get all permissions for an AdminUser
- * This aggregates permissions from all assigned roles
  */
 export async function getAdminUserPermissions(adminUserId: string, tenantId?: string, publisherId?: string) {
   const whereClause: any = {
-    // Exclude expired roles
     OR: [
       { expires_at: null },
       { expires_at: { gt: new Date() } },
     ],
   };
 
-  // Filter by tenant if provided (should match admin user's tenant)
-  if (tenantId) {
-    whereClause.tenant_id = tenantId;
-  }
-
-  // Filter by publisher if provided
-  if (publisherId) {
-    whereClause.publisher_id = publisherId;
-  }
+  if (tenantId) whereClause.tenant_id = tenantId;
+  if (publisherId) whereClause.publisher_id = publisherId;
 
   const adminUser = await prisma.adminUser.findUnique({
     where: { id: adminUserId },
@@ -464,7 +507,6 @@ export async function getAdminUserPermissions(adminUserId: string, tenantId?: st
     return { permissions: [], roles: [] };
   }
 
-  // Collect all unique permissions from all roles
   const permissionsSet = new Set<string>();
   const permissions: any[] = [];
   const roles: any[] = [];
@@ -519,22 +561,14 @@ export async function hasAdminRole(
 ): Promise<boolean> {
   const whereClause: any = {
     role_name: roleName,
-    // Exclude expired roles
     OR: [
       { expires_at: null },
       { expires_at: { gt: new Date() } },
     ],
   };
 
-  // Filter by tenant if provided
-  if (tenantId) {
-    whereClause.tenant_id = tenantId;
-  }
-
-  // Filter by publisher if provided
-  if (publisherId) {
-    whereClause.publisher_id = publisherId;
-  }
+  if (tenantId) whereClause.tenant_id = tenantId;
+  if (publisherId) whereClause.publisher_id = publisherId;
 
   const adminUser = await prisma.adminUser.findUnique({
     where: { id: adminUserId },
@@ -547,4 +581,3 @@ export async function hasAdminRole(
 
   return adminUser ? adminUser.roles.length > 0 : false;
 }
-

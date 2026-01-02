@@ -3,8 +3,15 @@
 import React, { BaseSyntheticEvent, ReactNode, useState } from "react";
 import { FaChevronRight } from "react-icons/fa";
 import { signOut, useSession } from "next-auth/react";
-import { Sidebar, SidebarMobile } from ".";
-import { trpc } from "@/app/_providers/trpc-provider";
+import { Sidebar } from "./sidebar"; 
+import { SidebarMobile } from "./sidebar-mobile"; 
+
+/**
+ * Dashboard Shell
+ * Location: src/components/dashboard/dashboard-shell.tsx
+ * * Simplified Logic: Trusts the server-filtered links from layout.tsx.
+ * * Handles the global layout structure and responsive state.
+ */
 
 export interface Link {
   name: string;
@@ -18,7 +25,7 @@ export default function DashboardShell({
   children,
   hideLogout,
   logoutRedirectTo = "/",
-  links = [],
+  links = [], // These come filtered from the server layout
 }: {
   title?: string;
   links?: Link[];
@@ -26,35 +33,7 @@ export default function DashboardShell({
   logoutRedirectTo?: string;
   hideLogout?: boolean;
 }) {
-  const session = useSession();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const user = trpc.getUserById.useQuery({
-    id: session.data?.user.id as string,
-  });
-
-  const filteredLinks = links.filter((link) => {
-    // Check if user is a customer (has "customer" role)
-    const isCustomer = session.data?.roles.some((role) => role.name === "customer");
-    
-    // If customer, allow "Home", "Books", and "Profile"
-    if (isCustomer) {
-      const customerAllowedLinks = ["Home", "Books", "Profile"];
-      return customerAllowedLinks.includes(link.name);
-    }
-
-    // Only allow "Home", "Authors", "Customers", and "Profile"  and "Books" if the tenant is not "Booka"
-    if (user.data?.claims.some((claim) => claim.tenant_slug !== "booka")) {
-      const allowedLinks = ["Home", "Authors", "Customers", "Profile", "Books"];
-      return allowedLinks.includes(link.name);
-    }
-
-    const requiredPermissions = link.requiredPermission.split(",");
-    return requiredPermissions.some((required) =>
-      session.data?.permissions.some(
-        (permission) => permission.name === required.trim()
-      )
-    );
-  });
 
   const logout = async (e?: BaseSyntheticEvent) => {
     e?.preventDefault();
@@ -62,34 +41,45 @@ export default function DashboardShell({
   };
 
   return (
-    <div className="grid">
+    <div className="min-h-screen bg-gray-50/50">
+      {/* Mobile Drawer */}
       <SidebarMobile
         title={title}
         logout={logout}
-        links={filteredLinks}
+        links={links}
         sidebarOpen={sidebarOpen}
         setSidebarOpen={setSidebarOpen}
       />
-      <a
-        href="#"
-        onClick={(e) => {
-          e.preventDefault();
-          setSidebarOpen(!sidebarOpen);
-        }}
-        className="no-underline border border-gray-800 border-solid rounded-tr-xl rounded-br-xl grid items-center absolute bg-white py-1.5 pr-1 -left-0.5 bottom-24 shadow-lg lg:hidden"
-      >
-        <FaChevronRight className="size-3" />
-      </a>
-      <div className="hidden lg:pb-5 lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:w-72 lg:flex-col border-r border-border justify-between">
+
+      {/* Mobile Toggle Trigger */}
+      {!sidebarOpen && (
+        <a
+          href="#"
+          onClick={(e) => {
+            e.preventDefault();
+            setSidebarOpen(true);
+          }}
+          className="fixed top-24 left-0 z-40 lg:hidden flex items-center justify-center w-6 h-10 bg-white border border-gray-200 border-l-0 rounded-r-xl shadow-md transition-all hover:w-8"
+        >
+          <FaChevronRight className="w-2.5 h-2.5 text-gray-600" />
+        </a>
+      )}
+
+      {/* Desktop Persistent Sidebar */}
+      <aside className="hidden lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:w-72 lg:flex-col shadow-sm">
         <Sidebar
           title={title}
-          links={filteredLinks}
+          links={links}
           logout={logout}
           hideLogout={hideLogout}
         />
-      </div>
-      <div className="lg:pl-72 overflow-x-hidden">
-        <main className="mx-3 my-6 lg:mx-7">{children}</main>
+      </aside>
+
+      {/* Main Content Area */}
+      <div className="lg:pl-72 transition-all">
+        <main className="min-h-screen p-4 md:p-8 max-w-7xl mx-auto">
+          {children}
+        </main>
       </div>
     </div>
   );

@@ -99,7 +99,6 @@ model PermissionRole {
 model Tenant {
   id            String     @id @default(uuid())
   name          String?
-  custom_domain String?
   contact_email String?
   users         User[]     @relation("TenantUsers")
   admin_users   AdminUser[]
@@ -109,6 +108,13 @@ model Tenant {
   deleted_at    DateTime?
   created_at    DateTime   @default(now())
   updated_at    DateTime   @updatedAt
+
+  // BRANDING FIELDS ---
+  custom_domain    String?
+  logo_url         String?
+  brand_color      String?
+  secondary_color  String?
+  social_links     Json?
 
   @@map("tenants")
 }
@@ -380,6 +386,11 @@ model OrderLineItem {
   unit_price          Float
   currency            String            @default("USD")
   total_price         Float
+
+  platform_fee        Float              @default(0)
+  publisher_earnings  Float              @default(0)
+  author_earnings     Float              @default(0)
+
   fulfillment_status  String            @default("unfulfilled") // unfulfilled, in_progress, shipped, delivered, cancelled
   metadata            Json?
   deliveries          DeliveryTracking[]

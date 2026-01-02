@@ -52,9 +52,10 @@ export default function Home() {
     <main>
       <Header />
       <Hero />
+      <Product />
       <Features />
       <Banner />
-      <Product />
+      
       <Footer />
     </main>
   );
