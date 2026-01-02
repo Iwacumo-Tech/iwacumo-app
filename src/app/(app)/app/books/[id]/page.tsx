@@ -68,6 +68,7 @@ export default function BookDetailsPage() {
             chapter={selectedChapter} 
             setShowForm={setIsModalOpen}
             onSuccess={() => setIsModalOpen(false)} 
+            action={selectedChapter ? "Edit" : "Add"}
           />
         </DialogContent>
       </Dialog>

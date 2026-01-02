@@ -28,6 +28,7 @@ interface ChapterFormProps {
   action: "Add" | "Edit";
   setShowForm: React.Dispatch<React.SetStateAction<boolean>>;
   bookId: string;
+  onSuccess?: () => void;
 
 }
 

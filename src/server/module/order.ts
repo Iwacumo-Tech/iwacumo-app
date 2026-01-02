@@ -145,7 +145,7 @@ export const createOrderFromCart = publicProcedure
         });
       }
 
-      const unitPrice = variant.discount_price ?? variant.list_price;
+      const unitPrice = variant!.discount_price ?? variant!.list_price;
       const quantity = cartItem.quantity || 1;
       const totalPrice = unitPrice * quantity;
 
@@ -156,7 +156,7 @@ export const createOrderFromCart = publicProcedure
       const publisherEarnings = remaining - authorEarnings;
 
       orderLineItemsData.push({
-        book_variant_id: variant.id,
+        book_variant_id: variant!.id,
         quantity,
         unit_price: unitPrice,
         total_price: totalPrice,

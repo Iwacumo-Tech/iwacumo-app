@@ -34,7 +34,7 @@ export function RegisterForm() {
     }
   });
 
-  const isSubmitting = signup.isPending || signup.isLoading;
+  const isSubmitting = signup.isPending;
 
   return (
     <Form {...form}>

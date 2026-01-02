@@ -50,7 +50,7 @@ export default function LoginForm() {
         return;
       }
 
-      const session = await getSession();
+      const session = (await getSession()) as any;
 
       if (!session) {
         toast({
@@ -67,11 +67,11 @@ export default function LoginForm() {
       console.log(session);
 
       // Get tenant_slug from permissions (resource_id) or from session.tenantSlug (from ROLE claims)
-      slug =
-        slug ||
-        session?.permissions.find(({ resource_id }) => !!resource_id)
-          ?.resource_id ||
-        session?.tenantSlug ||
+      slug = 
+        slug || 
+        session?.permissions.find((p: { resource_id: string | null }) => !!p.resource_id)
+          ?.resource_id || 
+        session?.tenantSlug || 
         null;
 
       // Check if user has permission OR if they have a tenant_slug from role claims

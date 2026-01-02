@@ -498,7 +498,7 @@ export const generateWatermarkedEbook = publicProcedure
 
       // 3. Upload temporary secure copy
       const tempName = `temp/secure-${Date.now()}-${input.bookId}.pdf`;
-      const { url } = await put(tempName, securedPdf, {
+      const { url } = await put(tempName, Buffer.from(securedPdf), { 
         access: "public",
         contentType: "application/pdf",
       });

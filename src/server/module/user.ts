@@ -3,6 +3,7 @@ import { hash } from "bcryptjs";
 import prisma from "@/lib/prisma";
 import { publicProcedure } from "@/server/trpc";
 import { assignRoleSchema, createRoleSchema, createUserSchema, deleteUserSchema, editProfileSchema, signUpSchema } from "@/server/dtos";
+import { TRPCError } from "@trpc/server";
 
 export const createUser = publicProcedure.input(createUserSchema).mutation(async (opts)=>{
   const user = await prisma.user.create({

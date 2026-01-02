@@ -24,7 +24,8 @@ export const { handlers, auth } = NextAuth({
                 { email: username as string },
                 { username: username as string }
               ]
-            }
+            },
+            include: { customer: true }
           });
 
           if (user && user.active) {

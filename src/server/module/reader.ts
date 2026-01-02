@@ -51,7 +51,7 @@ export const getChapterContent = publicProcedure
         title: chapter.title,
         content: chapter.content,
         chapter_number: chapter.chapter_number,
-        book_title: chapter.book.title,
+        book_title: chapter.book!.title,
       };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
