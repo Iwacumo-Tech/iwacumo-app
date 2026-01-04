@@ -32,6 +32,7 @@
     "prefer-destructuring": "off",
     "no-restricted-imports": "off",
     "no-trailing-spaces": "off",
+    "no-constant-condition": "warn",
     "space-before-function-paren": "off",
     "no-unexpected-multiline": "off",
     "no-multiple-empty-lines": "off",
