@@ -10,7 +10,7 @@ const nextConfig = {
       "walrus-assets.s3.amazonaws.com",
       "res.cloudinary.com",
       "ucarecdn.com",
-      "pfirenjlvylwekls.public.blob.vercel-storage.com", // Added here
+      "pfirenjlvylwekls.public.blob.vercel-storage.com", 
     ],
     remotePatterns: [
       {
