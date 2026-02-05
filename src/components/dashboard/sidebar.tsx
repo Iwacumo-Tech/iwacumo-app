@@ -3,96 +3,51 @@
 import { IoLogOutOutline } from "react-icons/io5";
 import { SidebarItem } from "./sidebar-item";
 import { type Link } from "./dashboard-shell";
-import Image from "next/image";
-import { useSession } from "next-auth/react";
-import { trpc } from "@/app/_providers/trpc-provider";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Book } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
-/**
- * Sidebar Component
- * Location: src/components/dashboard/sidebar.tsx
- * * Augmented for White-Label Branding: Fetches Tenant colors and logos.
- */
-
-interface SidebarProps {
-  title?: string;
-  links: Link[];
-  logout: () => void;
-  hideLogout?: boolean;
-}
-
-export function Sidebar({ logout, links, title, hideLogout }: SidebarProps) {
-  const session = useSession();
-  
-  // Fetch tenant branding info if available
-  const { data: tenantData } = trpc.getTenantBySlug.useQuery(
-    { slug: (session.data as any)?.tenantSlug || "" }, 
-    { enabled: !!(session.data as any)?.tenantSlug }
-  );
-  // Dynamic branding variables
-  const brandColor = tenantData?.brand_color || "#3b82f6"; // Default primary blue
-  const logoUrl = tenantData?.logo_url;
-
+export function Sidebar({ logout, links }: { links: Link[], logout: () => void }) {
   return (
-    <div className="flex grow flex-col justify-between bg-white relative px-3 py-6 border-r">
-      <div className="space-y-6">
-        {/* Branding Section */}
-        <div className="px-4 flex items-center gap-3">
-          <div className="relative w-8 h-8 rounded-lg overflow-hidden">
-            {/* <Image 
-              src={logoUrl} 
-              alt="Logo" 
-              fill 
-              className="object-contain" 
-              // onError={(e) => (e.currentTarget.src = "/logo.png")}
-            /> */}
+    <div className="flex h-full flex-col bg-white">
+      {/* Header - Non-scrolling */}
+      <div className="px-6 py-8 shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-black flex items-center justify-center rotate-3 border-2 border-accent">
+            <Book className="text-white w-6 h-6" />
           </div>
-          {title ? (
-            <h2 className="text-lg font-bold tracking-tight text-gray-900">{title}</h2>
-          ) : (
-            <span className="font-bold text-lg">{tenantData?.name || "Booka"}</span>
-          )}
-        </div>
-
-        {/* Navigation Links */}
-        <div className="space-y-1">
-          {links.map((item, i) => (
-            <SidebarItem
-              key={`${item.name}-${i}`}
-              href={item.url}
-              name={item.name}
-              icon={item.icon}
-              // Optional: You could pass brandColor to SidebarItem to style active state
-            />
-          ))}
+          <span className="text-2xl font-black uppercase italic tracking-tighter">Booka<span className="text-accent">.</span></span>
         </div>
       </div>
 
-      {/* Footer Section */}
-      <div className="space-y-1 pt-4 border-t border-gray-100">
-        <SidebarItem
-          name="Visit Store"
-          href="/"
-          icon={<ExternalLink className="w-5 h-5 text-blue-600" />}
-          className="text-blue-600 hover:bg-blue-50 transition-colors mb-2"
-        />
-
-        {!hideLogout && (
+      {/* Main Navigation - SCROLLABLE */}
+      <nav className="flex-1 overflow-y-auto px-4 space-y-2 no-scrollbar">
+        {links.map((item, i) => (
           <SidebarItem
-            name="Logout"
-            icon={<IoLogOutOutline className="w-5 h-5 text-red-500" />}
-            onClick={logout}
-            className="text-red-600 hover:bg-red-50 transition-colors"
+            key={i}
+            href={item.url}
+            name={item.name}
+            icon={item.icon}
+            className="font-black uppercase italic text-xs tracking-widest h-12"
           />
-        )}
-        
-        {/* Tenant Indicator */}
-        <div className="px-4 py-3 mt-2 rounded-xl bg-gray-50 flex flex-col gap-0.5">
-          <span className="text-[10px] uppercase tracking-wider text-gray-400 font-bold">Managed Tenant</span>
-          <span className="text-xs font-semibold text-gray-700 truncate">
-            {tenantData?.slug || "Default Platform"}
-          </span>
-        </div>
+        ))}
+      </nav>
+
+      {/* Footer - Non-scrolling */}
+      <div className="p-4 space-y-2 border-t-4 border-black shrink-0 bg-white">
+        <SidebarItem
+          name="Marketplace"
+          href="/shop"
+          icon={<ExternalLink className="w-4 h-4" />}
+          className="text-black opacity-60 hover:opacity-100 font-bold uppercase text-[10px]"
+        />
+        <Button 
+          variant="ghost" 
+          onClick={logout}
+          className="w-full h-12 justify-start gap-3 text-red-600 font-black uppercase italic text-xs hover:bg-red-50 rounded-none"
+        >
+          <IoLogOutOutline className="w-5 h-5" />
+          Logout
+        </Button>
       </div>
     </div>
   );

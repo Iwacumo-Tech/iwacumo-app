@@ -5,45 +5,47 @@ import PublisherForm from "@/components/publisher/publisher-form";
 import { publisherColumns } from "@/components/publisher/columns";
 import { DataTable } from "@/components/table/data-table";
 import { useSession } from "next-auth/react";
+import { Building2, Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
-export default function Page() {
-  const session = useSession();
-  const userRoles = session.data?.roles || [];
+export default function PublishersPage() {
+  const { data: session } = useSession();
+  const { data: publishers } = trpc.getAllPublisher.useQuery();
   
-  const { data: allPublishers } = trpc.getAllPublisher.useQuery();
-  const { data: userDetails } = trpc.getUserById.useQuery({
-    id: session.data?.user.id as string,
-  }, { enabled: !!session.data?.user.id });
-
-  // Determine if user is restricted to a specific organization (Tenant Admin)
-  const tenantSlug = userDetails?.claims.find(c => c.tenant_slug)?.tenant_slug;
-  const isSuperAdmin = userRoles.some(r => r.name === "super-admin");
-
-  const { data: orgPublishers } = trpc.getPublisherByOrganization.useQuery(
-    { name: userDetails?.publisher?.tenant?.name || "" },
-    { enabled: !isSuperAdmin && !!userDetails?.publisher?.tenant?.name }
-  );
-
-  const publishers = isSuperAdmin ? allPublishers : orgPublishers;
+  const isSuperAdmin = session?.roles?.some(r => r.name === "super-admin");
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h3 className="font-bold text-xl">Publishers</h3>
-        <p className="text-muted-foreground text-sm">
-          {isSuperAdmin 
-            ? "Global publisher management across all tenants" 
-            : `Manage publishers under ${userDetails?.publisher?.tenant?.name || 'your organization'}`
-          }
-        </p>
+    <div className="space-y-10">
+      <div className="flex flex-col md:flex-row justify-between items-end gap-6 border-b-4 border-black pb-8">
+        <div>
+          <h1 className="text-4xl md:text-6xl font-black uppercase italic tracking-tighter">
+            Publishers<span className="text-accent">.</span>
+          </h1>
+          <p className="font-bold text-xs uppercase opacity-40 tracking-widest mt-2 flex items-center gap-2">
+            <Building2 size={14} /> Total Entity Management — {publishers?.length || 0} Organizations
+          </p>
+        </div>
+        
+        {isSuperAdmin && (
+          <PublisherForm 
+            action="Add" 
+            trigger={
+              <Button className="booka-button-primary h-14 px-8 text-sm">
+                <Plus size={18} className="mr-2 stroke-[3px]" /> New Publisher
+              </Button>
+            } 
+          />
+        )}
       </div>
-      <DataTable
-        data={publishers ?? []}
-        columns={publisherColumns}
-        filterInputPlaceholder="Search by name or slug..."
-        filterColumnId="name"
-        action={<PublisherForm action="Add" />}
-      />
+
+      <div className="bg-white border-4 border-black gumroad-shadow">
+        <DataTable
+          data={publishers ?? []}
+          columns={publisherColumns}
+          filterInputPlaceholder="Search by organization or lead..."
+          filterColumnId="tenant_name" // Ensure your data-table-toolbar maps this correctly
+        />
+      </div>
     </div>
   );
 }

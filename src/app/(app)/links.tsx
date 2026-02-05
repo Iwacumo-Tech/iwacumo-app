@@ -1,4 +1,4 @@
-import { LuLayoutDashboard, LuUsers, LuUserPlus, LuSettings, LuShoppingBag, LuFileText, LuLayers } from "react-icons/lu";
+import { LuLayoutDashboard, LuUsers, LuUserPlus, LuSettings, LuShoppingBag, LuFileText, LuLayers, LuStar } from "react-icons/lu";
 import { FaBookOpen } from "react-icons/fa";
 import { MdDashboardCustomize } from "react-icons/md";
 import { UserPlusIcon, Image as ImageIcon, Sliders as SliderIcon } from "lucide-react";
@@ -14,18 +14,18 @@ export const links = [
     icon: <LuLayoutDashboard className="size-5 mr-2" />,
     requiredPermission: "super-admin, tenant-admin, publisher, author, customer",
   },
-  {
-    name: "Users",
-    url: "/app/users",
-    icon: <LuUsers className="size-5 mr-2" />,
-    requiredPermission: "super-admin",
-  },
-  {
-    name: "Tenants",
-    url: "/app/tenants",
-    icon: <LuLayers className="size-5 mr-2" />,
-    requiredPermission: "super-admin",
-  },
+  // {
+  //   name: "Users",
+  //   url: "/app/users",
+  //   icon: <LuUsers className="size-5 mr-2" />,
+  //   requiredPermission: "super-admin",
+  // },
+  // {
+  //   name: "Tenants",
+  //   url: "/app/tenants",
+  //   icon: <LuLayers className="size-5 mr-2" />,
+  //   requiredPermission: "super-admin",
+  // },
   {
     name: "Publishers",
     url: "/app/publishers",
@@ -73,6 +73,13 @@ export const links = [
     url: "/app/profile",
     icon: <LuSettings className="size-5 mr-2" />,
     requiredPermission: "super-admin, tenant-admin, publisher, author, customer",
+  },
+
+  {
+    name: "Global Featured",
+    url: "/app/admin/featured",
+    icon: <LuStar className="size-5 mr-2" />,
+    requiredPermission: "super-admin",
   },
 ];
 

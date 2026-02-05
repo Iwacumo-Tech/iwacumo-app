@@ -2,19 +2,44 @@ import { Permission, Role } from "@prisma/client";
 import { DefaultSession } from "next-auth";
 
 declare module "next-auth" {
+  /**
+   * The shape of the user object within the session.
+   */
   interface User {
     id: string;
-    first_name: string;
-    isCustomer?: boolean;
     email: string;
+    first_name: string;
+    last_name: string;
+    isCustomer?: boolean;
     author_id?: string | null;
     publisher_id?: string | null;
   }
 
+  /**
+   * The shape of the session object returned by useSession and getServerSession.
+   */
   interface Session extends DefaultSession {
     user: User;
     permissions: Permission[];
     roles: Role[];
     tenantSlug: string | null;
+  }
+}
+
+declare module "next-auth/jwt" {
+  /**
+   * Usually, you also need to extend the JWT if you are using the JWT strategy,
+   * otherwise session.user properties might still show as missing in callbacks.
+   */
+  interface JWT {
+    id: string;
+    first_name: string;
+    last_name: string;
+    permissions: Permission[];
+    roles: Role[];
+    tenantSlug: string | null;
+    author_id?: string | null;
+    publisher_id?: string | null;
+    isCustomer?: boolean;
   }
 }

@@ -4,6 +4,7 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import TRPCProvider from "./_providers/trpc-provider";
 import { SessionProvider } from "next-auth/react";
+import CartDrawer from "@/components/shared/CartDrawer";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -23,9 +24,10 @@ export default function RootLayout ({ children }: Readonly<{
           <TRPCProvider>
             {children}
             <Toaster />
+            <CartDrawer />
           </TRPCProvider>
         </SessionProvider>
-      </body>
+      </body> 
     </html>
   );
 }

@@ -1,123 +1,76 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { createBookSchema, TCreateBookSchema } from "@/server/dtos";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/components/ui/use-toast";
 import { trpc } from "@/app/_providers/trpc-provider";
 import { Book } from "@prisma/client";
 import { useSession } from "next-auth/react";
-import { uploadImage } from "@/lib/server";
+import { cn } from "@/lib/utils";
+import axios from "axios";
+import { Loader2, CheckCircle2, UploadCloud, Edit3 } from "lucide-react";
 
 interface BookFormProps {
   book?: Book;
   action: "Add" | "Edit";
+  trigger?: React.ReactNode;
 }
 
-const BookForm = ({ book, action }: BookFormProps) => {
+const BookForm = ({ book, action, trigger }: BookFormProps) => {
   const { toast } = useToast();
   const utils = trpc.useUtils();
   const [open, setOpen] = useState(false);
+  // const { data: session } = useSession();
   const session = useSession();
+
+  const sessionAuthorId = (session.data?.user as any)?.author_id;
+  
   const { data: authors } = trpc.getAuthorsByUser.useQuery({
     id: session.data?.user.id as string,
+  }, {
+    // Only fetch authors list if the logged-in user is NOT an author (e.g., a Publisher)
+    enabled: !!session.data?.user.id && !sessionAuthorId
   });
-  const [file, setFile] = useState<File | null>(null);
-  const [file2, setFile2] = useState<File | null>(null);
-  const [file3, setFile3] = useState<File | null>(null);
-  const [file4, setFile4] = useState<File | null>(null);
-  const [paperbackPrice, setPaperbackPrice] = useState<number>(0);
-  const [hardcoverPrice, setHardcoverPrice] = useState<number>(0);
-  const [ebookPrice, setEbookPrice] = useState<number>(0);
 
-  const [pdfFile, setPdfFile] = useState<File | null>(null);
-  const [docxFile, setDocxFile] = useState<File | null>(null);
+  const { data: categories } = trpc.getCategories.useQuery();
 
-  // Helper function to get initial prices from book
-  const getInitialPrices = () => {
+  // Extract initial prices from variants or legacy price field
+  const initialPrices = useMemo(() => {
     if (book && (book as any).variants) {
       const variants = (book as any).variants || [];
       const prices: { paperback?: number; hardcover?: number; ebook?: number } = {};
       variants.forEach((variant: any) => {
-        if (variant.format === "paperback" && variant.list_price > 0) {
-          prices.paperback = variant.list_price;
-        } else if (variant.format === "hardcover" && variant.list_price > 0) {
-          prices.hardcover = variant.list_price;
-        } else if (variant.format === "ebook" && variant.list_price > 0) {
-          prices.ebook = variant.list_price;
-        }
+        if (variant.format === "paperback") prices.paperback = variant.list_price;
+        if (variant.format === "ebook") prices.ebook = variant.list_price;
+        if (variant.format === "hardcover") prices.hardcover = variant.list_price;
       });
       return prices;
-    } else if (book?.price && book.price > 0) {
-      return {
-        paperback: book.price,
-        hardcover: book.price,
-        ebook: book.price,
-      };
     }
-    return {};
-  };
+    return { 
+      paperback: (book as any)?.price || 0, 
+      ebook: (book as any)?.price || 0, 
+      hardcover: (book as any)?.price || 0 
+    };
+  }, [book]);
 
-  const initialPrices = getInitialPrices();
-
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = event.target.files?.[0] || null;
-
-    setFile(selectedFile);
-  };
-
-  const handleFile2Change = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile2 = event.target.files?.[0] || null;
-
-    setFile2(selectedFile2);
-  };
-
-  const handleFile3Change = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile3 = event.target.files?.[0] || null;
-
-    setFile3(selectedFile3);
-  };
-
-  const handleFile4Change = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile4 = event.target.files?.[0] || null;
-
-    setFile4(selectedFile4);
-  };
+  // Comprehensive Upload State mapped to Prisma fields
+  const [uploads, setUploads] = useState({
+    front: { progress: 0, url: book?.book_cover || "", loading: false },
+    back: { progress: 0, url: book?.book_cover2 || "", loading: false },
+    spine: { progress: 0, url: book?.book_cover3 || "", loading: false },
+    spread: { progress: 0, url: book?.book_cover4 || "", loading: false },
+    pdf: { progress: 0, url: book?.pdf_url || "", loading: false },
+    docx: { progress: 0, url: book?.text_url || "", loading: false },
+  });
 
   const form = useForm<TCreateBookSchema>({
     resolver: zodResolver(createBookSchema),
@@ -125,581 +78,363 @@ const BookForm = ({ book, action }: BookFormProps) => {
       title: book?.title ?? "",
       short_description: book?.short_description ?? "",
       long_description: book?.long_description ?? "",
-      price: book?.price ?? 0,
-      tags: book?.tags?.join("*"),
-      author_id: book?.author_id ?? "",
-      publisher_id: book?.publisher_id ?? "",
-      published: book?.published ?? false,
-      featured: book?.featured ?? false,
+      page_count: book?.page_count ?? 0,
+      // author_id: book?.author_id ?? "",
+      author_id: book?.author_id ?? sessionAuthorId ?? "",
+      publisher_id: book?.publisher_id ?? (session.data?.user as any)?.publisher_id ?? "",
+      category_ids: (book as any)?.categories?.map((c: any) => c.id) ?? [],
       paper_back: book?.paper_back ?? false,
-      e_copy: book?.e_copy ?? false,
+      e_copy: book?.e_copy ?? true,
       hard_cover: book?.hard_cover ?? false,
       paperback_price: initialPrices.paperback,
-      hardcover_price: initialPrices.hardcover,
       ebook_price: initialPrices.ebook,
+      hardcover_price: initialPrices.hardcover,
     },
   });
 
-  // Initialize state from form values when editing
+  const watched = useWatch({ control: form.control });
+
+  // Instant Upload Logic via Vercel Blob with progress tracking
+  const handleInstantUpload = async (file: File, type: keyof typeof uploads) => {
+    setUploads(prev => ({ ...prev, [type]: { ...prev[type], loading: true, progress: 0 } }));
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const { data } = await axios.post(`/api/avatar/upload?filename=${encodeURIComponent(file.name)}`, formData, {
+        onUploadProgress: (p) => {
+          setUploads(prev => ({ ...prev, [type]: { ...prev[type], progress: Math.round((p.loaded * 100) / (p.total || 1)) } }));
+        }
+      });
+      setUploads(prev => ({ ...prev, [type]: { ...prev[type], url: data.url, loading: false } }));
+    } catch (error) {
+      setUploads(prev => ({ ...prev, [type]: { ...prev[type], loading: false, progress: 0 } }));
+      toast({ variant: "destructive", title: "Upload Failed", description: "Could not upload asset." });
+    }
+  };
+
+  // Automated Pricing Calculation based on Nigerian printing standards
   useEffect(() => {
-    if (book) {
-      if (initialPrices.paperback) {
-        setPaperbackPrice(initialPrices.paperback);
-      }
-      if (initialPrices.hardcover) {
-        setHardcoverPrice(initialPrices.hardcover);
-      }
-      if (initialPrices.ebook) {
-        setEbookPrice(initialPrices.ebook);
-      }
+    const base = 2000;
+    const pageCost = (watched.page_count || 0) * 10;
+    const markup = 1.3;
+
+    if (watched.paper_back) form.setValue("paperback_price", Math.ceil((base + pageCost) * markup));
+    if (watched.hard_cover) form.setValue("hardcover_price", Math.ceil((base + pageCost + 1500) * markup));
+  }, [watched.page_count, watched.paper_back, watched.hard_cover, form]);
+
+  // Logic to determine if the form is valid for specific toasts
+  const isFormValid = useMemo(() => {
+    const hasBaseInfo = !!(watched.title && watched.author_id && watched.long_description);
+    const hasFormat = !!(watched.e_copy || watched.paper_back || watched.hard_cover);
+    const frontUploaded = !!uploads.front.url;
+    const isAnyLoading = Object.values(uploads).some(u => u.loading);
+
+    if (!hasBaseInfo || !hasFormat || isAnyLoading || !frontUploaded) return false;
+
+    if (watched.e_copy) {
+      const docUploaded = !!(uploads.pdf.url || uploads.docx.url);
+      if (!docUploaded || !watched.ebook_price || watched.ebook_price <= 0) return false;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [book]);
 
-  const addBook = trpc.createBook.useMutation({
-    onSuccess: async () => {
-      toast({
-        title: "Success",
-        variant: "default",
-        description: "Successfully added a new book",
-      });
+    if (watched.paper_back || watched.hard_cover) {
+      if (!watched.page_count || watched.page_count <= 0) return false;
+    }
 
-      utils.getAllBooks.invalidate().then(() => {
-        setOpen(false); // Closes the Dialog 
-      });
-    },
-    onError: (error) => {
-      console.error(error);
+    return true;
+  }, [watched, uploads]);
 
-      toast({
-        title: "Error",
-        variant: "destructive",
-        description: "Error adding the book",
+  const { mutate: submitBook, isPending } = trpc[action === "Add" ? "createBook" : "updateBook"].useMutation({
+    onSuccess: () => {
+      toast({ title: "Success", description: `Product ${action === "Add" ? "published" : "updated"} successfully.` });
+      Promise.all([
+        utils.getAllBooks.invalidate(),           // Global list
+        // utils.getBooksByAuthor.invalidate(),  
+        utils.getBookByAuthor.invalidate(),    // The Author's private roster
+        // utils.getBooksByPublisher.invalidate(),   // The Publisher's catalog
+        // utils.getBooks.invalidate()               // Generic public list
+      ]).then(() => {
+        setOpen(false); // Close modal only after cache is cleared
       });
     },
+    onError: (err) => toast({ variant: "destructive", title: "Submission Failed", description: err.message })
   });
 
-  const updateBook = trpc.updateBook.useMutation({
-    onSuccess: async () => {
-      toast({
-        title: "Success",
-        variant: "default",
-        description: "Successfully updated the book",
-      });
-
-      utils.getAllBooks.invalidate().then(() => {
-        setOpen(false);
-      });
-    },
-    onError: (error) => {
-      console.error(error);
-
-      toast({
-        title: "Error",
-        variant: "destructive",
-        description: "Error updating the book",
-      });
-    },
-  });
-
-  const uploadMutation = trpc.imageUpload.useMutation();  
-
-  const onSubmit = async (values: any) => {
-  try {
-    // 1. Upload Images (Restoring your working logic)
-    const imageUrl = file ? await uploadImage(file) : (book?.book_cover || null);
-    const imageUrl2 = file2 ? await uploadImage(file2) : (book?.book_cover2 || null);
-    const imageUrl3 = file3 ? await uploadImage(file3) : (book?.book_cover3 || null);
-    const imageUrl4 = file4 ? await uploadImage(file4) : (book?.book_cover4 || null);
-
-    // 2. NEW: Upload Ebook Documents (PDF and DOCX)
-    const pdfUrl = pdfFile ? await uploadImage(pdfFile) : (book?.pdf_url || null);
-    const docxUrl = docxFile ? await uploadImage(docxFile) : (book?.text_url || null);
-
-    // 3. Validation: Images
-    const hasAtLeastOneImage = imageUrl || imageUrl2 || imageUrl3 || imageUrl4;
-    if (!hasAtLeastOneImage) {
-      toast({
-        title: "Validation Error",
-        variant: "destructive",
-        description: "Please upload at least one book cover image",
-      });
+  const onFinalSubmit = (values: TCreateBookSchema) => {
+    // 1. Mandatory Front Cover check
+    if (!uploads.front.url) {
+      toast({ variant: "destructive", title: "Missing Cover", description: "The front cover image is required for all formats." });
       return;
     }
 
-    // 4. Validation: Formats
-    const hasFormat = values.paper_back || values.e_copy || values.hard_cover;
-    if (!hasFormat) {
-      toast({
-        title: "Validation Error",
-        variant: "destructive",
-        description: "Please select at least one format (Paperback, Hard Cover, or E-Copy)",
-      });
+    // 2. Format-specific asset validation
+    if (values.e_copy && !uploads.pdf.url && !uploads.docx.url) {
+      toast({ variant: "destructive", title: "Missing Document", description: "Please upload a PDF or DOCX for the E-Book." });
       return;
     }
 
-    // 5. Validation: Pricing
-    const finalPaperbackPrice = values.paperback_price || paperbackPrice;
-    const finalHardcoverPrice = values.hardcover_price || hardcoverPrice;
-    const finalEbookPrice = values.ebook_price || ebookPrice;
+    const finalAuthorId = values.author_id || sessionAuthorId;
 
-    if (values.paper_back && (!finalPaperbackPrice || finalPaperbackPrice <= 0)) {
-      toast({ title: "Validation Error", variant: "destructive", description: "Please enter a price for Paperback" });
-      return;
-    }
-    if (values.hard_cover && (!finalHardcoverPrice || finalHardcoverPrice <= 0)) {
-      toast({ title: "Validation Error", variant: "destructive", description: "Please enter a price for Hard Cover" });
-      return;
-    }
-    if (values.e_copy && (!finalEbookPrice || finalEbookPrice <= 0)) {
-      toast({ title: "Validation Error", variant: "destructive", description: "Please enter a price for E-Copy" });
+    if (!finalAuthorId) {
+      toast({ variant: "destructive", title: "Validation Error", description: "Author context is missing." });
       return;
     }
 
-    // 6. Prepare Final Payload
+    // 3. Prepare Payload: strip values for unselected formats to avoid Zod schema conflicts
     const payload = {
       ...values,
-      book_cover: imageUrl,
-      book_cover2: imageUrl2,
-      book_cover3: imageUrl3,
-      book_cover4: imageUrl4,
-      cover_image_url: imageUrl, // Compatibility with new schema
-      pdf_url: pdfUrl,
-      docx_url: docxUrl, // This will trigger chapter creation in the backend
-      paperback_price: values.paper_back ? finalPaperbackPrice : undefined,
-      hardcover_price: values.hard_cover ? finalHardcoverPrice : undefined,
-      ebook_price: values.e_copy ? finalEbookPrice : undefined,
+      id: book?.id,
+      author_id: finalAuthorId,
+      book_cover: uploads.front.url || null,
+      
+      // Cleanup associated physical fields if not selected
+      book_cover2: (values.paper_back || values.hard_cover) ? (uploads.back.url || null) : null,
+      book_cover3: (values.paper_back || values.hard_cover) ? (uploads.spine.url || null) : null,
+      book_cover4: (values.paper_back || values.hard_cover) ? (uploads.spread.url || null) : null,
+      page_count: (values.paper_back || values.hard_cover) ? (values.page_count || 0) : undefined,
+      paperback_price: values.paper_back ? values.paperback_price : undefined,
+      hardcover_price: values.hard_cover ? values.hardcover_price : undefined,
+      
+      // Cleanup digital fields if not selected
+      pdf_url: values.e_copy ? (uploads.pdf.url || null) : null,
+      text_url: values.e_copy ? (uploads.docx.url || null) : null,
+      ebook_price: values.e_copy ? values.ebook_price : undefined,
+      
+      // Explicitly pass boolean status for backend removal logic
+      paper_back: !!values.paper_back,
+      hard_cover: !!values.hard_cover,
+      e_copy: !!values.e_copy,
+      
+      // Resolve the primary price scalar for backwards compatibility
+      price: values.e_copy 
+        ? (values.ebook_price || 0) 
+        : (values.paperback_price || values.hardcover_price || 0),
     };
 
-    if (book?.id) {
-      updateBook.mutate({ ...payload, id: book.id });
-    } else {
-      addBook.mutate(payload);
+    submitBook(payload as any);
+  };
+
+  const handleFormError = (errors: any) => {
+    // Provide specific feedback for the first validation error found
+    const errorEntries = Object.entries(errors);
+    if (errorEntries.length > 0) {
+      const [field, error] = errorEntries[0] as [string, any];
+      
+      // Skip irrelevant errors based on format selection
+      if (field === 'page_count' && !watched.paper_back && !watched.hard_cover) return;
+      if (field === 'ebook_price' && !watched.e_copy) return;
+      if (field === 'paperback_price' && !watched.paper_back) return;
+      if (field === 'hardcover_price' && !watched.hard_cover) return;
+
+      toast({
+        variant: "destructive",
+        title: "Validation Error",
+        description: error?.message || `Please check the ${field.replace('_', ' ')} field.`,
+      });
     }
-  } catch (error) {
-    console.error("Submission Error:", error);
-    toast({
-      title: "Upload Error",
-      variant: "destructive",
-      description: "There was a problem uploading your files. Please try again.",
-    });
-  }
-};
+  };
+
+  const menuButtonStyle = "w-full text-left px-3 py-2.5 text-xs font-black uppercase italic hover:bg-accent cursor-pointer flex items-center gap-2 transition-colors rounded-none outline-none border-none bg-transparent text-black shadow-none";
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="sm" className={`${action === "Edit" ? "w-full" : ""}`}>
-          {action} Book
-        </Button>
+        {/* Logic: Use external trigger if provided; otherwise, use the internal styled button */}
+        {trigger ? (
+          trigger
+        ) : (
+          <Button 
+            className={cn(
+              "rounded-none border-2 border-black transition-all font-black uppercase italic text-xs tracking-widest",
+              action === "Edit" 
+                ? menuButtonStyle // Blends into the management dropdown
+                : "bg-black text-white gumroad-shadow h-14 px-8 hover:translate-x-[2px] block" // Standalone 'Add' button style
+            )}
+          >
+            {action === "Edit" && <Edit3 size={14} />}
+            {action} Book
+          </Button>
+        )}
       </DialogTrigger>
-      <DialogContent className="max-h-[80vh] overflow-y-auto space-y-3">
-        <DialogHeader>
-          <DialogTitle>{action} Book</DialogTitle>
-        </DialogHeader>
-        <Tabs defaultValue="book-details" className="w-[400px]">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="book-details">Book Details</TabsTrigger>
-            <TabsTrigger value="other-details">Other Details</TabsTrigger>
-          </TabsList>
-          <TabsContent value="book-details">
-            <Card>
-              <CardHeader>
-                <CardTitle>Book Details</CardTitle>
-                <CardDescription>
-                  Make changes to the book information here.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Form {...form}>
-                  <form onSubmit={form.handleSubmit(onSubmit, (errors) => {
-                    console.log("Errors: ", errors);
-                  })}>
-                    <fieldset disabled={form.formState.isSubmitting}>
-                      <div className="grid gap-6">
-                        <FormField
-                          control={form.control}
-                          name="title"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Title</FormLabel>
-                              <FormControl>
-                                <Input
-                                  placeholder="Enter book title"
-                                  {...field}
-                                  className="border-gray-300 rounded-md"
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name="tags"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Tags</FormLabel>
-                              <FormControl>
-                                <Input
-                                  placeholder="Enter tags separated by *"
-                                  {...field}
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name="short_description"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Short Description</FormLabel>
-                              <FormControl>
-                                <Input
-                                  placeholder="Enter a short description"
-                                  {...field}
-                                  className="border-gray-300 rounded-md"
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name="long_description"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Long Description</FormLabel>
-                              <FormControl>
-                                <Textarea
-                                  placeholder="Enter a long description"
-                                  {...field}
-                                  className="border-gray-300 rounded-md"
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name="price"
-                          render={({ field }) => {
-                            const { onChange, value, ...restField } = field;
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto rounded-none border-2 border-black p-0 bg-[#F4F4F4]">
+        <div className="p-6 border-b-2 border-black bg-white sticky top-0 z-20">
+          <DialogTitle className="text-2xl font-black uppercase italic">{action} Book</DialogTitle>
+        </div>
 
-                            return (
-                              <FormItem>
-                                <FormLabel>Price</FormLabel>
-                                <FormControl>
-                                  <Input
-                                    type="number"
-                                    placeholder="Enter book price"
-                                    onChange={(e) =>
-                                      onChange(Number(e.target.value) || 0)
-                                    }
-                                    value={value}
-                                    {...restField}
-                                    className="border-gray-300 rounded-md"
-                                  />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            );
-                          }}
-                        />
-                        <FormField
-                          control={form.control}
-                          name="author_id"
-                          render={({ field }) => (
-                            <FormItem className="mt-2">
-                              <FormLabel>Select Author</FormLabel>
-                              <Select
-                                onValueChange={field.onChange}
-                                defaultValue={field.value}
-                              >
-                                <FormControl className="mt-1">
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="Select Author" />
-                                  </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  {authors?.map((author) => (
-                                    <SelectItem
-                                      role="option"
-                                      key={author.user.first_name}
-                                      value={author.id}
-                                    >
-                                      {author.user.first_name}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        {/* Paper Back Checkbox */}
-                        <FormField
-                          control={form.control}
-                          name="paper_back"
-                          render={({ field }) => (
-                            <FormItem>
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center space-x-2">
-                                  <FormLabel>Paper Back</FormLabel>
-                                  <FormControl>
-                                    <Checkbox
-                                      checked={field.value}
-                                      onCheckedChange={(value) =>
-                                        field.onChange(value as boolean)
-                                      }
-                                      className="ml-2"
-                                    />
-                                  </FormControl>
-                                </div>
-                                {field.value && (
-                                  <div className="flex-1 max-w-[200px] ml-4">
-                                    <FormField
-                                      control={form.control}
-                                      name="paperback_price"
-                                      render={({ field: priceField }) => (
-                                        <Input
-                                          type="number"
-                                          placeholder="Price"
-                                          value={priceField.value || ""}
-                                          onChange={(e) => {
-                                            const value = Number(e.target.value) || 0;
-                                            priceField.onChange(value);
-                                            setPaperbackPrice(value);
-                                          }}
-                                          className="border-gray-300 rounded-md"
-                                        />
-                                      )}
-                                    />
-                                  </div>
-                                )}
-                              </div>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-
-                        {/* E-Copy Checkbox */}
-                        <FormField
-                          control={form.control}
-                          name="e_copy"
-                          render={({ field }) => (
-                            <FormItem>
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center space-x-2">
-                                  <FormLabel>E-Copy</FormLabel>
-                                  <FormControl>
-                                    <Checkbox
-                                      checked={field.value}
-                                      onCheckedChange={(value) =>
-                                        field.onChange(value as boolean)
-                                      }
-                                      className="ml-2"
-                                    />
-                                  </FormControl>
-                                </div>
-                                {field.value && (
-                                  <div className="flex-1 max-w-[200px] ml-4">
-                                    <FormField
-                                      control={form.control}
-                                      name="ebook_price"
-                                      render={({ field: priceField }) => (
-                                        <Input
-                                          type="number"
-                                          placeholder="Price"
-                                          value={priceField.value || ""}
-                                          onChange={(e) => {
-                                            const value = Number(e.target.value) || 0;
-                                            priceField.onChange(value);
-                                            setEbookPrice(value);
-                                          }}
-                                          className="border-gray-300 rounded-md"
-                                        />
-                                      )}
-                                    />
-                                  </div>
-                                )}
-                              </div>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-
-                        {/* Hard Cover Checkbox */}
-                        <FormField
-                          control={form.control}
-                          name="hard_cover"
-                          render={({ field }) => (
-                            <FormItem>
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center space-x-2">
-                                  <FormLabel>Hard Cover</FormLabel>
-                                  <FormControl>
-                                    <Checkbox
-                                      checked={field.value}
-                                      onCheckedChange={(value) =>
-                                        field.onChange(value as boolean)
-                                      }
-                                      className="ml-2"
-                                    />
-                                  </FormControl>
-                                </div>
-                                {field.value && (
-                                  <div className="flex-1 max-w-[200px] ml-4">
-                                    <FormField
-                                      control={form.control}
-                                      name="hardcover_price"
-                                      render={({ field: priceField }) => (
-                                        <Input
-                                          type="number"
-                                          placeholder="Price"
-                                          value={priceField.value || ""}
-                                          onChange={(e) => {
-                                            const value = Number(e.target.value) || 0;
-                                            priceField.onChange(value);
-                                            setHardcoverPrice(value);
-                                          }}
-                                          className="border-gray-300 rounded-md"
-                                        />
-                                      )}
-                                    />
-                                  </div>
-                                )}
-                              </div>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <FormLabel>Downloadable PDF (for Watermarking)</FormLabel>
-                            <Input type="file" accept=".pdf" onChange={(e) => setPdfFile(e.target.files?.[0] || null)} />
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onFinalSubmit, handleFormError)} className="p-6 space-y-8">
+            
+            {/* 1. PRODUCT INFORMATION */}
+            <section className="space-y-4">
+              <div className="flex items-center gap-2">
+                <span className="h-8 w-8 bg-black text-white flex items-center justify-center font-bold">1</span>
+                <h3 className="font-bold uppercase tracking-tight">Product Information</h3>
+              </div>
+              <div className="bg-white border-2 border-black p-6 space-y-4">
+                <FormField control={form.control} name="title" render={({ field }) => (
+                  <FormItem><FormLabel className="font-bold text-xs">TITLE *</FormLabel><FormControl><Input className="input-gumroad" {...field} /></FormControl></FormItem>
+                )} />
+                {!sessionAuthorId && (
+                  <FormField control={form.control} name="author_id" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="font-bold text-xs">AUTHOR *</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger className="input-gumroad">
+                            <SelectValue placeholder="Select Author" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent className="rounded-none border-2 border-black">
+                          {authors?.map(a => (
+                            <SelectItem key={a.id} value={a.id}>{a.user.first_name} {a.user.last_name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )} />
+                )}
+                <FormField
+                  control={form.control}
+                  name="category_ids"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="font-bold text-xs uppercase">Categories *</FormLabel>
+                      <div className="grid grid-cols-2 gap-2 bg-white border-2 border-black p-4 max-h-40 overflow-y-auto">
+                        {categories?.map((cat) => (
+                          <div key={cat.id} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={cat.id}
+                              checked={field.value?.includes(cat.id)}
+                              onCheckedChange={(checked) => {
+                                const current = field.value || [];
+                                return checked
+                                  ? field.onChange([...current, cat.id])
+                                  : field.onChange(current.filter((value) => value !== cat.id));
+                              }}
+                            />
+                            <label htmlFor={cat.id} className="text-sm font-medium leading-none cursor-pointer">
+                              {cat.name}
+                            </label>
                           </div>
-                          <div className="space-y-2">
-                            <FormLabel>Reader Document (DOCX)</FormLabel>
-                            <Input type="file" accept=".docx" onChange={(e) => setDocxFile(e.target.files?.[0] || null)} />
-                          </div>
-                        </div>
-
-                        <div className="">
-                          <p>Book Cover</p>
-                          <label
-                            htmlFor="fileUpload"
-                            className="cursor-pointer w-full px-4 py-2 text-slate-100 border rounded-md flex items-center gap-3"
-                          >
-                            <span className="bg-blue-700 p-1 text-sm rounded">
-                              Upload File
-                            </span>
-                            {file && (
-                              <p className="mt-2 text-sm text-gray-700">
-                                {file.name}
-                              </p>
-                            )}
-                          </label>
-                          <input
-                            id="fileUpload"
-                            type="file"
-                            onChange={handleFileChange}
-                            className="hidden"
-                          />
-                        </div>
-                        <div className="">
-                          <p>Book Cover 2</p>
-                          <label
-                            htmlFor="fileUpload2"
-                            className="cursor-pointer w-full px-4 py-2 text-slate-100 border rounded-md flex items-center gap-3"
-                          >
-                            <span className="bg-blue-700 p-1 text-sm rounded">
-                              Upload File
-                            </span>
-                            {file2 && (
-                              <p className="mt-2 text-sm text-gray-700">
-                                {file2.name}
-                              </p>
-                            )}
-                          </label>
-                          <input
-                            id="fileUpload2"
-                            type="file"
-                            onChange={handleFile2Change}
-                            className="hidden"
-                          />
-                        </div>
-                        <div className="">
-                          <p>Book Cover 3</p>
-                          <label
-                            htmlFor="fileUpload3"
-                            className="cursor-pointer w-full px-4 py-2 text-slate-100 border rounded-md flex items-center gap-3"
-                          >
-                            <span className="bg-blue-700 p-1 text-sm rounded">
-                              Upload File
-                            </span>
-                            {file3 && (
-                              <p className="mt-2 text-sm text-gray-700">
-                                {file3.name}
-                              </p>
-                            )}
-                          </label>
-                          <input
-                            id="fileUpload3"
-                            type="file"
-                            onChange={handleFile3Change}
-                            className="hidden"
-                          />
-                        </div>
-                        <div className="">
-                          <p>Book Cover 4</p>
-                          <label
-                            htmlFor="fileUpload4"
-                            className="cursor-pointer w-full px-4 py-2 text-slate-100 border rounded-md flex items-center gap-3"
-                          >
-                            <span className="bg-blue-700 p-1 text-sm rounded">
-                              Upload File
-                            </span>
-                            {file4 && (
-                              <p className="mt-2 text-sm text-gray-700">
-                                {file4.name}
-                              </p>
-                            )}
-                          </label>
-                          <input
-                            id="fileUpload4"
-                            type="file"
-                            onChange={handleFile4Change}
-                            className="hidden"
-                          />
-                        </div>
+                        ))}
                       </div>
-                      <div className="flex justify-end my-5">
-                        <Button
-                          disabled={form.formState.isSubmitting}
-                          className="bg-blue-600 text-white py-2 px-7 rounded-md"
-                          type="submit"
-                          data-cy="book-submit"
-                        >
-                          {action === "Add" ? "Proceed" : "Save Changes"}
-                        </Button>
-                      </div>
-                    </fieldset>
-                  </form>
-                </Form>
-              </CardContent>
-            </Card>
-          </TabsContent>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField control={form.control} name="long_description" render={({ field }) => (
+                  <FormItem><FormLabel className="font-bold text-xs">DESCRIPTION *</FormLabel><FormControl><Textarea className="input-gumroad min-h-[100px]" {...field} /></FormControl></FormItem>
+                )} />
+              </div>
+            </section>
 
-          <TabsContent value="other-details"></TabsContent>
-        </Tabs>
+            {/* 2. FORMAT SELECTION & PRICING */}
+            <section className="space-y-4">
+              <div className="flex items-center gap-2">
+                <span className="h-8 w-8 bg-black text-white flex items-center justify-center font-bold">2</span>
+                <h3 className="font-bold uppercase tracking-tight">Format & Pricing</h3>
+              </div>
+              <div className="bg-white border-2 border-black divide-y-2 divide-black">
+                
+                {/* Physical Book Settings */}
+                <div className="p-6 space-y-6">
+                  <div className="flex gap-6">
+                    <div className="flex items-center gap-2"><Checkbox checked={watched.paper_back} onCheckedChange={v => form.setValue("paper_back", !!v)} /><label className="font-bold text-sm">Paperback</label></div>
+                    <div className="flex items-center gap-2"><Checkbox checked={watched.hard_cover} onCheckedChange={v => form.setValue("hard_cover", !!v)} /><label className="font-bold text-sm">Hardcover</label></div>
+                  </div>
+                  
+                  {(watched.paper_back || watched.hard_cover) && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pl-6 border-l-2 border-black animate-in fade-in slide-in-from-top-2">
+                      <FormField control={form.control} name="page_count" render={({ field }) => (
+                        <FormItem><FormLabel className="text-[10px] font-black uppercase">Page Count *</FormLabel><Input type="number" className="input-gumroad" {...field} value={field.value ?? ""} onChange={e => field.onChange(Number(e.target.value))} /></FormItem>
+                      )} />
+                      <div className="p-4 bg-[#82d236]/10 border border-black/10">
+                        <p className="text-[10px] font-black uppercase mb-2">Automated Pricing (NGN)</p>
+                        {watched.paper_back && <div className="flex justify-between font-bold text-sm italic"><span>Paperback:</span><span>₦{watched.paperback_price?.toLocaleString()}</span></div>}
+                        {watched.hard_cover && <div className="flex justify-between font-bold text-sm italic"><span>Hardcover:</span><span>₦{watched.hardcover_price?.toLocaleString()}</span></div>}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Ebook Settings */}
+                <div className="p-6 space-y-6">
+                  <div className="flex items-center gap-2"><Checkbox checked={watched.e_copy} onCheckedChange={v => form.setValue("e_copy", !!v)} /><label className="font-bold text-sm">E-Copy (Digital)</label></div>
+                  {watched.e_copy && (
+                    <div className="pl-6 border-l-2 border-black animate-in fade-in slide-in-from-top-2">
+                      <FormField control={form.control} name="ebook_price" render={({ field }) => (
+                        <FormItem className="max-w-[200px]"><FormLabel className="text-[10px] font-black uppercase">E-Copy Price (NGN) *</FormLabel><Input type="number" className="input-gumroad" {...field} value={field.value ?? ""} onChange={e => field.onChange(Number(e.target.value))} /></FormItem>
+                      )} />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </section>
+
+            {/* 3. MEDIA & CONTENT UPLOADS */}
+            <section className="space-y-4">
+              <div className="flex items-center gap-2">
+                <span className="h-8 w-8 bg-black text-white flex items-center justify-center font-bold">3</span>
+                <h3 className="font-bold uppercase tracking-tight">Content & Media</h3>
+              </div>
+              <div className="bg-white border-2 border-black p-6 space-y-8">
+                
+                {/* Global assets */}
+                <UploadField label="Main Front Cover (Mandatory) *" type="front" uploads={uploads} onUpload={handleInstantUpload} accept="image/*" />
+
+                {/* Format-specific physical assets */}
+                {(watched.paper_back || watched.hard_cover) && (
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 border-t-2 border-black pt-8 animate-in fade-in">
+                    <UploadField label="Back Cover" type="back" uploads={uploads} onUpload={handleInstantUpload} accept="image/*" />
+                    <UploadField label="Spine" type="spine" uploads={uploads} onUpload={handleInstantUpload} accept="image/*" />
+                    <UploadField label="Full Cover Spread" type="spread" uploads={uploads} onUpload={handleInstantUpload} accept="image/*" />
+                  </div>
+                )}
+
+                {/* Format-specific digital assets */}
+                {watched.e_copy && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t-2 border-black pt-8 animate-in fade-in">
+                    <UploadField label="PDF Document *" type="pdf" uploads={uploads} onUpload={handleInstantUpload} accept=".pdf" />
+                    <UploadField label="Web Reader (DOCX) *" type="docx" uploads={uploads} onUpload={handleInstantUpload} accept=".docx" />
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <Button 
+              type="submit" 
+              disabled={isPending || Object.values(uploads).some(u => u.loading)} 
+              className="w-full h-16 bg-[#82d236] text-black font-black uppercase text-xl rounded-none border-2 border-black gumroad-shadow hover:translate-x-[3px] transition-all disabled:opacity-50 disabled:bg-gray-200 disabled:cursor-not-allowed"
+            >
+              {isPending ? <Loader2 className="animate-spin" /> : `${action} Product`}
+            </Button>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
+  );
+};
+
+const UploadField = ({ label, type, uploads, onUpload, accept }: any) => {
+  const data = uploads[type];
+  return (
+    <div className="space-y-1">
+      <label className="text-[9px] font-black uppercase text-gray-500">{label}</label>
+      <div className={cn("border-2 border-dashed border-black h-16 flex flex-col items-center justify-center cursor-pointer bg-secondary/10 transition-colors hover:bg-white", data.url && "border-green-600 bg-green-50")} onClick={() => document.getElementById(type)?.click()}>
+        {data.loading ? (
+          <div className="w-full px-4">
+            <div className="h-1 bg-gray-200 w-full rounded-full overflow-hidden">
+              <div className="h-full bg-black transition-all duration-300" style={{ width: `${data.progress}%` }} />
+            </div>
+          </div>
+        ) : data.url ? (
+          <div className="flex items-center gap-1 text-green-600 font-bold text-[10px]"><CheckCircle2 size={16} /> COMPLETED</div>
+        ) : (
+          <UploadCloud size={20} />
+        )}
+      </div>
+      <input id={type} type="file" className="hidden" accept={accept} onChange={e => e.target.files?.[0] && onUpload(e.target.files[0], type)} />
+    </div>
   );
 };
 

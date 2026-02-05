@@ -1,269 +1,159 @@
 "use client";
 
-import { zodResolver } from "@hookform/resolvers/zod";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { createAuthorSchema, updateAuthorSchema } from "@/server/dtos";
+import { trpc } from "@/app/_providers/trpc-provider";
+import { useToast } from "@/components/ui/use-toast";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
-import { createAuthorSchema, TCreateAuthorSchema } from "@/server/dtos";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import { useToast } from "@/components/ui/use-toast";
-import { trpc } from "@/app/_providers/trpc-provider";
-import { Author } from "@prisma/client";
-import { useSession } from "next-auth/react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Loader2 } from "lucide-react";
 
-interface AuthorFormProps {
-  author?: Author;
-  action: "Add" | "Edit";
-}
-
-const AuthorForm = ({ author, action }: AuthorFormProps) => {
+const AuthorForm = ({ author, action, trigger }: { author?: any; action: "Add" | "Edit"; trigger?: React.ReactNode }) => {
   const { toast } = useToast();
   const utils = trpc.useUtils();
-  const session = useSession();
   const [open, setOpen] = useState(false);
+  const isEditMode = action === "Edit" && !!author?.id;
 
-  console.log("author", author);
+  // FIX 1: Explicitly define which schema to use based on action
+  // This prevents the 'parseAsync' of undefined error
+  const currentSchema = isEditMode ? updateAuthorSchema : createAuthorSchema;
 
-  const form = useForm<TCreateAuthorSchema>({
-    resolver: zodResolver(createAuthorSchema),
-    defaultValues: {  },
+  const form = useForm<any>({
+    resolver: zodResolver(currentSchema),
+    defaultValues: {
+      first_name: "",
+      last_name: "",
+      email: "",
+      username: "",
+      password: "",
+      phone_number: ""
+    }
   });
 
-  const addAuthor = trpc.createAuthor.useMutation({
-    onSuccess: async () => {
-      toast({
-        title: "Success",
-        variant: "default",
-        description: "Successfully created an Author",
-      });
-
-      // Invalidate the query used by the authors page to refresh the table
-      const userId = session.data?.user.id as string;
-      if (userId) {
-        await utils.getAuthorsByUser.invalidate({ id: userId });
+  // FIX 2: Reset logic with a safety check for 'open' state
+  useEffect(() => {
+    if (open) {
+      if (isEditMode && author) {
+        form.reset({
+          id: author.id,
+          first_name: author.user?.first_name || "",
+          last_name: author.user?.last_name || "",
+          email: author.user?.email || "",
+          username: author.user?.username || "",
+          phone_number: author.user?.phone_number || "",
+        });
+      } else {
+        form.reset({
+          first_name: "",
+          last_name: "",
+          email: "",
+          username: "",
+          password: "",
+          phone_number: ""
+        });
       }
-      // Also invalidate getAllAuthors as fallback
-      await utils.getAllAuthors.invalidate();
+    }
+  }, [open, isEditMode, author, form]);
+
+  const { mutate: addAuthor, isPending: isAdding } = trpc.createAuthor.useMutation({
+    onSuccess: () => {
+      toast({ title: "Success", description: "Author added to your roster." });
+      utils.getAuthorsByUser.invalidate();
       setOpen(false);
     },
-    onError: (error) => {
-      console.error(error);
-
-      toast({
-        title: "Error",
-        variant: "destructive",
-        description: "Error creating author",
-      });
-    },
+    onError: (err) => toast({ variant: "destructive", title: "Error", description: err.message }) // Pure English from Backend
   });
 
-  const onSubmit = (values: TCreateAuthorSchema) => {
-    addAuthor.mutate(values);
+  const { mutate: updateAuthor, isPending: isUpdating } = trpc.updateAuthor.useMutation({
+    onSuccess: () => {
+      toast({ title: "Success", description: "Author profile updated." });
+      utils.getAuthorsByUser.invalidate();
+      setOpen(false);
+    },
+    onError: (err) => toast({ variant: "destructive", title: "Error", description: err.message })
+  });
+
+  const onSubmit = (values: any) => {
+    if (isEditMode) {
+      updateAuthor(values);
+    } else {
+      addAuthor(values);
+    }
   };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="sm" className={`${action === "Edit" ? "w-full" : ""}`}>
-          {action} Author
-        </Button>
+        {trigger || <Button className="booka-button-primary">{action} Author</Button>}
       </DialogTrigger>
-      <DialogContent className="max-h-[80vh] overflow-y-auto space-y-3">
-        <DialogHeader>
-          <DialogTitle>{action} Author</DialogTitle>
-        </DialogHeader>
-        <Tabs defaultValue="author-details" className="w-[400px]">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="author-details">Author Details</TabsTrigger>
-            <TabsTrigger value="role">Author Role</TabsTrigger>
-          </TabsList>
-          <TabsContent value="author-details">
-            <Card>
-              <CardHeader>
-                <CardTitle>Author Details</CardTitle>
-                <CardDescription>
-                  Make changes to your author here.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Form {...form}>
-                  <form onSubmit={form.handleSubmit(onSubmit)}>
-                    <fieldset disabled={form.formState.isSubmitting}>
+      
+      <DialogContent className="max-w-xl rounded-none border-4 border-black p-0 bg-[#F4F4F4] gumroad-shadow-lg">
+        <div className="p-6 border-b-4 border-black bg-white sticky top-0 z-20">
+          <DialogTitle className="text-2xl font-black uppercase italic tracking-tighter">
+            {action} Author<span className="text-accent">.</span>
+          </DialogTitle>
+        </div>
 
-                      <div className="space-y-1">
-                        <FormField
-                          control={form.control}
-                          name="first_name"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="text-gray-700">
-                                First Name
-                              </FormLabel>
-                              <FormControl>
-                                <Input
-                                  placeholder="Enter first name"
-                                  {...field}
-                                  data-cy="user-first-name"
-                                  className="border-gray-300 rounded-md"
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                      <div className="grid gap-6">
-                        <FormField
-                          control={form.control}
-                          name="last_name"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="text-gray-700">
-                                Last Name
-                              </FormLabel>
-                              <FormControl>
-                                <Input
-                                  placeholder="Enter Author Name"
-                                  {...field}
-                                  className="border-gray-300 rounded-md"
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <FormField
-                          control={form.control}
-                          name="username"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="text-gray-700">
-                                UserName
-                              </FormLabel>
-                              <FormControl>
-                                <Input
-                                  placeholder="Enter UserName"
-                                  {...field}
-                                  data-cy="user-username"
-                                  className="border-gray-300 rounded-md"
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <FormField
-                          control={form.control}
-                          name="email"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="text-gray-700">
-                                Email
-                              </FormLabel>
-                              <FormControl>
-                                <Input
-                                  placeholder="example@gmail.com"
-                                  {...field}
-                                  data-cy="user-email"
-                                  className="border-gray-300 rounded-md"
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <FormField
-                          control={form.control}
-                          name="password"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="text-gray-700">
-                                Password
-                              </FormLabel>
-                              <FormControl>
-                                <Input
-                                  placeholder="Enter password"
-                                  {...field}
-                                  data-cy="user-password"
-                                  className="border-gray-300 rounded-md"
-                                  type="password"
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <FormField
-                          control={form.control}
-                          name="phone_number"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="text-gray-700">
-                                Phone Number
-                              </FormLabel>
-                              <FormControl>
-                                <Input
-                                  placeholder="Enter Phone number"
-                                  {...field}
-                                  data-cy="user-phone-no"
-                                  className="border-gray-300 rounded-md"
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                      <div className="flex justify-end my-5">
-                        <Button
-                          disabled={form.formState.isSubmitting}
-                          className="bg-blue-600 text-white py-2 px-7 rounded-md"
-                          type="submit"
-                          data-cy="author-submit"
-                        >
-                          {action === "Add" ? "Proceed" : "Save Changes"}
-                        </Button>
-                      </div>
-                    </fieldset>
-                  </form>
-                </Form>
-              </CardContent>
-            </Card>
-          </TabsContent>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="p-8 space-y-6">
+            <div className="bg-white border-2 border-black p-6 space-y-4 gumroad-shadow-sm">
+              <div className="grid grid-cols-2 gap-4">
+                <FormField control={form.control} name="first_name" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-[10px] font-black uppercase opacity-40">First Name</FormLabel>
+                    <FormControl><Input className="input-gumroad" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="last_name" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-[10px] font-black uppercase opacity-40">Last Name</FormLabel>
+                    <FormControl><Input className="input-gumroad" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              </div>
+              
+              <FormField control={form.control} name="username" render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-[10px] font-black uppercase opacity-40">Username</FormLabel>
+                  <FormControl><Input className="input-gumroad" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
 
-          <TabsContent value="role"></TabsContent>
-        </Tabs>
+              <FormField control={form.control} name="email" render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-[10px] font-black uppercase opacity-40">Email Address</FormLabel>
+                  <FormControl><Input disabled={isEditMode} className="input-gumroad" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+
+              {!isEditMode && (
+                <FormField control={form.control} name="password" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-[10px] font-black uppercase opacity-40">Password</FormLabel>
+                    <FormControl><Input type="password" className="input-gumroad" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              )}
+            </div>
+
+            <Button 
+              type="submit" 
+              disabled={isAdding || isUpdating} 
+              className="w-full h-14 bg-black text-white font-black uppercase italic border-2 border-black gumroad-shadow hover:translate-x-[2px] transition-all"
+            >
+              {(isAdding || isUpdating) ? <Loader2 className="animate-spin" /> : `${action} Author`}
+            </Button>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );

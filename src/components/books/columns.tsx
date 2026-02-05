@@ -1,4 +1,16 @@
-import { Book } from "@prisma/client";
+"use client";
+
+import React from "react";
+import { ColumnDef } from "@tanstack/react-table";
+import { 
+  MoreHorizontal, 
+  Trash2, 
+  Edit3, 
+  Star, 
+  BookOpen,
+  Eye,
+  LayoutDashboard
+} from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -8,84 +20,255 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { MoreHorizontal } from "lucide-react";
-import DeleteBookModal from "./delete-book";
+import { trpc } from "@/app/_providers/trpc-provider";
+import { useToast } from "@/components/ui/use-toast";
+import Image from "next/image";
+import Link from "next/link";
 import BookForm from "./book-form";
-import ToggleFeaturedModal from "./toggle-featured";
-import { ColumnDef } from "@tanstack/react-table";
-import { DataTableColumnHeader } from "@/components/table/data-table-column-header";
 import { ViewChapters } from "@/components/chapters/view-chapter";
+import { cn } from "@/lib/utils";
 
-interface BookActionProps {
-  book: Book;
-}
+import { 
+  AlertDialog, 
+  AlertDialogAction, 
+  AlertDialogCancel, 
+  AlertDialogContent, 
+  AlertDialogDescription, 
+  AlertDialogFooter, 
+  AlertDialogHeader, 
+  AlertDialogTitle, 
+  AlertDialogTrigger 
+} from "@/components/ui/alert-dialog";
 
-function Action({ book }: BookActionProps) {
+/**
+ * Standardized Menu Item Style
+ * Ensures all actions (Dialogs, Links, and Buttons) look identical.
+ */
+const menuButtonStyle = "w-full text-left px-3 py-2.5 text-xs font-black uppercase italic hover:bg-accent cursor-pointer flex items-center gap-2 transition-colors rounded-none outline-none";
+
+function StaffBookAction({ book, meta }: { book: any; meta: any }) {
+  const { toast } = useToast();
+  const utils = trpc.useUtils();
+
+  const [isMenuOpen, setIsMenuOpen] = React.useState(false);
+
+  const isSuperAdmin = meta?.isSuperAdmin;
+  const isPublisher = meta?.isPublisher;
+
+  // Toggle Featured Logic
+  const toggleFeatured = trpc.toggleFeatured.useMutation({
+    onSuccess: (_, variables) => {
+      toast({ 
+        title: "Visibility Updated", 
+        description: `Book ${variables.featured ? "added to" : "removed from"} ${variables.scope} featured list.` 
+      });
+      setIsMenuOpen(false);
+
+      utils.getAllBooks.invalidate();
+      utils.getBookByAuthor.invalidate();
+    },
+    onError: (err) => toast({ variant: "destructive", title: "Action Failed", description: err.message })
+  });
+
+  const deleteBook = trpc.deleteBook.useMutation({
+    onSuccess: () => {
+      toast({ title: "Deleted", description: "The book has been permanently removed." });
+      utils.getAllBooks.invalidate();
+      utils.getBookByAuthor.invalidate();
+    },
+    onError: (err) => toast({ variant: "destructive", title: "Error", description: err.message })
+  });
+
   return (
-    <DropdownMenu>
+    <DropdownMenu open={isMenuOpen} onOpenChange={setIsMenuOpen}>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="h-8 w-8 p-0" data-cy="book-action">
-          <span className="sr-only">Open menu</span>
+        <Button variant="ghost" className="h-8 w-8 p-0 border-2 border-transparent hover:border-black rounded-none">
           <MoreHorizontal className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuLabel>Book Actions</DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <BookForm action="Edit" book={book} />
+      <DropdownMenuContent align="end" className="rounded-none border-4 border-black gumroad-shadow w-64 p-0 bg-white">
+        <DropdownMenuLabel className="font-black uppercase italic text-[10px] opacity-40 px-3 py-2 border-b-2 border-black/10">
+          Control Panel
+        </DropdownMenuLabel>
+        
+        {/* 1. Preview: View the book as a reader would */}
+        <Link href={`/app/books/view/${book.id}`} className={menuButtonStyle}>
+          <Eye size={14} /> Preview Product
+        </Link>
+
+        {/* 2. Edit Details: Uses custom trigger to maintain style */}
+        <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="p-0 focus:bg-transparent">
+          <BookForm 
+            action="Edit" 
+            book={book} 
+            trigger={<div className={menuButtonStyle}><Edit3 size={14} /> Edit Book</div>}
+          />
         </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <ViewChapters id={book.id} />
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <ToggleFeaturedModal id={book.id} isFeatured={book.featured} />
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <DeleteBookModal id={book.id} />
-        </DropdownMenuItem>
+
+        {/* 3. Manage Chapters: Only for E-books */}
+        {book.e_copy && (
+          <ViewChapters 
+            id={book.id} 
+            trigger={
+              <div className={menuButtonStyle}>
+                <BookOpen size={14} /> Manage Chapters
+              </div>
+            }
+          />
+        )}
+
+        <DropdownMenuSeparator className="bg-black m-0 h-[2px]" />
+
+        {/* 4. Global Featured (Super Admin Only) */}
+        {isSuperAdmin && (
+          <DropdownMenuItem 
+            className={menuButtonStyle}
+            onClick={() => toggleFeatured.mutate({ bookId: book.id, featured: !book.featured, scope: "global" })}
+          >
+            <Star size={14} className={cn(book.featured ? "fill-blue-600 text-blue-600" : "text-black")} />
+            {book.featured ? "Unfeature Globally" : "Feature Globally"}
+          </DropdownMenuItem>
+        )}
+
+        {/* 5. Shop Featured (Publisher Only) */}
+        {!isSuperAdmin && isPublisher && (
+          <DropdownMenuItem 
+            className={menuButtonStyle}
+            onClick={() => toggleFeatured.mutate({ bookId: book.id, featured: !book.featured_shop, scope: "shop" })}
+          >
+            <LayoutDashboard size={14} className={cn(book.featured_shop ? "fill-accent text-accent" : "text-black")} />
+            {book.featured_shop ? "Remove from Shop" : "Feature in My Shop"}
+          </DropdownMenuItem>
+        )}
+
+        <DropdownMenuSeparator className="bg-black m-0 h-[2px]" />
+        
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <div className={cn(menuButtonStyle, "text-red-600 focus:bg-red-50 focus:text-red-600")}>
+              <Trash2 size={14} /> Delete
+            </div>
+          </AlertDialogTrigger>
+          <AlertDialogContent className="rounded-none border-4 border-black bg-white gumroad-shadow-lg">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="font-black uppercase italic text-2xl tracking-tighter">
+                Are you absolutely sure?
+              </AlertDialogTitle>
+              <AlertDialogDescription className="font-bold text-black/60">
+                This will permanently delete <span className="text-black underline">"{book.title}"</span> and remove all associated chapters and variants from our servers.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter className="gap-4">
+              <AlertDialogCancel className="rounded-none border-2 border-black font-black uppercase italic text-xs hover:bg-accent transition-colors">
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction 
+                onClick={() => deleteBook.mutate({ id: book.id })}
+                className="rounded-none border-2 border-black bg-red-600 text-white font-black uppercase italic text-xs hover:bg-red-700 transition-colors"
+              >
+                Delete Permanently
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
       </DropdownMenuContent>
     </DropdownMenu>
   );
 }
 
-export const bookColumns: ColumnDef<Book>[] = [
+export const staffBookColumns: ColumnDef<any>[] = [
   {
     accessorKey: "title",
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="Title" />
-    ),
-    cell: ({ row }) => <div>{row.getValue("title")}</div>,
-  },
-
-  {
-    accessorKey: "short_description",
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="Short Description" />
-    ),
+    header: "Book Details",
     cell: ({ row }) => (
-      <div className="max-w-xs truncate">
-        {row.getValue("short_description")}
+      <div className="flex items-center gap-4 py-2">
+        <div className="relative w-12 h-16 border-2 border-black bg-white shrink-0 shadow-[2px_2px_0px_rgba(0,0,0,1)]">
+          <Image 
+            src={row.original.book_cover || "/bookcover.png"} 
+            alt="Cover" 
+            fill 
+            className="object-cover" 
+          />
+        </div>
+        <div className="flex flex-col">
+          <span className="font-black uppercase italic text-sm tracking-tighter leading-none">
+            {row.original.title}
+          </span>
+          <span className="text-[10px] font-bold opacity-40 uppercase mt-1">
+            By {row.original.author?.name || "Independent"}
+          </span>
+        </div>
       </div>
     ),
   },
   {
-    accessorKey: "price",
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="Price" />
-    ),
+    accessorKey: "sales",
+    header: "Sales",
     cell: ({ row }) => {
-      const priceValue = row.getValue<number>("price");
-
-      return <div> ₦{priceValue.toFixed(2)}</div>;
-    },
+      const variants = row.original.variants || [];
+      const totalSales = variants.reduce((acc: number, v: any) => acc + (v._count?.order_lineitems || 0), 0);
+      return <span className="font-black italic underline text-sm">{totalSales}</span>;
+    }
+  },
+  {
+    accessorKey: "revenue",
+    header: "Revenue",
+    cell: ({ row }) => {
+      const variants = row.original.variants || [];
+      const totalRevenue = variants.reduce((acc: number, v: any) => {
+        const variantTotal = v.order_lineitems?.reduce((sum: number, item: any) => sum + (item.total_price || 0), 0) || 0;
+        return acc + variantTotal;
+      }, 0);
+      return <span className="font-black text-sm">₦{totalRevenue.toLocaleString()}</span>;
+    }
+  },
+  {
+    accessorKey: "price",
+    header: "Base Price",
+    cell: ({ row }) => (
+      <span className="font-bold opacity-60 text-xs tracking-widest">
+        ₦{(row.original.price || 0).toLocaleString()}
+      </span>
+    )
   },
   {
     id: "actions",
-    header: "Actions",
-    cell: ({ row }) => <Action book={row.original} />,
+    cell: ({ row, table }) => <StaffBookAction book={row.original} meta={table.options.meta} />,
   },
+];
+
+export const readerBookColumns: ColumnDef<any>[] = [
+  {
+    accessorKey: "title",
+    header: "My Bookshelf",
+    cell: ({ row }) => (
+      <div className="flex items-center gap-4 py-3">
+        <div className="relative w-14 h-20 border-2 border-black bg-white shadow-[4px_4px_0px_rgba(0,0,0,1)]">
+          <Image 
+            src={row.original.book_cover || "/bookcover.png"} 
+            alt="Cover" 
+            fill 
+            className="object-cover" 
+          />
+        </div>
+        <div>
+          <p className="font-black uppercase italic text-base tracking-tighter leading-none">
+            {row.original.title}
+          </p>
+          <p className="text-[10px] font-bold opacity-40 uppercase mt-2">Personal Library</p>
+        </div>
+      </div>
+    ),
+  },
+  {
+    id: "action",
+    cell: ({ row }) => (
+      <Link href={`/app/books/view/${row.original.id}`}>
+        <Button className="booka-button-primary h-12 px-8 text-xs italic tracking-widest">
+          <BookOpen size={16} className="mr-2" /> Open Library
+        </Button>
+      </Link>
+    )
+  }
 ];

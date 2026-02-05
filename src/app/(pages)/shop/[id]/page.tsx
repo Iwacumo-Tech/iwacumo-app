@@ -1,692 +1,343 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ChevronLeft, ChevronRight, Heart, Scale, Star } from "lucide-react";
+import { ChevronLeft, ChevronRight, ShoppingCart, Star, BookOpen, Truck, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Label } from "@/components/ui/label";
 import { useSession } from "next-auth/react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
-
 import { cn } from "@/lib/utils";
 import { trpc } from "@/app/_providers/trpc-provider";
 import { useToast } from "@/components/ui/use-toast";
+import { useCartStore } from "@/store/use-cart-store";
+import { GUEST_CART_KEY, notifyCartUpdate } from "@/lib/cart-utils";
 
 export default function ProductDetails() {
-  const [bookQuantity, setBookQuantity] = useState(1);
-  const [currentImage, setCurrentImage] = useState(0);
-  const [format, setFormat] = useState("paperback");
-  const [rating, setRating] = useState(0);
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [comment, setComment] = useState("");
   const params = useParams();
   const id = params?.id as string;
-  const { data: book } = trpc.getBookById.useQuery({ id: id });
-  const session = useSession();
   const { toast } = useToast();
   const utils = trpc.useUtils();
+  const { data: session } = useSession();
 
+  const openCart = useCartStore((state) => state.openCart);
+
+  // Queries & Mutations
+  const { data: book, isLoading: bookLoading } = trpc.getBookById.useQuery({ id });
+  const { data: reviews, isLoading: reviewsLoading } = trpc.getReviewsByBook.useQuery({ book_id: id });
   const createReviewMutation = trpc.createReview.useMutation();
   const addBookToCart = trpc.createCart.useMutation();
-  const bookreview = trpc.getReviewsByBook.useQuery({
-    book_id: book?.id as string,
-  });
 
+  // Component State
+  const [currentImage, setCurrentImage] = useState(0);
+  const [selectedFormat, setSelectedFormat] = useState("ebook");
+  const [quantity, setQuantity] = useState(1);
+  const [reviewRating, setReviewRating] = useState(0);
+  const [comment, setComment] = useState("");
+
+  // Helper: Filter valid images
   const images = [
-    book?.book_cover || "/bookcover.png",
-    book?.book_cover2 || "/bookcover.png",
-    book?.book_cover3 || "/bookcover.png",
-    book?.book_cover4 || "/bookcover.png",
-  ];
+    book?.book_cover,
+    book?.book_cover2,
+    book?.book_cover3,
+    book?.book_cover4,
+  ].filter(Boolean) as string[];
 
-  // Helper function to get price for a variant format
+  // Logic: Get price for specific format
   const getVariantPrice = (formatType: string): number => {
-    if (!book?.variants || book.variants.length === 0) {
-      return book?.price || 0;
-    }
-
-    // Map format types to variant format values
-    const formatMap: Record<string, string> = {
-      "Paper-back": "paperback",
-      "E-copy": "ebook",
-      "Hard-cover": "hardcover",
-      "paperback": "paperback",
-      "ecopy": "ebook",
-      "hardcover": "hardcover",
-    };
-
-    const variantFormat = formatMap[formatType] || formatType.toLowerCase();
-    
-    const variant = book.variants.find(
-      (v) => v.format.toLowerCase() === variantFormat.toLowerCase()
+    const variant = book?.variants?.find(
+      (v) => v.format.toLowerCase() === formatType.toLowerCase()
     );
-
-    if (variant) {
-      // Use discount_price if available, otherwise use list_price
-      return variant.discount_price ?? variant.list_price;
-    }
-
-    // Fallback to book price if no variant found
-    return book?.price || 0;
+    return variant ? (variant.discount_price ?? variant.list_price) : (book?.price || 0);
   };
 
-  // Get current selected format price
-  const getCurrentPrice = (): number => {
-    const formatMap: Record<string, string> = {
-      "paperback": "Paper-back",
-      "ecopy": "E-copy",
-      "hardcover": "Hard-cover",
-    };
-    const type = formatMap[format] || format;
-    return getVariantPrice(type);
-  };
+  const currentPrice = getVariantPrice(selectedFormat);
 
-  const handleCreateCart = async (type: string, quantity: number) => {
+  // Cart Handler
+  const handleAddToCart = async () => {
     try {
-      const variantPrice = getVariantPrice(type);
-      const totalPrice = variantPrice * quantity;
+      const totalPrice = currentPrice * quantity;
 
-      // If user is authenticated, add to database cart
-      if (session.data?.user?.id) {
+      if (session?.user?.id) {
+        // AUTHENTICATED LOGIC
         await addBookToCart.mutateAsync({
-          userId: session.data.user.id,
+          userId: session.user.id,
           book_image: book?.book_cover as string,
           book_title: book?.title as string,
-          book_type: type,
-          price: variantPrice,
+          book_type: selectedFormat,
+          price: currentPrice,
           quantity: quantity,
           total: totalPrice,
         });
-
-        toast({
-          title: "Success",
-          variant: "default",
-          description: "Book added to cart successfully",
-        });
         utils.getCartsByUser.invalidate();
       } else {
-        // If guest, add to localStorage
-        const guestCartKey = "guest_cart_items";
-        const existingCart = localStorage.getItem(guestCartKey);
-        const cartItems = existingCart ? JSON.parse(existingCart) : [];
+        // GUEST LOGIC 
+        const existingCart = localStorage.getItem(GUEST_CART_KEY);
+        // const cartItems = existingCart ? JSON.parse(existingCart) : [];
+        let cartItems = [];
+          try {
+            cartItems = existingCart ? JSON.parse(existingCart) : [];
+            if (!Array.isArray(cartItems)) cartItems = []; // Ensure it's always an array
+          } catch (e) {
+            cartItems = [];
+          }
         
-        const newCartItem = {
+        const newItem = {
           id: `${Date.now()}-${Math.random()}`,
           book_image: book?.book_cover as string,
           book_title: book?.title as string,
-          book_type: type,
-          price: variantPrice,
+          book_type: selectedFormat,
+          price: currentPrice,
           quantity: quantity,
           total: totalPrice,
         };
 
-        cartItems.push(newCartItem);
-        localStorage.setItem(guestCartKey, JSON.stringify(cartItems));
-
-        toast({
-          title: "Success",
-          variant: "default",
-          description: "Book added to cart successfully",
-        });
+        cartItems.push(newItem);
+        localStorage.setItem(GUEST_CART_KEY, JSON.stringify(cartItems));
+        
+        // CRITICAL: Tell the CartDrawer to refresh its data
+        notifyCartUpdate(); 
       }
-    } catch (error) {
-      console.error("Failed to add book to cart:", error);
-      toast({
-        title: "Error",
-        variant: "destructive",
-        description: "Error adding book to cart",
+
+      toast({ title: "Success", description: "Added to bag" });
+      // Open the drawer so the user sees the update immediately
+      openCart(); 
+
+    } catch (error: any) {
+      console.error("Cart Error:", error); // Check your browser inspect console!
+      toast({ 
+        title: "Error", 
+        variant: "destructive", 
+        description: error.message || "Could not add to cart." 
       });
     }
   };
-  const handleSubmit = async (e: React.FormEvent) => {
+
+  // Review Handler
+  const handleReviewSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    // // Validate the form
-    // if (!name || !email || !comment || !rating) {
-    //   alert("All fields and a rating are required.");
-    //   return;
-    // }
-
     if (!session) {
-      toast({
-        title: "Error",
-        variant: "destructive",
-        description: "You need to login to add a review",
-      });
+      toast({ title: "Auth Required", variant: "destructive", description: "Please login to review." });
+      return;
+    }
+    if (reviewRating === 0) {
+      toast({ title: "Rating Required", variant: "destructive", description: "Please select a star rating." });
       return;
     }
 
     try {
-      // Send the review data to the server
       await createReviewMutation.mutateAsync({
-        book_id: book?.id as string,
-        user_id: session.data?.user.id as string,
-        name,
-        email,
+        book_id: id,
+        user_id: session.user.id,
+        name: `${session.user.first_name || 'User'}`,
+        email: session.user.email ?? "",
         comment,
-        rating,
+        rating: reviewRating,
       });
 
-      toast({
-        title: "Success",
-        variant: "default",
-        description: "Review Added Sucessfully",
-      });
+      toast({ title: "Success", description: "Review submitted!" });
       utils.getReviewsByBook.invalidate();
-      setName("");
-      setEmail("");
       setComment("");
-      setRating(0); // Reset the rating
+      setReviewRating(0);
     } catch (error) {
-      console.error("Failed to submit review:", error);
-      toast({
-        title: "Error",
-        variant: "destructive",
-        description: "Error adding the review",
-      });
+      toast({ title: "Error", variant: "destructive", description: "Failed to submit review." });
     }
   };
 
-  const averageRating = bookreview.data
-    ? bookreview.data.reduce((acc, review) => acc + review.rating, 0) /
-      bookreview.data.length
+  const averageRating = reviews?.length 
+    ? reviews.reduce((acc, r) => acc + r.rating, 0) / reviews.length 
     : 0;
 
+  if (bookLoading) return <div className="min-h-screen flex items-center justify-center font-black italic uppercase">Loading Book...</div>;
+
   return (
-    <div className="container mx-auto px-4 py-8 w-[80%]">
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-        {/* Product Images */}
-        <div className="space-y-4">
-          <div className="relative aspect-[4/5] bg-gray-100">
-            <Image
-              src={images[currentImage]}
-              alt="Product"
-              fill
-              className="object-cover"
-            />
+    <div className="min-h-screen bg-[#FCFAEE] pb-20">
+      <main className="max-w-[95%] lg:max-w-[85%] mx-auto py-12 grid lg:grid-cols-2 gap-16 items-start">
+        
+        {/* IMAGE GALLERY */}
+        <div className="lg:sticky lg:top-28 space-y-6">
+          <div className="bg-white border-4 border-black gumroad-shadow aspect-[3/4] relative overflow-hidden">
+            {images.length > 0 ? (
+              <Image src={images[currentImage]} alt={book?.title ?? ""} fill className="object-cover" />
+            ) : (
+              <div className="flex items-center justify-center h-full bg-primary/5 font-black text-4xl italic text-primary/10">BOOKA.</div>
+            )}
           </div>
-          <div className="relative">
-            <button
-              onClick={() => setCurrentImage((prev) => Math.max(0, prev - 1))}
-              className="absolute left-0 top-1/2 -translate-y-1/2 z-10 bg-white rounded-full p-1 shadow-md"
-              disabled={currentImage === 0}
-            >
-              <ChevronLeft className="h-5 w-5" />
-            </button>
-            <div className="flex gap-4 overflow-x-auto px-8">
-              {images.map((img, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => setCurrentImage(idx)}
-                  className={cn(
-                    "relative w-24 aspect-[4/5] flex-shrink-0",
-                    currentImage === idx && "ring-2 ring-[#82d236]"
-                  )}
-                >
-                  <Image
-                    src={img}
-                    alt={`Product ${idx + 1}`}
-                    fill
-                    className="object-cover"
-                  />
-                </button>
-              ))}
-            </div>
-            <button
-              onClick={() =>
-                setCurrentImage((prev) => Math.min(images.length - 1, prev + 1))
-              }
-              className="absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-white rounded-full p-1 shadow-md"
-              disabled={currentImage === images.length - 1}
-            >
-              <ChevronRight className="h-5 w-5" />
-            </button>
+          
+          <div className="flex gap-4 overflow-x-auto pb-2 no-scrollbar">
+            {images.map((img, idx) => (
+              <button 
+                key={idx}
+                onClick={() => setCurrentImage(idx)}
+                className={cn(
+                  "w-24 aspect-[3/4] border-2 transition-all relative shrink-0",
+                  currentImage === idx ? "border-accent scale-105" : "border-black/10 opacity-60 hover:opacity-100"
+                )}
+              >
+                <Image src={img} alt="Thumbnail" fill className="object-cover" />
+              </button>
+            ))}
+          </div>
+
+          <div className="bg-accent border-2 border-black p-4 flex items-center gap-3">
+            <CheckCircle2 className="h-5 w-5" />
+            <p className="font-black uppercase text-[10px] tracking-widest">Verified Content • Secure Delivery</p>
           </div>
         </div>
 
-        {/* Product Info */}
-        <div className="space-y-6">
-          <div>
-            <div className="mb-4">
-              <span className="text-sm text-gray-500">Tags: </span>
-              {book?.tags.map((tag, index) => (
-                <>
-                  <Link
-                    href="#"
-                    className="text-sm text-gray-500 hover:text-[#82d236]"
-                  >
-                    {tag}
-                  </Link>
-                  {index < book.tags.length - 1 && <span> , </span>}
-                </>
+        {/* PRODUCT INFO */}
+        <div className="space-y-10">
+          <div className="space-y-4 border-b-4 border-black pb-8">
+            <div className="flex flex-wrap gap-2">
+              {book?.categories?.map(cat => (
+                <span key={cat.id} className="bg-black text-white px-3 py-1 text-[10px] font-black uppercase italic">
+                  {cat.name}
+                </span>
               ))}
             </div>
-            <h1 className="text-2xl font-bold mb-4">{book?.title}</h1>
-            <RadioGroup
-              defaultValue="paperback"
-              value={format}
-              onValueChange={setFormat}
-              className="flex flex-wrap gap-2 mb-4"
-            >
-              {book?.paper_back && (
-                <div>
-                  <RadioGroupItem
-                    value="paperback"
-                    id="paperback"
-                    className="peer hidden"
-                  />
-                  <Label
-                    htmlFor="paperback"
-                    className={cn(
-                      "px-4 py-2 rounded-full cursor-pointer border transition-colors flex items-center gap-2",
-                      "hover:border-[#82d236] hover:text-[#82d236]",
-                      "peer-checked:bg-[#82d236] peer-checked:text-white peer-checked:border-[#82d236]"
-                    )}
-                  >
-                    <span>Paper-back</span>
-                    <span className="text-xs font-semibold">
-                      ₦{getVariantPrice("Paper-back").toLocaleString()}
-                    </span>
-                  </Label>
-                </div>
-              )}
-              {book?.e_copy && (
-                <div>
-                  <RadioGroupItem
-                    value="ecopy"
-                    id="ecopy"
-                    className="peer hidden"
-                  />
-                  <Label
-                    htmlFor="ecopy"
-                    className={cn(
-                      "px-4 py-2 rounded-full cursor-pointer border transition-colors flex items-center gap-2",
-                      "hover:border-[#82d236] hover:text-[#82d236]",
-                      "peer-checked:bg-[#82d236] peer-checked:text-white peer-checked:border-[#82d236]"
-                    )}
-                  >
-                    <span>E-copy</span>
-                    <span className="text-xs font-semibold">
-                      ₦{getVariantPrice("E-copy").toLocaleString()}
-                    </span>
-                  </Label>
-                </div>
-              )}
-              {book?.hard_cover && (
-                <div>
-                  <RadioGroupItem
-                    value="hardcover"
-                    id="hardcover"
-                    className="peer hidden"
-                  />
-                  <Label
-                    htmlFor="hardcover"
-                    className={cn(
-                      "px-4 py-2 rounded-full cursor-pointer border transition-colors flex items-center gap-2",
-                      "hover:border-[#82d236] hover:text-[#82d236]",
-                      "peer-checked:bg-[#82d236] peer-checked:text-white peer-checked:border-[#82d236]"
-                    )}
-                  >
-                    <span>Hard-cover</span>
-                    <span className="text-xs font-semibold">
-                      ₦{getVariantPrice("Hard-cover").toLocaleString()}
-                    </span>
-                  </Label>
-                </div>
-              )}
-            </RadioGroup>
-            <div className="flex items-center gap-2 mb-4">
-              <div className="flex">
-                {[1, 2, 3, 4, 5].map((star, i) => (
-                  <Star
-                    key={i}
-                    className={`h-5 w-5 ${
-                      star <= Math.round(averageRating)
-                        ? "fill-yellow-400 text-yellow-400"
-                        : "text-gray-300"
-                    }`}
-                  />
+            <h1 className="text-5xl md:text-7xl font-black uppercase italic tracking-tighter leading-[0.85]">
+              {book?.title}<span className="text-accent">.</span>
+            </h1>
+            <div className="flex items-center gap-4">
+              <p className="text-xl font-bold italic opacity-60">by {book?.author?.name}</p>
+              <div className="flex text-accent">
+                {[1, 2, 3, 4, 5].map((s) => (
+                  <Star key={s} size={16} className={cn(s <= Math.round(averageRating) ? "fill-accent" : "text-black/10")} />
                 ))}
               </div>
             </div>
           </div>
 
-          {/* <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="text-sm">Ex Tax:</span>
-              <span className="text-[#82d236]">£60.24</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm">Brands:</span>
-              <Link href="#" className="text-[#82d236] hover:underline">
-                Canon
-              </Link>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm">Product Code:</span>
-              <span>model1</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm">Reward Points:</span>
-              <span>200</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm">Availability:</span>
-              <span className="text-[#82d236]">In Stock</span>
-            </div>
-          </div> */}
+          <p className="text-lg font-medium leading-relaxed text-gray-700">{book?.short_description}</p>
 
-          <div className="flex items-center gap-4">
-            <span className="text-3xl font-bold text-[#82d236]">
-              ₦ {getCurrentPrice().toLocaleString()}
-            </span>
-            {book?.variants && book.variants.length > 0 && (
-              <span className="text-sm text-gray-500">
-                (Price varies by format)
-              </span>
-            )}
+          {/* FORMAT SELECTOR */}
+          <div className="space-y-6">
+            <h3 className="text-xs font-black uppercase tracking-[0.2em] text-gray-400">Choose Format</h3>
+            <div className="grid gap-3">
+              {["ebook", "paperback", "hardcover"].map((f) => {
+                const isAvail = book?.variants?.some(v => v.format.toLowerCase() === f);
+                if (!isAvail && f !== 'paperback') return null; // Logic check
+                
+                return (
+                  <button
+                    key={f}
+                    onClick={() => setSelectedFormat(f)}
+                    className={cn(
+                      "flex items-center justify-between p-6 border-2 transition-all",
+                      selectedFormat === f 
+                        ? "bg-primary text-white border-black translate-x-1 -translate-y-1 shadow-[4px_4px_0px_0px_rgba(255,183,3,1)]" 
+                        : "bg-white border-black hover:bg-gray-50"
+                    )}
+                  >
+                    <div className="flex items-center gap-4">
+                      {f === 'ebook' ? <BookOpen /> : <Truck />}
+                      <span className="font-black uppercase text-sm tracking-widest">{f}</span>
+                    </div>
+                    <span className="font-black text-lg italic">₦{getVariantPrice(f).toLocaleString()}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
-          <p className="text-gray-600">{book?.short_description}</p>
-
-          <Dialog>
-            <DialogTrigger>
-              <div className="flex items-center gap-4">
-                <Button className="bg-[#82d236] hover:bg-[#72bc2d]">
-                  + Add To Cart
-                </Button>
-              </div>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Select Type</DialogTitle>
-                <DialogDescription>
-                  <RadioGroup
-                    defaultValue="paperback"
-                    value={format}
-                    onValueChange={setFormat}
-                    className="flex flex-wrap gap-2 mt-4"
-                  >
-                    {book?.paper_back && (
-                      <div onClick={() => handleCreateCart("Paper-back", 1)}>
-                        <RadioGroupItem
-                          value="paperback"
-                          id="paperback"
-                          className="peer hidden"
-                        />
-                        <Label
-                          htmlFor="paperback"
-                          className={cn(
-                            "px-4 py-2 rounded-full cursor-pointer border transition-colors flex items-center gap-2",
-                            "hover:border-[#82d236] hover:text-[#82d236]",
-                            "peer-checked:bg-[#82d236] peer-checked:text-white peer-checked:border-[#82d236]"
-                          )}
-                        >
-                          <span>Paper-back</span>
-                          <span className="text-xs font-semibold">
-                            ₦{getVariantPrice("Paper-back").toLocaleString()}
-                          </span>
-                        </Label>
-                      </div>
-                    )}
-                    {book?.e_copy && (
-                      <div onClick={() => handleCreateCart("E-copy", 1)}>
-                        <RadioGroupItem
-                          value="ecopy"
-                          id="ecopy"
-                          className="peer hidden"
-                        />
-                        <Label
-                          htmlFor="ecopy"
-                          className={cn(
-                            "px-4 py-2 rounded-full cursor-pointer border transition-colors flex items-center gap-2",
-                            "hover:border-[#82d236] hover:text-[#82d236]",
-                            "peer-checked:bg-[#82d236] peer-checked:text-white peer-checked:border-[#82d236]"
-                          )}
-                        >
-                          <span>E-copy</span>
-                          <span className="text-xs font-semibold">
-                            ₦{getVariantPrice("E-copy").toLocaleString()}
-                          </span>
-                        </Label>
-                      </div>
-                    )}
-                    {book?.hard_cover && (
-                      <Sheet>
-                        <SheetTrigger>
-                          <div>
-                            <RadioGroupItem
-                              value="hardcover"
-                              id="hardcover"
-                              className="peer hidden"
-                            />
-                            <Label
-                              htmlFor="hardcover"
-                              className={cn(
-                                "px-4 py-2 rounded-full cursor-pointer border transition-colors flex items-center gap-2",
-                                "hover:border-[#82d236] hover:text-[#82d236]",
-                                "peer-checked:bg-[#82d236] peer-checked:text-white peer-checked:border-[#82d236]"
-                              )}
-                            >
-                              <span>Hard-cover</span>
-                              <span className="text-xs font-semibold">
-                                ₦{getVariantPrice("Hard-cover").toLocaleString()}
-                              </span>
-                            </Label>
-                          </div>
-                        </SheetTrigger>
-                        <SheetContent>
-                          <SheetHeader>
-                            <SheetTitle>Select Quantity</SheetTitle>
-                            <SheetDescription>
-                              <div className="space-y-4 mt-4">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-sm font-medium">Price per unit:</span>
-                                  <span className="text-lg font-bold text-[#82d236]">
-                                    ₦{getVariantPrice("Hard-cover").toLocaleString()}
-                                  </span>
-                                </div>
-                                <div className="flex items-center">
-                                  <span className="mr-4">Qty</span>
-                                  <Input
-                                    type="number"
-                                    min="1"
-                                    value={bookQuantity}
-                                    onChange={(e) =>
-                                      setBookQuantity(parseInt(e.target.value) || 1)
-                                    }
-                                    className="w-20"
-                                  />
-                                </div>
-                                <div className="flex items-center justify-between pt-2 border-t">
-                                  <span className="text-sm font-medium">Total:</span>
-                                  <span className="text-lg font-bold">
-                                    ₦{(getVariantPrice("Hard-cover") * bookQuantity).toLocaleString()}
-                                  </span>
-                                </div>
-                              </div>
-
-                              <div
-                                className="flex items-center gap-4 mt-5"
-                                onClick={() =>
-                                  handleCreateCart("Hard-cover", bookQuantity)
-                                }
-                              >
-                                <Button className="bg-[#82d236] hover:bg-[#72bc2d] w-full">
-                                  + Add To Cart
-                                </Button>
-                              </div>
-                            </SheetDescription>
-                          </SheetHeader>
-                        </SheetContent>
-                      </Sheet>
-                    )}
-                  </RadioGroup>
-                </DialogDescription>
-              </DialogHeader>
-            </DialogContent>
-          </Dialog>
+          {/* QUANTITY & CART */}
+          <div className="flex flex-col sm:flex-row gap-4 pt-6">
+            <div className="flex items-center border-4 border-black bg-white">
+              <button onClick={() => setQuantity(q => Math.max(1, q - 1))} className="px-6 py-4 font-black text-xl hover:bg-gray-100 border-r-4 border-black">-</button>
+              <span className="px-8 font-black text-xl">{quantity}</span>
+              <button onClick={() => setQuantity(q => q + 1)} className="px-6 py-4 font-black text-xl hover:bg-gray-100 border-l-4 border-black">+</button>
+            </div>
+            <Button 
+              onClick={handleAddToCart}
+              className="flex-1 booka-button-primary h-auto py-6 text-xl group"
+            >
+              Add to Bag — ₦{(currentPrice * quantity).toLocaleString()}
+              <ShoppingCart className="ml-4 group-hover:rotate-12 transition-transform" />
+            </Button>
+          </div>
         </div>
-      </div>
-      <Tabs defaultValue="description" className="w-full">
-        <TabsList className="w-full h-auto flex bg-transparent border-b">
-          <TabsTrigger
-            value="description"
-            className="data-[state=active]:bg-transparent data-[state=active]:shadow-none px-6 py-3 rounded-none border-b-2 border-transparent data-[state=active]:border-[#82d236] data-[state=active]:text-[#82d236]"
-          >
-            DESCRIPTION
-          </TabsTrigger>
-          <TabsTrigger
-            value="reviews"
-            className="data-[state=active]:bg-transparent data-[state=active]:shadow-none px-6 py-3 rounded-none border-b-2 border-transparent data-[state=active]:border-[#82d236] data-[state=active]:text-[#82d236]"
-          >
-            REVIEWS {bookreview.data && `(${bookreview.data.length})`}
-          </TabsTrigger>
-        </TabsList>
+      </main>
 
-        <TabsContent value="description" className="pt-6">
-          <p className="text-gray-600 leading-relaxed">
-            {book?.long_description}
-          </p>
-        </TabsContent>
+      {/* TABS: DESCRIPTION & REVIEWS */}
+      <section className="max-w-[95%] lg:max-w-[85%] mx-auto mt-20">
+        <Tabs defaultValue="description" className="w-full">
+          <TabsList className="bg-transparent border-b-4 border-black w-full justify-start h-auto p-0 gap-8">
+            <TabsTrigger value="description" className="rounded-none border-b-4 border-transparent data-[state=active]:border-accent data-[state=active]:bg-transparent px-0 py-4 font-black uppercase italic tracking-widest text-lg">Description</TabsTrigger>
+            <TabsTrigger value="reviews" className="rounded-none border-b-4 border-transparent data-[state=active]:border-accent data-[state=active]:bg-transparent px-0 py-4 font-black uppercase italic tracking-widest text-lg">Reviews ({reviews?.length || 0})</TabsTrigger>
+          </TabsList>
 
-        <TabsContent value="reviews" className="pt-6">
-          <div className="space-y-8">
-            {/* Existing Review */}
-            <div>
-              {/* Existing Reviews */}
-              {bookreview.isLoading ? (
-                <p>Loading reviews...</p>
-              ) : bookreview.isError ? (
-                <p>Error fetching reviews. Please try again later.</p>
-              ) : bookreview.data && bookreview.data.length > 0 ? (
-                bookreview.data.map((review) => (
-                  <div key={review.id} className="mt-2">
-                    <div className="flex gap-4">
-                      <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center text-xl font-bold text-gray-400">
-                        {review?.user?.first_name.charAt(0).toUpperCase()}
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <div className="flex">
-                            {[1, 2, 3, 4, 5].map((star) => (
-                              <Star
-                                key={star}
-                                className={`h-4 w-4 ${
-                                  star <= review.rating
-                                    ? "fill-yellow-400 text-yellow-400"
-                                    : "text-gray-300"
-                                }`}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                        <div className="text-sm text-gray-500 mb-2">
-                          {review?.user?.first_name} -{" "}
-                          {new Date(review.created_at).toLocaleDateString()}
-                        </div>
-                        <p className="text-gray-600">{review.comment}</p>
-                      </div>
+          <TabsContent value="description" className="pt-10 prose prose-lg max-w-none font-medium">
+            <p className="whitespace-pre-wrap leading-loose">{book?.long_description || book?.description}</p>
+          </TabsContent>
+
+          <TabsContent value="reviews" className="pt-10 grid lg:grid-cols-2 gap-16">
+            {/* Review List */}
+            <div className="space-y-8">
+              {reviewsLoading ? <p className="italic font-bold">Loading reviews...</p> : 
+               reviews?.length === 0 ? <p className="text-gray-400 font-bold uppercase italic">No reviews yet. Be the first.</p> :
+               reviews?.map((r) => (
+                <div key={r.id} className="border-2 border-black p-6 bg-white gumroad-shadow-sm">
+                  <div className="flex justify-between items-start mb-4">
+                    <div>
+                      <p className="font-black uppercase text-sm">{r.name}</p>
+                      <p className="text-[10px] font-bold opacity-40 uppercase">{new Date(r.created_at).toLocaleDateString()}</p>
+                    </div>
+                    <div className="flex text-accent">
+                      {[1, 2, 3, 4, 5].map(s => <Star key={s} size={12} className={cn(s <= r.rating ? "fill-accent" : "text-black/10")} />)}
                     </div>
                   </div>
-                ))
-              ) : (
-                <p>No reviews yet. Be the first to review this product!</p>
-              )}
+                  <p className="font-medium text-gray-700 italic">"{r.comment}"</p>
+                </div>
+              ))}
             </div>
 
-            {/* Add Review Form */}
-            <div>
-              <h3 className="font-medium mb-4">ADD A REVIEW</h3>
-              <form className="space-y-4" onSubmit={handleSubmit}>
+            {/* Review Form */}
+            {session ? (
+            <div className="bg-primary text-white p-8 border-4 border-black gumroad-shadow">
+              <h3 className="text-2xl font-black uppercase italic mb-6">Leave a Review</h3>
+              <form onSubmit={handleReviewSubmit} className="space-y-6">
                 <div>
-                  <label className="block text-sm mb-2">Your Rating</label>
-                  <div className="flex gap-1">
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <button
-                        key={star}
-                        type="button"
-                        onClick={() => setRating(star)}
-                        className="focus:outline-none"
-                      >
-                        <Star
-                          className={`h-5 w-5 ${
-                            star <= rating
-                              ? "fill-yellow-400 text-yellow-400"
-                              : "text-gray-300"
-                          }`}
-                        />
+                  <label className="block text-[10px] font-black uppercase mb-2 tracking-widest">Your Rating</label>
+                  <div className="flex gap-2">
+                    {[1, 2, 3, 4, 5].map((s) => (
+                      <button key={s} type="button" onClick={() => setReviewRating(s)} className="transition-transform hover:scale-125">
+                        <Star size={24} className={cn(s <= reviewRating ? "fill-accent text-accent" : "text-white/20")} />
                       </button>
                     ))}
                   </div>
                 </div>
-
                 <div>
-                  <label className="block text-sm mb-2">Comment</label>
-                  <Textarea
-                    className="min-h-[120px] bg-gray-50"
-                    placeholder="Write your review here..."
-                    value={comment}
+                  <label className="block text-[10px] font-black uppercase mb-2 tracking-widest">Comment</label>
+                  <Textarea 
+                    value={comment} 
                     onChange={(e) => setComment(e.target.value)}
+                    placeholder="What did you think of the story?" 
+                    className="bg-white text-black border-2 border-black rounded-none min-h-[120px]"
                   />
                 </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm mb-2">Name *</label>
-                    <Input
-                      className="bg-gray-50"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm mb-2">Email *</label>
-                    <Input
-                      className="bg-gray-50"
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <Button
-                  className="bg-gray-900 hover:bg-gray-800"
-                  type="submit"
-                  disabled={createReviewMutation.isPending}
-                >
-                  {createReviewMutation.isPending
-                    ? "Submitting..."
-                    : "ADD REVIEW"}
+                <Button type="submit" className="w-full booka-button-primary h-14" disabled={createReviewMutation.isPending}>
+                  {createReviewMutation.isPending ? "Submitting..." : "Post Review"}
                 </Button>
               </form>
             </div>
-          </div>
-        </TabsContent>
-      </Tabs>
+            ) : (
+              <div className="bg-white border-4 border-black p-8 gumroad-shadow flex flex-col items-center justify-center text-center space-y-4">
+                <div className="bg-accent p-4 rounded-full border-2 border-black">
+                  <Star className="h-8 w-8 fill-black" />
+                </div>
+                <h3 className="text-xl font-black uppercase italic">Want to leave a review?</h3>
+                <p className="font-bold text-sm opacity-60 uppercase">You must be logged in to share your thoughts.</p>
+                <Link href="/login" className="w-full">
+                  <Button className="w-full booka-button-primary h-12">Login to Review</Button>
+                </Link>
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
+      </section>
     </div>
   );
 }

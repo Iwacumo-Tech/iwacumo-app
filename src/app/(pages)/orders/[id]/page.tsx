@@ -1,192 +1,156 @@
 "use client";
 
-import { useParams, useRouter } from "next/navigation";
+import { useEffect } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { trpc } from "@/app/_providers/trpc-provider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import Link from "next/link";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
+import { ArrowLeft, CheckCircle2, Clock, CreditCard, Package, Download } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
 
 export default function OrderDetailsPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { toast } = useToast();
+  const utils = trpc.useUtils();
   const orderId = params?.id as string;
+  const reference = searchParams?.get("reference");
 
-  const { data: order, isLoading, isError } = trpc.getOrderById.useQuery({
-    id: orderId,
+  const { data: order, isLoading, isError } = trpc.getOrderById.useQuery({ id: orderId });
+
+  // Verification Logic for returns from Paystack
+  const verifyPayment = trpc.verifyPayment.useMutation({
+    onSuccess: (data) => {
+      if (data.success) {
+        toast({ title: "Payment Successful", description: "Your order is now confirmed." });
+        utils.getOrderById.invalidate({ id: orderId });
+      }
+    }
   });
 
-  if (isLoading) {
+  useEffect(() => {
+    if (reference && orderId && order?.payment_status === "pending") {
+      verifyPayment.mutate({ reference, order_id: orderId });
+    }
+  }, [reference, orderId, order?.payment_status]);
+
+  if (isLoading || verifyPayment.isPending) {
     return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="text-center">Loading order details...</div>
+      <div className="min-h-screen bg-[#FCFAEE] flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-16 h-16 border-4 border-black border-t-accent animate-spin mb-4" />
+        <p className="font-black uppercase italic tracking-tighter text-2xl">Updating Status...</p>
       </div>
     );
   }
 
   if (isError || !order) {
     return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="text-center">
-          <p className="text-red-500 mb-4">Order not found</p>
-          <Button onClick={() => router.push("/shop")}>
-            Continue Shopping
-          </Button>
-        </div>
+      <div className="min-h-screen bg-[#FCFAEE] flex flex-col items-center justify-center p-6 text-center">
+        <h1 className="text-4xl font-black uppercase italic mb-4 tracking-tighter leading-none">Order Not Found<span className="text-accent">.</span></h1>
+        <Button onClick={() => router.push("/shop")} className="booka-button-secondary">Back to Shop</Button>
       </div>
     );
   }
 
+  const isPaid = order.payment_status === "captured";
+
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="mb-6">
-        <Button
-          variant="ghost"
-          onClick={() => router.back()}
-          className="mb-4"
-        >
-          ← Back
-        </Button>
-        <h1 className="text-2xl font-bold">Order Details</h1>
-        <p className="text-gray-500">Order Number: {order.order_number}</p>
-      </div>
+    <div className="min-h-screen bg-[#FCFAEE] py-12 lg:py-20">
+      <div className="max-w-[95%] lg:max-w-[85%] mx-auto">
+        
+        {/* Header */}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-12 border-b-4 border-black pb-8">
+          <div>
+            <button onClick={() => router.push("/app")} className="flex items-center gap-2 font-black uppercase text-[10px] tracking-widest opacity-40 hover:opacity-100 mb-4 transition-all">
+              <ArrowLeft size={14} /> My Dashboard
+            </button>
+            <h1 className="text-4xl md:text-6xl font-black uppercase italic tracking-tighter">Receipt<span className="text-accent">.</span></h1>
+            <p className="font-bold text-sm opacity-60 mt-2 tracking-widest uppercase">Invoice #{order.order_number}</p>
+          </div>
+          <div className={cn("px-6 py-3 border-4 border-black font-black uppercase italic tracking-widest text-sm gumroad-shadow-sm", isPaid ? "bg-primary text-white" : "bg-accent text-black")}>
+            {order.payment_status}
+          </div>
+        </div>
 
-      <div className="grid gap-6">
-        {/* Order Summary */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Order Summary</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <span>Status:</span>
-                <span className="font-semibold">{order.status}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Payment Status:</span>
-                <span className="font-semibold">{order.payment_status}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Subtotal:</span>
-                <span>₦{order.subtotal_amount.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Tax:</span>
-                <span>₦{order.tax_amount.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Shipping:</span>
-                <span>₦{order.shipping_amount.toFixed(2)}</span>
-              </div>
-              {order.discount_amount > 0 && (
-                <div className="flex justify-between text-green-600">
-                  <span>Discount:</span>
-                  <span>-₦{order.discount_amount.toFixed(2)}</span>
-                </div>
-              )}
-              <div className="flex justify-between text-lg font-bold border-t pt-2">
-                <span>Total:</span>
-                <span className="text-[#82d236]">
-                  ₦{order.total_amount.toFixed(2)}
-                </span>
-              </div>
+        <div className="grid lg:grid-cols-3 gap-12 items-start">
+          {/* Main Invoice */}
+          <div className="lg:col-span-2 space-y-8">
+            <Card className="rounded-none border-4 border-black bg-white gumroad-shadow">
+              <CardHeader className="border-b-2 border-black bg-gray-50"><CardTitle className="font-black uppercase italic text-xl flex items-center gap-3"><Package className="text-primary" /> Items</CardTitle></CardHeader>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader className="bg-gray-50 border-b-2 border-black">
+                    <TableRow><TableHead className="font-black uppercase text-[10px] text-black">Title</TableHead><TableHead className="font-black uppercase text-[10px] text-black text-center">Qty</TableHead><TableHead className="font-black uppercase text-[10px] text-black text-right">Price</TableHead></TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {order.line_items.map((item) => (
+                      <TableRow key={item.id} className="border-b border-black/5 last:border-0 hover:bg-accent/5 transition-colors">
+                        <TableCell className="font-bold py-6">{item.book_variant?.book?.title || "Unknown Book"} <span className="block text-[8px] opacity-40 italic">{item.book_variant?.format}</span></TableCell>
+                        <TableCell className="text-center font-bold">{item.quantity}</TableCell>
+                        <TableCell className="text-right font-black italic">₦{item.total_price.toLocaleString()}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+
+            <div className="grid md:grid-cols-2 gap-6">
+               <div className="bg-white border-2 border-black p-6 gumroad-shadow-sm">
+                  <h3 className="font-black uppercase italic text-xs mb-4 text-primary opacity-50">Recipient</h3>
+                  <p className="font-black uppercase text-lg leading-none italic">{order.customer?.user?.first_name} {order.customer?.user?.last_name}</p>
+                  <p className="text-[10px] font-bold mt-1 opacity-60">{order.customer?.user?.email}</p>
+               </div>
+               {(order as any).delivery_address && (
+                  <div className="bg-white border-2 border-black p-6 gumroad-shadow-sm">
+                    <h3 className="font-black uppercase italic text-xs mb-4 text-primary opacity-50">Shipping Destination</h3>
+                    <p className="text-sm font-bold leading-relaxed uppercase">
+                      {(order as any).delivery_address.street_address}, 
+                      {(order as any).delivery_address.city}, 
+                      {(order as any).delivery_address.state}
+                    </p>
+                  </div>
+                )}
             </div>
-            {/* Payment Button */}
-            {order.payment_status === "pending" && order.status !== "cancelled" && (
-              <div className="mt-6 pt-4 border-t">
-                <Link href={`/payment/${order.id}`}>
-                  <Button className="w-full bg-[#82d236] hover:bg-[#72bc2d]">
-                    Pay Now - ₦{order.total_amount.toFixed(2)}
-                  </Button>
-                </Link>
-                <p className="text-sm text-gray-500 mt-2 text-center">
-                  Complete your payment to confirm your order
-                </p>
-              </div>
-            )}
-            {order.payment_status === "captured" && (
-              <div className="mt-6 pt-4 border-t">
-                <div className="bg-green-50 border border-green-200 rounded-md p-4">
-                  <p className="text-green-800 font-semibold text-center">
-                    ✓ Payment Successful
-                  </p>
-                  <p className="text-sm text-green-600 text-center mt-1">
-                    Your order is being processed
-                  </p>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+          </div>
 
-        {/* Order Items */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Order Items</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Product</TableHead>
-                  <TableHead>Format</TableHead>
-                  <TableHead>Quantity</TableHead>
-                  <TableHead>Unit Price</TableHead>
-                  <TableHead>Total</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {order.line_items.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell>
-                      {item.book_variant?.book?.title || "Unknown Book"}
-                    </TableCell>
-                    <TableCell>{item.book_variant?.format || "N/A"}</TableCell>
-                    <TableCell>{item.quantity}</TableCell>
-                    <TableCell>₦{item.unit_price.toFixed(2)}</TableCell>
-                    <TableCell>₦{item.total_price.toFixed(2)}</TableCell>
-                    <TableCell>
-                      <span className="text-sm">{item.fulfillment_status}</span>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+          {/* Sidebar Summary */}
+          <aside className="lg:sticky lg:top-28 space-y-6">
+            <Card className="rounded-none border-4 border-black bg-white gumroad-shadow p-8 space-y-6">
+                <div className="space-y-4">
+                  <div className="flex justify-between font-bold uppercase text-[10px] opacity-50"><span>Subtotal</span><span>₦{order.subtotal_amount.toLocaleString()}</span></div>
+                  <div className="flex justify-between font-bold uppercase text-[10px] opacity-50"><span>Shipping</span><span>₦{order.shipping_amount.toLocaleString()}</span></div>
+                  <div className="pt-4 border-t-2 border-black flex justify-between items-end">
+                    <span className="font-black uppercase text-xs">Total</span>
+                    <span className="text-4xl font-black italic text-primary tracking-tighter">₦{order.total_amount.toLocaleString()}</span>
+                  </div>
+                </div>
 
-        {/* Customer Info */}
-        {order.customer && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Customer Information</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                <div>
-                  <span className="font-semibold">Name: </span>
-                  {order.customer.user?.first_name}{" "}
-                  {order.customer.user?.last_name}
-                </div>
-                <div>
-                  <span className="font-semibold">Email: </span>
-                  {order.customer.user?.email}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+                {!isPaid ? (
+                  <div className="pt-6 space-y-4">
+                    <Link href={`/payment/${order.id}`}><Button className="w-full booka-button-primary h-16 text-xl group italic">Complete Payment <CreditCard className="ml-3 group-hover:rotate-12" /></Button></Link>
+                    <div className="flex items-center gap-2 justify-center text-[8px] font-black uppercase opacity-40 italic"><Clock size={10} /> Payment not yet captured</div>
+                  </div>
+                ) : (
+                  <div className="pt-6 space-y-4">
+                    <div className="bg-primary/5 border-2 border-primary p-4 text-center">
+                        <CheckCircle2 className="mx-auto text-primary mb-2" />
+                        <p className="text-primary font-black uppercase italic text-[10px] tracking-widest">Transaction Verified</p>
+                    </div>
+                    <Button className="w-full booka-button-secondary h-14 uppercase text-xs tracking-widest font-black">Download Digital Copies <Download className="ml-2" size={14} /></Button>
+                  </div>
+                )}
+            </Card>
+            <div className="p-6 bg-accent border-2 border-black text-[10px] font-black uppercase italic leading-tight -rotate-1">
+                A copy of this invoice has been sent to your registered email.
+            </div>
+          </aside>
+        </div>
       </div>
     </div>
   );
 }
-

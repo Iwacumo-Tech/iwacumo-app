@@ -77,28 +77,40 @@ export const createOrderFromCart = publicProcedure
       requires_delivery,
     } = opts.input;
 
+    // 1. Resolve User with the new plural 'customers' relation
     const user = await prisma.user.findUnique({
       where: { id: user_id },
-      include: { customer: true },
+      include: { customers: true },
     });
 
     if (!user) throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
 
-    let customer = user.customer;
-    if (!customer) {
-      customer = await prisma.customer.create({
-        data: {
-          user_id: user.id,
-          name: `${user.first_name} ${user.last_name || ""}`.trim() || user.email,
-        },
-      });
-    }
-
+    // 2. Pre-fetch cart items and the first book to resolve the Publisher context
     const cartItems = await prisma.cart.findMany({
       where: { userId: user_id, deleted_at: null },
     });
 
     if (cartItems.length === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "Cart is empty" });
+
+    const firstBookInCart = await prisma.book.findFirst({
+      where: { title: cartItems[0]?.book_title, deleted_at: null },
+    });
+
+    const targetPublisherId = firstBookInCart?.publisher_id;
+
+    // 3. Resolve or Create the Customer record for THIS specific Publisher
+    // This maintains the "Gated Community" isolation
+    let customer = user.customers.find(c => c.publisher_id === targetPublisherId);
+
+    if (!customer && targetPublisherId) {
+      customer = await prisma.customer.create({
+        data: {
+          user_id: user.id,
+          publisher_id: targetPublisherId,
+          name: `${user.first_name} ${user.last_name || ""}`.trim() || user.email,
+        },
+      });
+    }
 
     const orderLineItemsData: Array<{
       book_variant_id: string;
@@ -113,6 +125,7 @@ export const createOrderFromCart = publicProcedure
     let subtotal = 0;
     const errors: string[] = [];
 
+    // --- REVENUE & VARIANT RESOLUTION ---
     for (const cartItem of cartItems) {
       const book = await prisma.book.findFirst({
         where: { title: cartItem.book_title, deleted_at: null },
@@ -149,7 +162,6 @@ export const createOrderFromCart = publicProcedure
       const quantity = cartItem.quantity || 1;
       const totalPrice = unitPrice * quantity;
 
-      // REVENUE SPLIT CALCULATIONS
       const platformFee = (totalPrice * PLATFORM_FEE_PERCENT) / 100;
       const remaining = totalPrice - platformFee;
       const authorEarnings = (remaining * AUTHOR_ROYALTY_DEFAULT) / 100;
@@ -172,22 +184,19 @@ export const createOrderFromCart = publicProcedure
 
     const totalAmount = subtotal + tax_amount + shipping_amount - discount_amount;
 
-    const firstBook = await prisma.book.findFirst({
-      where: { title: cartItems[0]?.book_title, deleted_at: null },
-    });
-
     let orderNumber = generateOrderNumber();
     let orderNotes = notes || null;
     if (requires_delivery && delivery_address) {
       orderNotes = JSON.stringify({ delivery_address, delivery_required: true, requires_physical_delivery: true });
     }
 
+    // --- DATABASE TRANSACTION ---
     const order = await prisma.$transaction(async (tx) => {
       const newOrder = await tx.order.create({
         data: {
           order_number: orderNumber,
           customer_id: customer!.id,
-          publisher_id: firstBook?.publisher_id || null,
+          publisher_id: targetPublisherId || null,
           total_amount: totalAmount,
           currency: currency || "NGN",
           subtotal_amount: subtotal,
@@ -238,6 +247,7 @@ export const createOrderFromCart = publicProcedure
     });
   });
 
+  
 export const getOrderById = publicProcedure.input(getOrderByIdSchema).query(async (opts) => {
   return await prisma.order.findUnique({
     where: { id: opts.input.id },
@@ -265,7 +275,7 @@ export const getOrdersByCustomer = publicProcedure.input(getOrdersByCustomerSche
 });
 
 export const getOrdersByUser = publicProcedure.input(z.object({ user_id: z.string() })).query(async (opts) => {
-  const customer = await prisma.customer.findUnique({ where: { user_id: opts.input.user_id } });
+  const customer = await prisma.customer.findFirst({ where: { user_id: opts.input.user_id } });
   if (!customer) return [];
   return await prisma.order.findMany({
     where: { customer_id: customer.id },
@@ -280,7 +290,7 @@ export const getOrdersByUser = publicProcedure.input(z.object({ user_id: z.strin
 });
 
 export const getDeliveriesByCustomer = publicProcedure.input(z.object({ user_id: z.string() })).query(async (opts) => {
-  const customer = await prisma.customer.findUnique({ where: { user_id: opts.input.user_id } });
+  const customer = await prisma.customer.findFirst({ where: { user_id: opts.input.user_id } });
   if (!customer) return [];
   const orders = await prisma.order.findMany({ where: { customer_id: customer.id }, select: { id: true } });
   const orderIds = orders.map((o) => o.id);
@@ -334,28 +344,66 @@ export const cancelOrder = publicProcedure.input(cancelOrderSchema).mutation(asy
   });
 });
 
-export const getOrdersNeedingShipping = publicProcedure.input(getOrdersNeedingShippingSchema).query(async (opts) => {
-  const paidOrders = await prisma.order.findMany({
-    where: { payment_status: "captured", publisher_id: opts.input.publisher_id || undefined },
-    include: {
-      line_items: { include: { book_variant: { include: { book: true } } } },
-      customer: { include: { user: true } },
-      publisher: true,
-      deliveries: true,
-    },
-    orderBy: { created_at: "desc" },
-  });
+export const getOrdersNeedingShipping = publicProcedure
+  .input(getOrdersNeedingShippingSchema.extend({ user_id: z.string().optional() }))
+  .query(async ({ ctx, input }) => {
+    // 1. Resolve Active User ID (Input > Session)
+    const activeUserId = input?.user_id || (ctx as any).session?.user?.id;
 
-  return paidOrders.filter((order) => {
-    const hasPhysicalItems = order.line_items.some((item) => {
-      const format = item.book_variant.format.toLowerCase();
-      return format === "paperback" || format === "hardcover";
+    if (!activeUserId) return [];
+
+    // 2. Fetch User with Claims and Publisher context
+    const user = await prisma.user.findUnique({
+      where: { id: activeUserId },
+      include: { 
+        claims: true,
+        publisher: true 
+      }
     });
-    if (!hasPhysicalItems) return false;
-    const hasActiveDeliveries = order.deliveries.some((d) => d.status !== "pending" && d.status !== "failed");
-    return !hasActiveDeliveries || order.deliveries.length === 0;
+
+    if (!user) return [];
+
+    // 3. Determine Role access
+    const isSuperAdmin = user.claims.some(c => c.role_name === "super-admin" && c.active);
+
+    // 4. Build the Query Filter
+    const whereClause: any = { payment_status: "captured" };
+
+    if (!isSuperAdmin) {
+      // If standard publisher, filter by their linked publisher ID
+      const publisherId = input.publisher_id || user.publisher?.id;
+      if (!publisherId) return []; // Security fallback
+      whereClause.publisher_id = publisherId;
+    }
+
+    const paidOrders = await prisma.order.findMany({
+      where: whereClause,
+      include: {
+        line_items: { include: { book_variant: { include: { book: true } } } },
+        customer: { include: { user: true } },
+        publisher: true,
+        deliveries: true,
+      },
+      orderBy: { created_at: "desc" },
+    });
+
+    // 5. Filter for Physical Items that haven't been fulfilled
+    return paidOrders.filter((order) => {
+      const hasPhysicalItems = order.line_items.some((item) => {
+        const format = item.book_variant.format.toLowerCase();
+        return format === "paperback" || format === "hardcover";
+      });
+
+      if (!hasPhysicalItems) return false;
+
+      // Only return orders that don't have an active (In-Progress/Completed) delivery
+      const hasActiveDeliveries = order.deliveries.some(
+        (d) => d.status !== "pending" && d.status !== "failed"
+      );
+      
+      return !hasActiveDeliveries || order.deliveries.length === 0;
+    });
   });
-});
 
 export const getDeliveriesByOrder = publicProcedure.input(getDeliveriesByOrderSchema).query(async (opts) => {
   return await prisma.deliveryTracking.findMany({
@@ -422,18 +470,69 @@ export const updateDeliveryTracking = publicProcedure.input(updateDeliveryTracki
   return updated;
 });
 
-export const getAllOrders = publicProcedure.query(async () => {
-  return await prisma.order.findMany({
-    include: {
-      line_items: { include: { book_variant: { include: { book: true } } } },
-      customer: { include: { user: true } },
-      publisher: true,
-      transactions: { orderBy: { created_at: "desc" }, take: 1 },
-      deliveries: { orderBy: { created_at: "desc" } },
-    },
-    orderBy: { created_at: "desc" },
+export const getAllOrders = publicProcedure
+  .input(z.object({ user_id: z.string().optional() }).optional())
+  .query(async ({ ctx, input }) => {
+    // 1. Resolve the ID (Prioritize input, fallback to session)
+    const activeUserId = input?.user_id || (ctx as any).session?.user?.id;
+
+    if (!activeUserId) {
+      // If we can't find a user, return nothing for safety
+      return [];
+    }
+
+    // 2. Fetch User with Roles/Claims and Publisher info
+    const user = await prisma.user.findUnique({
+      where: { id: activeUserId },
+      include: { 
+        claims: true,
+        publisher: true // Need this to get user.publisher.id
+      }
+    });
+
+    if (!user) return [];
+
+    // 3. Determine if they have God-mode
+    const isSuperAdmin = user.claims.some(c => c.role_name === "super-admin" && c.active);
+
+    // 4. Build the filter
+    // If Super Admin: {} (matches all)
+    // If Publisher: { publisher_id: user.publisher.id }
+    // If Author: { line_items: { some: { book_variant: { book: { author_id: user.author?.id } } } } }
+    const whereClause: any = {};
+
+    if (!isSuperAdmin) {
+      if (user.publisher) {
+        whereClause.publisher_id = user.publisher.id;
+      } else if ((user as any).author_id || (user as any).author?.id) {
+        // Author view: Only show orders containing their books
+        whereClause.line_items = {
+          some: {
+            book_variant: {
+              book: {
+                author_id: (user as any).author_id || (user as any).author?.id
+              }
+            }
+          }
+        };
+      } else {
+        // Readers should only see their own orders
+        whereClause.customer = { user_id: user.id };
+      }
+    }
+
+    return await prisma.order.findMany({
+      where: whereClause,
+      include: {
+        line_items: { include: { book_variant: { include: { book: true } } } },
+        customer: { include: { user: true } },
+        publisher: true,
+        transactions: { orderBy: { created_at: "desc" }, take: 1 },
+        deliveries: { orderBy: { created_at: "desc" } },
+      },
+      orderBy: { created_at: "desc" },
+    });
   });
-});
 
 // Added for Phase C: Financial Reporting
 export const getEarningsReport = publicProcedure.input(z.object({ publisher_id: z.string().optional(), author_id: z.string().optional() })).query(async ({ input }) => {

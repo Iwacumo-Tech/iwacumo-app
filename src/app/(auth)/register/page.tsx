@@ -1,48 +1,43 @@
-// revelation/src/app/(auth)/register/page.tsx
 import { RegisterForm } from "@/components/register/register-form";
 import Link from "next/link";
 import { Metadata } from "next";
+import { Suspense } from "react"; 
 
 export const metadata: Metadata = {
   title: "Join Booka | Create Your Account",
-  description: "Start your reading journey with Booka.",
+  description: "Start your journey as a reader, author, or publisher.",
 };
 
 export default function RegisterPage() {
   return (
-    <div className="container relative flex-col items-center justify-center grid lg:max-w-none lg:grid-cols-2 lg:px-0 min-h-screen">
-      <div className="relative hidden h-full flex-col bg-muted p-10 text-white lg:flex dark:border-r">
-        <div className="absolute inset-0 bg-zinc-900" />
-        <div className="relative z-20 flex items-center text-2xl font-bold tracking-tight">
-          Booka.
-        </div>
-        <div className="relative z-20 mt-auto">
-          <blockquote className="space-y-2">
-            <p className="text-lg italic opacity-90">
-              &ldquo;Transforming the way the world reads, one chapter at a time.&rdquo;
-            </p>
-          </blockquote>
-        </div>
-      </div>
-
-      <div className="lg:p-8">
-        <div className="mx-auto flex w-full flex-col justify-center space-y-6 sm:w-[350px]">
-          <div className="flex flex-col space-y-2 text-center">
-            <h1 className="text-3xl font-bold tracking-tight">Create an account</h1>
-            <p className="text-sm text-muted-foreground">
-              Enter your details below to get started
-            </p>
-          </div>
-          
-          <RegisterForm />
-
-          <p className="px-8 text-center text-sm text-muted-foreground">
-            Already have an account?{" "}
-            <Link href="/login" className="font-semibold text-primary underline underline-offset-4">
-              Sign In
-            </Link>
+    <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 md:p-12">
+      <div className="w-full max-w-4xl">
+        <div className="flex flex-col items-center mb-12">
+          <Link href="/" className="text-4xl font-black uppercase italic tracking-tighter mb-4">
+            Booka<span className="text-accent">.</span>
+          </Link>
+          <h1 className="text-2xl font-black uppercase italic text-primary">Create an account</h1>
+          <p className="text-sm font-medium text-muted-foreground mt-2">
+            Select your path and join the African literary revolution.
           </p>
         </div>
+        
+       
+        <Suspense fallback={
+          <div className="h-96 flex flex-col items-center justify-center space-y-4">
+            <div className="w-12 h-12 border-4 border-black border-t-accent animate-spin" />
+            <p className="font-black uppercase italic text-xs tracking-widest animate-pulse">Initializing Register...</p>
+          </div>
+        }>
+          <RegisterForm />
+        </Suspense>
+
+        <p className="mt-12 text-center text-sm font-bold uppercase tracking-widest text-muted-foreground">
+          Already have an account?{" "}
+          <Link href="/login" className="text-primary underline underline-offset-4 hover:text-accent transition-colors">
+            Sign In
+          </Link>
+        </p>
       </div>
     </div>
   );

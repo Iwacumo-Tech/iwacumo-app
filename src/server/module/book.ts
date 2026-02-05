@@ -38,14 +38,31 @@ export const createBook = publicProcedure.input(createBookSchema).mutation(async
 
   // --- CONTEXT RESOLUTION ---
   // Resolve Publisher: Provided ID > Creator's Publisher ID > Creator's Author's Publisher ID
-  const publisherId = opts.input.publisher_id || creator.publisher?.id || creator.author?.publisher_id;
+  // const publisherId = opts.input.publisher_id || creator.publisher?.id || creator.author?.publisher_id;
   
   // Resolve Author: Provided Primary > Provided Author > Creator's Author ID
   const primaryAuthorId = opts.input.primary_author_id || opts.input.author_id || creator.author?.id;
 
+  let publisherId = opts.input.publisher_id || creator.publisher?.id || creator.author?.publisher_id;
+
+  // if (!publisherId) {
+  //   throw new TRPCError({ code: "BAD_REQUEST", message: "Could not resolve Publisher context" });
+  // }
+
   if (!publisherId) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "Could not resolve Publisher context" });
+    const platformPublisher = await prisma.publisher.findUnique({
+      where: { slug: "booka" }
+    });
+    publisherId = platformPublisher?.id;
   }
+
+  if (!publisherId) {
+    throw new TRPCError({ 
+      code: "BAD_REQUEST", 
+      message: "Could not resolve Publisher context. Please contact support." 
+    });
+  }
+
   if (!primaryAuthorId) {
     throw new TRPCError({ code: "BAD_REQUEST", message: "Author is required" });
   }
@@ -161,6 +178,10 @@ export const createBook = publicProcedure.input(createBookSchema).mutation(async
         pdf_url: opts.input.pdf_url ?? "",
         text_url: opts.input.docx_url ?? opts.input.text_url ?? "",
         // Relation connections
+        categories: {
+          connect: opts.input.category_ids?.map(id => ({ id })) || []
+        },
+
         publisher: {
           connect: { id: publisherId },
         },
@@ -290,13 +311,17 @@ export const updateBook = publicProcedure.input(createBookSchema).mutation(async
         book_cover3: opts.input.book_cover3 ?? undefined,
         book_cover4: opts.input.book_cover4 ?? undefined,
         featured: opts.input.featured ?? undefined,
-        // Relation updates
+        categories: {
+          // 'set' replaces all existing categories with the new selection
+          set: opts.input.category_ids?.map(id => ({ id })) || []
+        },
         publisher: opts.input.publisher_id ? { connect: { id: opts.input.publisher_id } } : undefined,
         author: opts.input.author_id ? { connect: { id: opts.input.author_id } } : undefined,
         primary_author: opts.input.primary_author_id ? { connect: { id: opts.input.primary_author_id } } : undefined,
       },
     });
 
+    // Handle Variants: Priority to 'variants' array, fallback to legacy flags
     if (opts.input.variants && opts.input.variants.length > 0) {
       const variantsToCreate = opts.input.variants.filter(v => !v.id);
       const variantsToUpdate = opts.input.variants.filter(v => v.id);
@@ -340,6 +365,46 @@ export const updateBook = publicProcedure.input(createBookSchema).mutation(async
           })),
         });
       }
+    } else {
+      // Fallback: Sync variants based on legacy boolean flags and prices
+      const legacyFormats = [
+        { key: 'paper_back', format: 'paperback', price: opts.input.paperback_price },
+        { key: 'hard_cover', format: 'hardcover', price: opts.input.hardcover_price },
+        { key: 'e_copy', format: 'ebook', price: opts.input.ebook_price },
+      ] as const;
+
+      for (const { key, format, price } of legacyFormats) {
+        if (opts.input[key]) {
+          // If format is checked: Update price or create variant
+          const listPrice = (price || opts.input.price || 0);
+          const existing = await (tx as any).bookVariant.findFirst({
+            where: { book_id: updatedBook.id, format }
+          });
+
+          if (existing) {
+            await (tx as any).bookVariant.update({
+              where: { id: existing.id },
+              data: { list_price: listPrice }
+            });
+          } else {
+            await (tx as any).bookVariant.create({
+              data: {
+                book_id: updatedBook.id,
+                format,
+                list_price: listPrice,
+                language: opts.input.default_language ?? "en",
+                currency: "USD",
+                status: "active",
+              }
+            });
+          }
+        } else {
+          // REMOVE: If the format is unchecked, delete the variant record entirely
+          await (tx as any).bookVariant.deleteMany({
+            where: { book_id: updatedBook.id, format }
+          });
+        }
+      }
     }
 
     return updatedBook;
@@ -353,18 +418,79 @@ export const deleteBook = publicProcedure.input(deleteBookSchema).mutation(async
   });
 });
 
-export const getAllBooks = publicProcedure.query(async () => {
-  return await prisma.book.findMany({ 
-    where: { deleted_at: null }, 
-    include: { chapters: true, author: true, variants: true, publisher: true } 
+export const getAllBooks = publicProcedure.query(async ({ ctx }) => {
+  // 1. Resolve User/Claims to check for Super Admin status
+  const user = await prisma.user.findUnique({
+    where: { id: ctx.session?.user?.id },
+    include: { claims: true }
+  });
+
+  const isSuperAdmin = user?.claims.some(c => c.role_name === "super-admin" && c.active);
+
+  // 2. Fetch Books
+  const books = await prisma.book.findMany({
+    where: { 
+      deleted_at: null,
+      // Logic: Super Admin sees everything. 
+      // Publishers/Authors only see their own (if you want to apply that here)
+      // For now, making it GLOBAL for management
+    },
+    include: {
+      chapters: true,
+      author: true,
+      publisher: true,
+      categories: true,
+      variants: {
+        include: {
+          _count: {
+            select: { 
+              order_lineitems: { 
+                where: { order: { payment_status: "captured" } } 
+              } 
+            }
+          }
+        }
+      }
+    },
+    orderBy: { created_at: "desc" }
+  });
+
+  // 3. Robust Mapping for salesCount
+  return books.map(book => {
+    const totalSales = book.variants?.reduce((acc, variant) => {
+      // Accessing the specific count path from the Prisma include
+      const count = variant._count?.order_lineitems || 0;
+      return acc + count;
+    }, 0) || 0;
+
+    return {
+      ...book,
+      salesCount: totalSales
+    };
   });
 });
+
 
 export const getBookById = publicProcedure.input(findBookByIdSchema).query(async (opts) => {
   return await prisma.book.findUnique({
     where: { id: opts.input.id, deleted_at: null },
-    include: { author: true, chapters: true, variants: true, publisher: true }
+    include: { author: true, chapters: true, variants: true, publisher: true, categories: true }
   });
+});
+
+export const getCategories = publicProcedure.query(async () => {
+  try {
+    return await prisma.category.findMany({
+      orderBy: {
+        name: 'asc'
+      }
+    });
+  } catch (error) {
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Failed to fetch categories",
+    });
+  }
 });
 
 export const getBookByAuthor = publicProcedure.input(findBookByIdSchema).query(async (opts) => {
@@ -373,19 +499,36 @@ export const getBookByAuthor = publicProcedure.input(findBookByIdSchema).query(a
     include: { author: true, publisher: true }
   });
 
-  if (user && user.publisher) {
+  const baseInclude = { 
+    chapters: true, 
+    author: true, 
+    categories: true,
+    variants: {
+      include: {
+        _count: {
+          select: { order_lineitems: true }
+        },
+        order_lineitems: {
+          where: { order: { payment_status: "captured" } }
+        }
+      }
+    }
+  };
+
+  if (user?.publisher) {
     return await prisma.book.findMany({
       where: { publisher_id: user.publisher.id, deleted_at: null },
-      include: { chapters: true, author: true, variants: true }
+      include: baseInclude
     });
   }
 
-  if (user && user.author) {
+  if (user?.author) {
     return await prisma.book.findMany({
       where: { author_id: user.author.id, deleted_at: null },
-      include: { chapters: true, author: true, variants: true }
+      include: baseInclude
     });
   }
+  return [];
 });
 
 export const toggleBookFeatured = publicProcedure.input(toggleFeaturedSchema).mutation(async ({ input }) => {
@@ -415,7 +558,7 @@ export const getNewArrivalBooks = publicProcedure.query(async () => {
 });
 
 export const getPurchasedBooksByCustomer = publicProcedure.input(findBookByIdSchema).query(async (opts) => {
-  const customer = await prisma.customer.findUnique({
+  const customer = await prisma.customer.findFirst({
     where: { user_id: opts.input.id },
   });
 

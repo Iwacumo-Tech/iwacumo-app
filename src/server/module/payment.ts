@@ -95,99 +95,111 @@ export const verifyPayment = publicProcedure
   .mutation(async (opts) => {
     const { reference, order_id } = opts.input;
 
-    // Get order
     const order = await prisma.order.findUnique({
       where: { id: order_id },
+      include: {
+        line_items: {
+          include: {
+            book_variant: {
+              include: { book: true }
+            }
+          }
+        },
+        publisher: { include: { tenant: true } },
+        customer: { include: { user: true } },
+      }
     });
 
-    if (!order) {
-      throw new Error("Order not found");
-    }
+    if (!order) throw new Error("Order not found");
 
     try {
-      // Verify payment with Paystack
-      const response = await axios.get(
-        `${PAYSTACK_BASE_URL}/transaction/verify/${reference}`,
-        {
-          headers: {
-            Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-          },
-        }
-      );
+      const response = await axios.get(`${PAYSTACK_BASE_URL}/transaction/verify/${reference}`, {
+        headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` },
+      });
 
       const { data } = response.data;
 
-      // Check if payment was successful
-      if (data.status === "success" && data.gateway_response === "Successful") {
-        // Update authorization transaction
-        await (prisma as any).transactionHistory.updateMany({
-          where: {
-            order_id: order.id,
-            provider_reference: reference,
-            type: "authorization",
-          },
-          data: {
-            status: "succeeded",
-            processor_response: data,
-          },
-        });
+      if (data.status === "success") {
+        return await prisma.$transaction(async (tx) => {
+          
+          // 1. Resolve User Identity
+          // Check both the linked customer and the potential fallback field
+          const userId = order.customer?.user_id || (order as any).user_id || (order as any).userId; 
+          
+          if (!userId) {
+            throw new Error("Could not resolve a User for this order.");
+          }
 
-        // Create capture transaction
-        await (prisma as any).transactionHistory.create({
-          data: {
-            order_id: order.id,
-            type: "capture",
-            amount: data.amount / 100, // Convert from kobo to NGN
-            currency: data.currency || "NGN",
-            payment_provider: "paystack",
-            provider_reference: reference,
-            status: "succeeded",
-            processor_response: data,
-          },
-        });
+          const tenantSlug = order.publisher?.tenant?.slug;
+          const publisherId = order.publisher_id;
+          const primaryAuthorId = order.line_items[0]?.book_variant?.book?.author_id;
 
-        // Update order status
-        await prisma.order.update({
-          where: { id: order.id },
-          data: {
-            payment_status: "captured",
-            status: "paid",
-          },
-        });
+          // 2. THE "CUSTOMER PROMOTION"
+          let customer = await tx.customer.findFirst({
+            where: { user_id: userId, publisher_id: publisherId }
+          });
 
-        return {
-          success: true,
-          message: "Payment verified successfully",
-          transaction: data,
-        };
-      } else {
-        // Payment failed
-        await (prisma as any).transactionHistory.updateMany({
-          where: {
-            order_id: order.id,
-            provider_reference: reference,
-            type: "authorization",
-          },
-          data: {
-            status: "failed",
-            processor_response: data,
-          },
-        });
+          if (!customer) {
+            customer = await tx.customer.create({
+              data: {
+                user_id: userId,
+                publisher_id: publisherId,
+                author_id: primaryAuthorId,
+                name: order.customer?.user?.first_name 
+                      ? `${order.customer.user.first_name} ${order.customer.user.last_name || ""}` 
+                      : "New Customer",
+              }
+            });
 
-        return {
-          success: false,
-          message: "Payment verification failed",
-          transaction: data,
-        };
+            // 3. ASSIGN ROLE CLAIM (Avoid duplicates)
+            const customerRole = await tx.role.findUnique({ where: { name: "customer" } });
+            if (customerRole && tenantSlug) {
+              // Only create claim if they don't already have a role for this specific tenant
+              const existingClaim = await tx.claim.findFirst({
+                where: { user_id: userId, role_name: "customer", tenant_slug: tenantSlug }
+              });
+
+              if (!existingClaim) {
+                await tx.claim.create({
+                  data: {
+                    user_id: userId,
+                    role_name: customerRole.name,
+                    active: true,
+                    type: "ROLE",
+                    tenant_slug: tenantSlug,
+                  },
+                });
+              }
+            }
+          } else if (primaryAuthorId && !customer.author_id) {
+            await tx.customer.update({
+              where: { id: customer.id },
+              data: { author_id: primaryAuthorId }
+            });
+          }
+
+          // 4. Update Order Status
+          await tx.order.update({
+            where: { id: order.id },
+            data: {
+              payment_status: "captured",
+              status: "paid",
+              customer_id: customer.id // Link the order to the customer record
+            },
+          });
+
+          return { success: true, orderId: order.id };
+        });
       }
+      return { success: false, message: "Payment verification failed at gateway" };
     } catch (error: any) {
-      console.error("Paystack verification error:", error);
-      throw new Error(
-        error.response?.data?.message || "Failed to verify payment"
-      );
+      // LOG THE REAL ERROR so you can see it in your terminal
+      console.error("PAYMENT_VERIFICATION_ERROR:", error);
+      throw new Error(error.message || "Failed to verify payment");
     }
   });
 
+  
 // Create transaction manually (for admin or webhook)
 export const createTransaction = publicProcedure
   .input(createTransactionSchema)

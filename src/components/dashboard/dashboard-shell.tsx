@@ -1,17 +1,14 @@
 "use client";
 
 import React, { BaseSyntheticEvent, ReactNode, useState } from "react";
-import { FaChevronRight } from "react-icons/fa";
-import { signOut, useSession } from "next-auth/react";
+import { usePathname } from "next/navigation";
+import { FaBars } from "react-icons/fa";
+import { signOut } from "next-auth/react";
 import { Sidebar } from "./sidebar"; 
 import { SidebarMobile } from "./sidebar-mobile"; 
-
-/**
- * Dashboard Shell
- * Location: src/components/dashboard/dashboard-shell.tsx
- * * Simplified Logic: Trusts the server-filtered links from layout.tsx.
- * * Handles the global layout structure and responsive state.
- */
+import { ShoppingBag } from "lucide-react";
+import { useCartStore } from "@/store/use-cart-store";
+import { Button } from "@/components/ui/button";
 
 export interface Link {
   name: string;
@@ -20,64 +17,80 @@ export interface Link {
   requiredPermission: string;
 }
 
+// Simple Title Mapping by Path
+const PATH_TITLES: Record<string, string> = {
+  "/app": "Overview",
+  "/app/books": "Library",
+  "/app/books/featured": "Store Curation",
+  "/app/admin/featured": "Global Featured",
+  "/app/orders": "Sales & Orders",
+  "/app/customers": "Your Tribe",
+  "/app/payouts": "Earnings",
+};
+
 export default function DashboardShell({
-  title,
   children,
-  hideLogout,
-  logoutRedirectTo = "/",
-  links = [], // These come filtered from the server layout
+  links = [],
 }: {
-  title?: string;
   links?: Link[];
   children: React.ReactNode;
-  logoutRedirectTo?: string;
-  hideLogout?: boolean;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const pathname = usePathname();
+  const toggleCart = useCartStore((state) => state.toggleCart);
+
+  // Derive title from pathname or fallback
+  const currentTitle = PATH_TITLES[pathname] || "Dashboard";
 
   const logout = async (e?: BaseSyntheticEvent) => {
     e?.preventDefault();
-    await signOut({ callbackUrl: logoutRedirectTo ?? "/" });
+    await signOut({ callbackUrl: "/" });
   };
 
   return (
-    <div className="min-h-screen bg-gray-50/50">
+    <div className="min-h-screen bg-[#F4F4F0] flex overflow-hidden">
       {/* Mobile Drawer */}
       <SidebarMobile
-        title={title}
         logout={logout}
         links={links}
         sidebarOpen={sidebarOpen}
         setSidebarOpen={setSidebarOpen}
       />
 
-      {/* Mobile Toggle Trigger */}
-      {!sidebarOpen && (
-        <a
-          href="#"
-          onClick={(e) => {
-            e.preventDefault();
-            setSidebarOpen(true);
-          }}
-          className="fixed top-24 left-0 z-40 lg:hidden flex items-center justify-center w-6 h-10 bg-white border border-gray-200 border-l-0 rounded-r-xl shadow-md transition-all hover:w-8"
-        >
-          <FaChevronRight className="w-2.5 h-2.5 text-gray-600" />
-        </a>
-      )}
-
       {/* Desktop Persistent Sidebar */}
-      <aside className="hidden lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:w-72 lg:flex-col shadow-sm">
-        <Sidebar
-          title={title}
-          links={links}
-          logout={logout}
-          hideLogout={hideLogout}
-        />
+      <aside className="hidden lg:flex lg:fixed lg:inset-y-0 lg:z-50 lg:w-72 lg:flex-col border-r-4 border-black bg-white">
+        <Sidebar links={links} logout={logout} />
       </aside>
 
       {/* Main Content Area */}
-      <div className="lg:pl-72 transition-all">
-        <main className="min-h-screen p-4 md:p-8 max-w-7xl mx-auto">
+      <div className="lg:pl-72 flex flex-col flex-1 w-full min-h-screen overflow-y-auto">
+        <header className="sticky top-0 z-40 bg-white border-b-4 border-black h-20 flex items-center justify-between px-4 md:px-8 shrink-0">
+          <div className="flex items-center gap-4">
+            <Button
+              variant="ghost"
+              className="lg:hidden p-2 border-2 border-black bg-accent hover:bg-accent/80"
+              onClick={() => setSidebarOpen(true)}
+            >
+              <FaBars className="w-5 h-5 text-black" />
+            </Button>
+            
+            <h1 className="text-xl md:text-2xl font-black uppercase italic tracking-tighter truncate text-black">
+              {currentTitle}<span className="text-accent">.</span>
+            </h1>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <Button 
+              onClick={toggleCart}
+              className="bg-accent text-black border-2 border-black h-12 px-4 flex items-center gap-3 gumroad-shadow-sm hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-none transition-all"
+            >
+              <ShoppingBag className="w-5 h-5" />
+              <span className="hidden sm:inline font-black uppercase text-[10px] tracking-widest">Bag</span>
+            </Button>
+          </div>
+        </header>
+
+        <main className="p-4 md:p-10 max-w-[1600px] w-full mx-auto">
           {children}
         </main>
       </div>

@@ -29,7 +29,7 @@ model User {
   deleted_at    DateTime?
   publisher     Publisher?
   author        Author?
-  customer      Customer?
+  customers     Customer[]
   tenantMember  Tenant[]   @relation("TenantUsers")
   Review        Review[]
   Cart          Cart[]
@@ -167,12 +167,13 @@ model Author {
 model Customer {
   id              String     @id @default(uuid())
   name            String?
-  user_id         String     @unique
+  user_id         String     // Removed @unique
   user            User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
   purchased_books Book[]     @relation("PurchasedBooks")
   author_id       String?
   author          Author?    @relation(fields: [author_id], references: [id])
-  slug            String?    @unique
+  slug            String?    
+  
   publisher_id    String?
   publisher       Publisher? @relation(fields: [publisher_id], references: [id])
   orders          Order[]
@@ -180,6 +181,8 @@ model Customer {
   updated_at      DateTime   @updatedAt
   deleted_at      DateTime?
 
+  // A user is unique TO A PUBLISHER
+  @@unique([user_id, publisher_id])
   @@map("customers")
 }
 
@@ -209,13 +212,15 @@ model Book {
   book_cover3       String?
   book_cover4       String?
   tags              String[]
+  categories        Category[]    @relation("BookToCategory")
   paper_back        Boolean       @default(false)
   e_copy            Boolean       @default(false)
   hard_cover        Boolean       @default(false)
   pdf_url           String?
   text_url          String?
   publisher_id      String?
-  featured          Boolean       @default(false)
+  featured          Boolean       @default(false) @map("featured_global") // Master switch for Landing Page
+  featured_shop     Boolean       @default(false)                         // Switch for Publisher's Storefront
   primary_author_id String?
   primary_author    Author?       @relation("PrimaryAuthor", fields: [primary_author_id], references: [id])
   metadata          Json?
@@ -233,6 +238,20 @@ model Book {
   deleted_at        DateTime?
 
   @@map("books")
+}
+
+model Category {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  icon        String?  // For dashboard/navigation icons
+  books       Book[]   @relation("BookToCategory")
+  
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  @@map("categories")
 }
 
 model BookVariant {

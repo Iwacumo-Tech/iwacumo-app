@@ -17,7 +17,8 @@ export const { handlers, auth } = NextAuth({
         try {
           if (!password) return null;
 
-          // 1. Check standard User table (Customers, Authors, Publishers)
+          // 1. Check standard User table
+          // 🔥 FIXED: Included 'customers' (plural) instead of 'customer'
           const user = await prisma.user.findFirst({
             where: {
               OR: [
@@ -25,7 +26,7 @@ export const { handlers, auth } = NextAuth({
                 { username: username as string }
               ]
             },
-            include: { customer: true }
+            include: { customers: true } 
           });
 
           if (user && user.active) {
@@ -39,7 +40,7 @@ export const { handlers, auth } = NextAuth({
             }
           }
 
-          // 2. Check AdminUser table (Staff and Super Admins)
+          // 2. Check AdminUser table
           const adminUser = await prisma.adminUser.findFirst({
             where: { email: username as string }
           });
@@ -69,6 +70,7 @@ export const { handlers, auth } = NextAuth({
         token.sub = user.id;
         token.name = (user as any).first_name;
         token.email = user.email;
+        token.last_name = (user as any).last_name || "";
       }
       return token;
     },
@@ -77,11 +79,12 @@ export const { handlers, auth } = NextAuth({
 
       const claims = await getUserClaims(token.sub);
 
-      // Fetch IDs for dashboard queries from both standard User and AdminUser contexts
+      // Fetch IDs for dashboard queries
       const [userProfile, adminProfile] = await Promise.all([
         prisma.user.findUnique({
           where: { id: token.sub },
-          include: { author: true, publisher: true, customer: true } // ADDED: customer
+          // 🔥 FIXED: Changed 'customer' to 'customers'
+          include: { author: true, publisher: true, customers: true } 
         }),
         prisma.adminUser.findUnique({
           where: { id: token.sub },
@@ -96,22 +99,23 @@ export const { handlers, auth } = NextAuth({
       let publisher_id = userProfile?.publisher?.id || null;
 
       if (adminProfile) {
-        // Resolve publisher context from AdminUserRoles or the linked Tenant record
         publisher_id = publisher_id ||
           adminProfile.roles.find(r => r.publisher_id)?.publisher_id ||
           adminProfile.tenant?.publishers?.id ||
           null;
       }
 
-      // AUGMENTATION: If user has a customer profile, ensure the "customer" role is in the session
+      // AUGMENTATION
       const finalizedRoles = [...claims.roles];
       
-      if (userProfile?.customer && !finalizedRoles.some(r => r.name.toLowerCase() === "customer")) {
+      // 🔥 FIXED: Logic check for the array length instead of object existence
+      const hasCustomerProfiles = (userProfile?.customers?.length || 0) > 0;
+
+      if (hasCustomerProfiles && !finalizedRoles.some(r => r.name.toLowerCase() === "customer")) {
         const customerRole = await prisma.role.findUnique({ where: { name: "customer" } });
         if (customerRole) {
           finalizedRoles.push(customerRole);
         } else {
-          // Fallback if database record missing
           finalizedRoles.push({ name: "customer", active: true, built_in: true } as Role);
         }
       }
@@ -125,10 +129,12 @@ export const { handlers, auth } = NextAuth({
         user: {
           id: token.sub,
           first_name: (token.name as string) || "",
+          last_name: (token.last_name as string) || "",
           email: (token.email as string) || "",
           author_id,
           publisher_id,
-          isCustomer: !!userProfile?.customer, // Helpful for frontend flags
+          
+          isCustomer: hasCustomerProfiles, 
         },
         ...claims,
         roles: finalizedRoles,
@@ -146,7 +152,6 @@ async function getUserClaims(userId: string): Promise<{
   const rolesMap = new Map<string, Role>();
   let tenantSlug: string | null = null;
 
-  // 1. FETCH FROM STANDARD CLAIMS (User Table)
   const claims = await prisma.claim.findMany({
     where: { user_id: userId, active: true },
     include: { permission: true, role: true },
@@ -162,7 +167,6 @@ async function getUserClaims(userId: string): Promise<{
     if (claim.permission?.active) {
       permissionsMap.set(claim.permission.id, claim.permission);
 
-      // VIRTUAL ROLE MAPPING: 
       const coreRoles = ["super-admin", "publisher", "author", "customer"];
       if (coreRoles.includes(claim.permission.name) && !rolesMap.has(claim.permission.name)) {
         const roleObj = await prisma.role.findUnique({ where: { name: claim.permission.name } });
@@ -171,7 +175,6 @@ async function getUserClaims(userId: string): Promise<{
     }
   }
 
-  // 2. FETCH FROM ADMINUSER CLAIMS (Staff Table)
   const adminUser = await prisma.adminUser.findUnique({
     where: { id: userId },
     include: {
@@ -203,7 +206,6 @@ async function getUserClaims(userId: string): Promise<{
     });
   }
 
-  // 3. POPULATE PERMISSIONS FROM ADDED ROLES
   const roleNames = Array.from(rolesMap.keys());
   if (roleNames.length > 0) {
     const rolePermissions = await prisma.permissionRole.findMany({

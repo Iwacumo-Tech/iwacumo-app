@@ -16,6 +16,7 @@ export const createUserSchema = z.object({
   custom_domain: z.string().optional(),
   website: z.string().optional(),
   author_name: z.string().optional(),
+  tenant_slug: z.string().optional(),
 });
 
 export const createRoleSchema = z.object({
@@ -70,6 +71,7 @@ export const updatePublisherSchema = z.object({
   custom_domain: z.string().optional(),
   profile_picture: z.string().optional(),
   tenant_id: z.string(),
+  tenant_name: z.string(),
   slug: z.string().nullable().optional(),
 });
 
@@ -136,37 +138,89 @@ export const createBookSchema = z.object({
   edition: z.string().optional(),
   publication_date: z.date().optional(),
   default_language: z.string().default("en"),
-  page_count: z.number().int().positive().optional(),
+  
+  // FIXED: Changed to optional/nullable to prevent global validation triggers
+  page_count: z.number().int().optional().nullable(),
+  
   reading_age_min: z.number().int().positive().optional(),
   reading_age_max: z.number().int().positive().optional(),
   status: z.enum(["draft", "pending_review", "published", "archived"]).optional().default("draft"),
-  // Legacy fields for backward compatibility
+  
   short_description: z.string().optional(), 
   long_description: z.string().optional(), 
   book_cover: z.string().url("Book cover must be a valid URL").nullable().optional(), 
   book_cover2: z.string().url("Book cover 2 must be a valid URL").nullable().optional(), 
   book_cover3: z.string().url("Book cover 3 must be a valid URL").nullable().optional(), 
   book_cover4: z.string().url("Book cover 4 must be a valid URL").nullable().optional(), 
-  price: z.number().positive("Price must be positive").optional(), // Optional now, variants have their own prices
-  // Per-format pricing for legacy flow
-  paperback_price: z.number().positive("Paperback price must be positive").optional(),
-  hardcover_price: z.number().positive("Hardcover price must be positive").optional(),
-  ebook_price: z.number().positive("E-book price must be positive").optional(),
-  published: z.boolean().optional().default(false), 
+  
+  price: z.number().optional(), 
+
+  // FIXED: Changed to optional/nullable to prevent global validation triggers
+  paperback_price: z.number().optional().nullable(),
+  hardcover_price: z.number().optional().nullable(),
+  ebook_price: z.number().optional().nullable(),
+
+  published: z.boolean().optional().default(false),
+  category_ids: z.array(z.string()).optional().default([]),
   tags: z.string().optional(), 
-  paper_back: z.boolean().optional().default(false), // Legacy - will be converted to variant
-  e_copy: z.boolean().optional().default(false), // Legacy - will be converted to variant
-  hard_cover: z.boolean().optional().default(false), // Legacy - will be converted to variant
+  paper_back: z.boolean().optional().default(false),
+  e_copy: z.boolean().optional().default(false),
+  hard_cover: z.boolean().optional().default(false),
+  
   pdf_url: z.string().url("PDF URL must be valid").nullable().optional(), 
   text_url: z.string().url("Text URL must be valid").nullable().optional(),
-  docx_url: z.string().url("DOCX URL must be valid").nullable().optional(), // Added for reader content
-  reader_url: z.string().url("Reader URL must be valid").nullable().optional(), // Fallback
+  docx_url: z.string().url("DOCX URL must be valid").nullable().optional(),
+  reader_url: z.string().url("Reader URL must be valid").nullable().optional(),
+  
   publisher_id: z.string().optional(),
   author_id: z.string().optional(),
   primary_author_id: z.string().optional(),
   featured: z.boolean().optional().default(false),
-  // New variants array
   variants: z.array(bookVariantSchema).min(1, "At least one book variant is required").optional(),
+}).superRefine((data, ctx) => {
+  // 1. Validate Physical Books (Paperback or Hardcover)
+  if (data.paper_back || data.hard_cover) {
+    if (!data.page_count || data.page_count <= 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Page count is required for physical books",
+        path: ["page_count"],
+      });
+    }
+  }
+
+  // 2. Validate Paperback Price
+  if (data.paper_back) {
+    if (!data.paperback_price || data.paperback_price <= 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Paperback price is required",
+        path: ["paperback_price"],
+      });
+    }
+  }
+
+  // 3. Validate Hardcover Price
+  if (data.hard_cover) {
+    if (!data.hardcover_price || data.hardcover_price <= 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Hardcover price is required",
+        path: ["hardcover_price"],
+      });
+    }
+  }
+
+  // 4. Validate E-Book Price
+  if (data.e_copy) {
+    if (!data.ebook_price || data.ebook_price <= 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "E-book price is required",
+        path: ["ebook_price"],
+      });
+    }
+  }
 });
 
 export const toggleFeaturedSchema = z.object({
@@ -203,8 +257,13 @@ export const findChapterByIdSchema = z.object({
 
 export const editProfileSchema = z.object({
   id: z.string().optional(),
-  profilePicture: z.string().optional(),
+  first_name: z.string().min(1, "First name is required"),
+  last_name: z.string().min(1, "Last name is required"),
+  username: z.string().min(3, "Username/Slug must be at least 3 characters"),
   bio: z.string().optional(),
+  phone_number: z.string().optional(),
+  organization_name: z.string().optional(), // For Publishers
+  profilePicture: z.string().optional(),
 });
 
 export const createBannerSchema = z.object({
@@ -481,3 +540,26 @@ export type TCreateDeliveryTrackingSchema = z.infer<typeof createDeliveryTrackin
 export type TUpdateDeliveryTrackingSchema = z.infer<typeof updateDeliveryTrackingSchema>;
 export type TGetDeliveriesByOrderSchema = z.infer<typeof getDeliveriesByOrderSchema>;
 export type TGetOrdersNeedingShippingSchema = z.infer<typeof getOrdersNeedingShippingSchema>;
+
+export const updateAuthorSchema = z.object({
+  id: z.string(), // Required to identify which author to update
+  first_name: z.string().min(1, "First name is required"),
+  last_name: z.string().min(1, "Last name is required"),
+  username: z.string().min(3, "Username must be at least 3 characters"),
+  phone_number: z.string().optional(),
+});
+
+export type TUpdateAuthorSchema = z.infer<typeof updateAuthorSchema>;
+
+
+export const updateCustomerSchema = z.object({
+  id: z.string(), // Required to target the specific customer record
+  first_name: z.string().min(1, "First name is required"),
+  last_name: z.string().min(1, "Last name is required"),
+  username: z.string().min(3, "Username must be at least 3 characters"),
+  email: z.string().email("Invalid email address"),
+  phone_number: z.string().optional(),
+  publisher_id: z.string().optional(), // In case you need to reassign to a different org
+});
+
+export type TUpdateCustomerSchema = z.infer<typeof updateCustomerSchema>;

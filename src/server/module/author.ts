@@ -1,5 +1,5 @@
 import prisma from "@/lib/prisma";
-import { createAuthorSchema, deleteAuthorSchema, findBookByIdSchema, signUpAuthorSchema } from "@/server/dtos";
+import { createAuthorSchema, updateAuthorSchema, deleteAuthorSchema, findBookByIdSchema, signUpAuthorSchema } from "@/server/dtos";
 import { publicProcedure } from "@/server/trpc";
 import { auth } from "@/auth";
 import bcrypt from "bcryptjs";
@@ -76,6 +76,51 @@ export const createAuthor = publicProcedure.input(createAuthorSchema).mutation(a
   });
 });
 
+export const updateAuthor = publicProcedure
+  .input(updateAuthorSchema) // Uses the new DTO we discussed
+  .mutation(async ({ input }) => {
+    const { id, first_name, last_name, username, phone_number } = input;
+
+    // 1. Check if the new username is already taken by someone else
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        username,
+        NOT: {
+          author: { id } // Exclude the current author from the check
+        }
+      }
+    });
+
+    if (existingUser) {
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: "This username is already taken by another user."
+      });
+    }
+
+    // 2. Perform the update
+    return await prisma.author.update({
+      where: { id },
+      data: {
+        // Update the 'name' field on the Author record for quick display
+        name: `${first_name} ${last_name}`.trim(),
+        
+        // Reach into the User table to update the core account details
+        user: {
+          update: {
+            first_name,
+            last_name,
+            username,
+            phone_number: phone_number ?? ""
+          }
+        }
+      },
+      include: {
+        user: true // Return the updated user object to sync the frontend
+      }
+    });
+  });
+
 export const signUpAuthor = publicProcedure.input(signUpAuthorSchema).mutation(async (opts) => {
   const user = await prisma.user.create({
     data: {
@@ -106,13 +151,47 @@ export const getAllAuthors = publicProcedure.query(async () => {
   return await prisma.author.findMany({ where: { deleted_at: null }, include: { user: true } });
 });
 
-export const getAuthorsByUser = publicProcedure.input(z.object({ id: z.string() })).query(async (opts) => {
-  const user = await prisma.user.findUnique({ where: { id: opts.input.id }, include: { author: true, publisher: true } });
-  if (user?.publisher) return await prisma.author.findMany({ where: { publisher_id: user.publisher.id, deleted_at: null }, include: { books: true, user: true } });
-  if (user?.author) return await prisma.author.findMany({ where: { id: user.author.id, deleted_at: null }, include: { books: true, user: true } });
-  return [];
-});
+export const getAuthorsByUser = publicProcedure
+  .input(z.object({ id: z.string() }))
+  .query(async (opts) => {
+    // 1. Fetch user with their full context including claims
+    const user = await prisma.user.findUnique({ 
+      where: { id: opts.input.id }, 
+      include: { author: true, publisher: true, claims: true } 
+    });
 
+    if (!user) return [];
+
+    // 2. CHECK FOR SUPER-ADMIN ROLE
+    const isSuperAdmin = user.claims.some(c => c.role_name === "super-admin" && c.active);
+
+    if (isSuperAdmin) {
+      // God-mode: All authors, all books
+      return await prisma.author.findMany({
+        where: { deleted_at: null },
+        include: { books: { where: { deleted_at: null } }, user: true }
+      });
+    }
+
+    // --- STANDARD ROLE-BASED FILTERS ---
+    if (user.publisher) {
+      return await prisma.author.findMany({ 
+        where: { publisher_id: user.publisher.id, deleted_at: null }, 
+        include: { books: true, user: true } 
+      });
+    }
+
+    if (user.author) {
+      return await prisma.author.findMany({ 
+        where: { id: user.author.id, deleted_at: null }, 
+        include: { books: true, user: true } 
+      });
+    }
+
+    return [];
+  });
+
+  
 export const getAuthorBySlug = publicProcedure.input(findBookByIdSchema).query(async (opts) => {
   return await prisma.author.findUnique({ where: { slug: opts.input.id }, include: { user: true, publisher: true, books: true } });
 });

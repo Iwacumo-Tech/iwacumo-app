@@ -1,297 +1,98 @@
 "use client";
 
-import { zodResolver } from "@hookform/resolvers/zod";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { createCustomerSchema, updateCustomerSchema } from "@/server/dtos";
+import { trpc } from "@/app/_providers/trpc-provider";
+import { useToast } from "@/components/ui/use-toast";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
-import { createCustomerSchema, TCreateCustomerSchema } from "@/server/dtos"; // Ensure this schema is defined for customer
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { useToast } from "@/components/ui/use-toast";
-import { trpc } from "@/app/_providers/trpc-provider";
-import { Customer } from "@prisma/client";
-import { useSession } from "next-auth/react";
-import { useEffect } from "react";
+import { Loader2 } from "lucide-react";
 
-interface CustomerFormProps {
-  customer?: Customer;
-  action: "Add" | "Edit";
-}
-
-const CustomerForm = ({ customer, action }: CustomerFormProps) => {
+const CustomerForm = ({ customer, action, trigger }: { customer?: any, action: "Add" | "Edit", trigger?: React.ReactNode }) => {
   const { toast } = useToast();
   const utils = trpc.useUtils();
-  const session = useSession();
   const [open, setOpen] = useState(false);
-  const userId = session.data?.user.id as string;
+  const isEditMode = action === "Edit" && customer?.id;
 
-  // Get current user to determine publisher_id
-  const { data: currentUser } = trpc.getUserById.useQuery(
-    { id: userId },
-    { enabled: !!userId }
-  );
-
-  const form = useForm<TCreateCustomerSchema>({
-    resolver: zodResolver(createCustomerSchema),
-    defaultValues: { 
-      id: customer?.id ?? "",
-    },
+  const form = useForm<any>({
+    resolver: zodResolver(isEditMode ? updateCustomerSchema : createCustomerSchema),
+    defaultValues: { first_name: "", last_name: "", email: "", username: "", phone_number: "" }
   });
 
-  // Update publisher_id when currentUser loads (for new customers)
+  // Pre-fill logic
   useEffect(() => {
-    if (!customer?.id && currentUser?.publisher?.id) {
-      form.setValue("publisher_id", currentUser.publisher.id);
-    }
-  }, [currentUser, customer, form]);
-
-  const addCustomer = trpc.createCustomer.useMutation({
-    onSuccess: async () => {
-      toast({
-        title: "Success",
-        variant: "default",
-        description: "Successfully created a Customer",
-      });
-
-      await Promise.all([
-        utils.getCustomersByUser.invalidate({ id: userId }),
-        utils.getAllCustomers.invalidate(), // Also invalidate all customers as fallback
-      ]);
-      setOpen(false);
-    },
-    onError: (error) => {
-      console.error(error);
-
-      toast({
-        title: "Error",
-        variant: "destructive",
-        description: "Error creating customer",
-      });
-    },
-  });
-
-  const updateCustomer = trpc.updateCustomer.useMutation({
-    onSuccess: async () => {
-      toast({
-        title: "Success",
-        variant: "default",
-        description: "Successfully updated Customer",
-      });
-
-      await Promise.all([
-        utils.getCustomersByUser.invalidate({ id: userId }),
-        utils.getAllCustomers.invalidate(), // Also invalidate all customers as fallback
-      ]);
-      setOpen(false);
-    },
-    onError: (error) => {
-      console.error(error);
-
-      toast({
-        title: "Error",
-        variant: "destructive",
-        description: "Error updating customer",
-      });
-    },
-  });
-
-  const onSubmit = (values: TCreateCustomerSchema) => {
-    // Automatically set publisher_id if current user is a publisher
-    const finalValues = {
-      ...values,
-      publisher_id: values.publisher_id ?? currentUser?.publisher?.id ?? undefined,
-    };
-
-    if (customer?.id) {
-      updateCustomer.mutate({
-        ...finalValues,
+    if (open && isEditMode && customer) {
+      form.reset({
         id: customer.id,
+        first_name: customer.user?.first_name || "",
+        last_name: customer.user?.last_name || "",
+        email: customer.user?.email || "",
+        username: customer.user?.username || "",
+        phone_number: customer.user?.phone_number || "",
       });
-    } else {
-      addCustomer.mutate(finalValues);
+    } else if (open && !isEditMode) {
+      form.reset({ first_name: "", last_name: "", email: "", username: "", password: "", phone_number: "" });
     }
+  }, [open, isEditMode, customer, form]);
+
+  const { mutate: addCustomer, isPending: isAdding } = trpc.createCustomer.useMutation({
+    onSuccess: () => {
+      toast({ title: "Success", description: "Customer created." });
+      utils.getCustomersByUser.invalidate();
+      setOpen(false);
+    }
+  });
+
+  const { mutate: updateCustomer, isPending: isUpdating } = trpc.updateCustomer.useMutation({
+    onSuccess: () => {
+      toast({ title: "Success", description: "Customer updated." });
+      utils.getCustomersByUser.invalidate();
+      setOpen(false);
+    }
+  });
+
+  const onSubmit = (values: any) => {
+    isEditMode ? updateCustomer(values) : addCustomer(values);
   };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button size="sm" className={`${action === "Edit" ? "w-full" : ""}`}>
-          {action} Customer
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="max-h-[80vh] overflow-y-auto space-y-3">
-        <DialogHeader>
-          <DialogTitle>{action} Customer</DialogTitle>
-        </DialogHeader>
-        <Tabs defaultValue="customer-details" className="w-[400px]">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="customer-details">Customer Details</TabsTrigger>
-            <TabsTrigger value="role">Customer Role</TabsTrigger>
-          </TabsList>
-          <TabsContent value="customer-details">
-            <Card>
-              <CardHeader>
-                <CardTitle>Customer Details</CardTitle>
-                <CardDescription>
-                  Make changes to your customer here.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Form {...form}>
-                  <form onSubmit={form.handleSubmit(onSubmit)}>
-                    <fieldset disabled={form.formState.isSubmitting}>
+      <DialogTrigger asChild>{trigger || <Button>{action} Customer</Button>}</DialogTrigger>
+      <DialogContent className="max-w-xl rounded-none border-4 border-black p-0 bg-[#F4F4F4] gumroad-shadow-lg">
+        <div className="p-6 border-b-4 border-black bg-white sticky top-0 z-20">
+          <DialogTitle className="text-2xl font-black uppercase italic tracking-tighter">
+            {action} Profile<span className="text-accent">.</span>
+          </DialogTitle>
+        </div>
 
-                      <div className="grid gap-6">
-                        <FormField
-                          control={form.control}
-                          name="first_name"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="text-gray-700">First Name</FormLabel>
-                              <FormControl>
-                                <Input
-                                  placeholder="Enter first name"
-                                  {...field}
-                                  className="border-gray-300 rounded-md"
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <FormField
-                          control={form.control}
-                          name="last_name"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="text-gray-700">Last Name</FormLabel>
-                              <FormControl>
-                                <Input
-                                  placeholder="Enter last name"
-                                  {...field}
-                                  className="border-gray-300 rounded-md"
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                      <div className="grid gap-6">
-                        <FormField
-                          control={form.control}
-                          name="username"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="text-gray-700">UserName</FormLabel>
-                              <FormControl>
-                                <Input
-                                  placeholder="Enter username"
-                                  {...field}
-                                  className="border-gray-300 rounded-md"
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <FormField
-                          control={form.control}
-                          name="email"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="text-gray-700">Email</FormLabel>
-                              <FormControl>
-                                <Input
-                                  placeholder="example@gmail.com"
-                                  {...field}
-                                  data-cy="customer-email"
-                                  className="border-gray-300 rounded-md"
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                      <div className="grid gap-6">
-                        <FormField
-                          control={form.control}
-                          name="password"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="text-gray-700">Password</FormLabel>
-                              <FormControl>
-                                <Input
-                                  placeholder="Enter Password"
-                                  {...field}
-                                  className="border-gray-300 rounded-md"
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <FormField
-                          control={form.control}
-                          name="phone_number"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="text-gray-700">Phone Number</FormLabel>
-                              <FormControl>
-                                <Input
-                                  placeholder="Enter Phone number"
-                                  {...field}
-                                  data-cy="customer-phone-no"
-                                  className="border-gray-300 rounded-md"
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="p-8 space-y-6">
+            <div className="bg-white border-2 border-black p-6 space-y-4 gumroad-shadow-sm">
+              <div className="grid grid-cols-2 gap-4">
+                <FormField control={form.control} name="first_name" render={({ field }) => (
+                  <FormItem><FormLabel className="text-[10px] font-black uppercase opacity-40">First Name</FormLabel>
+                  <FormControl><Input className="input-gumroad" {...field} /></FormControl></FormItem>
+                )} />
+                <FormField control={form.control} name="last_name" render={({ field }) => (
+                  <FormItem><FormLabel className="text-[10px] font-black uppercase opacity-40">Last Name</FormLabel>
+                  <FormControl><Input className="input-gumroad" {...field} /></FormControl></FormItem>
+                )} />
+              </div>
+              <FormField control={form.control} name="email" render={({ field }) => (
+                <FormItem><FormLabel className="text-[10px] font-black uppercase opacity-40">Email Address</FormLabel>
+                <FormControl><Input disabled={isEditMode} className="input-gumroad" {...field} /></FormControl></FormItem>
+              )} />
+            </div>
 
-                      <div className="flex justify-end my-5">
-                        <Button
-                          disabled={form.formState.isSubmitting}
-                          className="bg-blue-600 text-white py-2 px-7 rounded-md"
-                          type="submit"
-                          data-cy="customer-submit"
-                        >
-                          {action === "Add" ? "Proceed" : "Save Changes"}
-                        </Button>
-                      </div>
-                    </fieldset>
-                  </form>
-                </Form>
-              </CardContent>
-            </Card>
-          </TabsContent>
-          <TabsContent value="role">
-
-          </TabsContent>
-        </Tabs>
+            <Button type="submit" disabled={isAdding || isUpdating} className="w-full h-14 bg-black text-white font-black uppercase italic rounded-none border-2 border-black gumroad-shadow hover:translate-x-[2px] transition-all">
+              {isAdding || isUpdating ? <Loader2 className="animate-spin" /> : `${action} Customer`}
+            </Button>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );

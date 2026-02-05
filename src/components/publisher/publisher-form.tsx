@@ -18,20 +18,6 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
   Form,
   FormControl,
   FormField,
@@ -43,439 +29,185 @@ import { useToast } from "@/components/ui/use-toast";
 import { trpc } from "@/app/_providers/trpc-provider";
 import { Publisher } from "@prisma/client";
 import { useState, useRef, useEffect } from "react";
+import { cn } from "@/lib/utils";
+import { Loader2, CheckCircle2, AlertCircle, Building2, User } from "lucide-react";
+import { useDebounce } from "@/hooks/use-debounce";
 
 interface PublisherFormProps {
-  publisher?: Publisher;
+  publisher?: any; // Using any to handle nested tenant data from columns
   action: "Add" | "Edit";
+  trigger?: React.ReactNode;
 }
 
-const PublisherForm = ({ publisher, action }: PublisherFormProps) => {
+const PublisherForm = ({ publisher, action, trigger }: PublisherFormProps) => {
   const { toast } = useToast();
   const utils = trpc.useUtils();
   const [open, setOpen] = useState(false);
-  const { data: tenants } = trpc.getAllTenant.useQuery();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const handleFileUpload = async (file: File): Promise<string> => {
-    const formData = new FormData();
-    formData.append("file", file);
-
-    const response = await fetch(`/api/avatar/upload?filename=${file.name}`, {
-      method: "POST",
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const error = await response.text();
-      console.error("File upload response error:", error);
-      throw new Error("Failed to upload the file.");
-    }
-
-    const result = await response.json();
-    return result.url;
-  };
-
   const isEditMode = action === "Edit" && publisher?.id;
 
-  const form = useForm<TCreatePublisherSchema | TupdatePublisherSchema>({
+  // 1. Setup Form with proper typing
+  const form = useForm<any>({
     resolver: zodResolver(isEditMode ? updatePublisherSchema : createPublisherSchema),
-    defaultValues: isEditMode
-      ? {
-          id: publisher.id,
-          custom_domain: publisher?.custom_domain ?? "",
-          bio: publisher?.bio ?? "",
-          profile_picture: publisher?.profile_picture ?? "",
-          slug: publisher?.slug ?? "",
-          tenant_id: publisher?.tenant_id ?? "",
-        }
-      : {
-          custom_domain: "",
-          bio: "",
-          profile_picture: "",
-          slug: "",
-          tenant_id: "",
-          tenant_name: "",
-          email: "",
-          password: "",
-          first_name: "",
-          last_name: "",
-          phone_number: "",
-          date_of_birth: undefined,
-          username: "",
-        },
-  });
-
-
-  const addPublisher = trpc.createPublisher.useMutation({
-    onSuccess: async () => {
-      toast({
-        title: "Success",
-        variant: "default",
-        description: "Successfully added a new publisher",
-      });
-
-      await Promise.all([
-        utils.getAllPublisher.invalidate(),
-        utils.getPublisherByOrganization.invalidate(),
-      ]);
-      setOpen(false);
-    },
-    onError: (error) => {
-      console.error(error);
-
-      toast({
-        title: "Error",
-        variant: "destructive",
-        description: "Error adding the publisher",
-      });
-    },
-  });
-
-  const updatePublisher = trpc.updatePublisher.useMutation({
-    onSuccess: async () => {
-      toast({
-        title: "Success",
-        variant: "default",
-        description: "Successfully updated the publisher",
-      });
-
-      await Promise.all([
-        utils.getAllPublisher.invalidate(),
-        utils.getPublisherByOrganization.invalidate(),
-      ]);
-      setOpen(false);
-    },
-    onError: (error) => {
-      console.error(error);
-
-      toast({
-        title: "Error",
-        variant: "destructive",
-        description: "Error updating the publisher",
-      });
-    },
-  });
-
-  const onSubmit = async (values: TCreatePublisherSchema | TupdatePublisherSchema) => {
-    let imageUrl = values.profile_picture ?? ""; // Default to the existing value (if any)
-    if (fileInputRef.current?.files && fileInputRef.current.files[0]) {
-      const file = fileInputRef.current.files[0];
-      try {
-        const uploadResult = await handleFileUpload(file); // Upload the image
-        imageUrl = uploadResult; // Get the URL from the upload response
-      } catch (error) {
-        toast({
-          title: "Error",
-          variant: "destructive",
-          description: "Failed to upload the image.",
-        });
-        return; // Stop form submission if image upload fails
-      }
+    defaultValues: {
+      tenant_name: "",
+      slug: "",
+      first_name: "",
+      last_name: "",
+      email: "",
+      bio: "",
     }
+  });
+
+  // 2. FIX: Pre-fill logic using Reset
+  useEffect(() => {
+    if (open && isEditMode && publisher) {
+      form.reset({
+        id: publisher.id,
+        tenant_id: publisher.tenant_id,
+        tenant_name: publisher.tenant?.name || "",
+        slug: publisher.slug || "",
+        first_name: publisher.user?.first_name || "",
+        last_name: publisher.user?.last_name || "",
+        email: publisher.user?.email || "",
+        bio: publisher.bio || "",
+        profile_picture: publisher.profile_picture || "",
+      });
+    } else if (open && !isEditMode) {
+      form.reset({
+        tenant_name: "", slug: "", first_name: "", last_name: "", email: "", bio: "", password: "", username: ""
+      });
+    }
+  }, [open, isEditMode, publisher, form]);
+
+  // 3. Slug Checker Logic
+  const slugValue = form.watch("slug");
+  const debouncedSlug = useDebounce(slugValue, 500);
+  
+  // We only check if the slug is different from the current one (if editing)
+  const shouldCheckSlug = debouncedSlug && debouncedSlug.length > 2 && debouncedSlug !== publisher?.slug;
+  const { data: slugStatus, isFetching: isCheckingSlug } = trpc.checkSlugAvailability.useQuery(
+    { slug: debouncedSlug },
+    { enabled: !!shouldCheckSlug }
+  );
+
+  const { mutate: addPublisher, isPending: isAdding } = trpc.createPublisher.useMutation({
+    onSuccess: () => {
+      toast({ title: "Entity Created", description: "Organization and Publisher are live." });
+      utils.getAllPublisher.invalidate();
+      setOpen(false);
+    },
+    onError: (err) => toast({ variant: "destructive", title: "Error", description: err.message })
+  });
+
+  const { mutate: updatePublisher, isPending: isUpdating } = trpc.updatePublisher.useMutation({
+    onSuccess: () => {
+      toast({ title: "Updated", description: "Changes saved successfully." });
+      utils.getAllPublisher.invalidate();
+      setOpen(false);
+    }
+  });
+
+  const onSubmit = (values: any) => {
+    if (slugStatus?.available === false && debouncedSlug !== publisher?.slug) {
+      return toast({ variant: "destructive", title: "Invalid Slug", description: "This slug is already taken." });
+    }
+    // isEditMode ? updatePublisher(values) : addPublisher(values);
 
     if (isEditMode) {
-      const updateValues = values as TupdatePublisherSchema;
-      updatePublisher.mutate({
-        id: publisher!.id,
-        bio: updateValues.bio ?? null,
-        custom_domain: updateValues.custom_domain ?? "",
-        profile_picture: imageUrl,
-        tenant_id: updateValues.tenant_id,
-        slug: updateValues.slug ?? null,
+      updatePublisher({
+        id: publisher.id,
+        tenant_id: publisher.tenant_id, // Crucial for the nested update
+        tenant_name: values.tenant_name,
+        slug: values.slug,
+        bio: values.bio,
+        profile_picture: values.profile_picture,
+        custom_domain: values.custom_domain
       });
     } else {
-      const createValues = values as TCreatePublisherSchema;
-      addPublisher.mutate({
-        ...createValues,
-        profile_picture: imageUrl,
-        date_of_birth: createValues.date_of_birth
-          ? new Date(createValues.date_of_birth)
-          : undefined,
-      });
+      addPublisher(values);
     }
   };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button size="sm" className={`${action === "Edit" ? "w-full" : ""}`}>
-          {action} Publisher
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="max-h-[80vh] overflow-y-auto space-y-3">
-        <DialogHeader>
-          <DialogTitle>{action} Publisher</DialogTitle>
-        </DialogHeader>
-        <Card>
-          <CardHeader>
-            <CardTitle>Publisher Details</CardTitle>
-            <CardDescription>
-              Make changes to the publisher information here.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)}>
-                <fieldset disabled={form.formState.isSubmitting}>
-                  <div className="grid gap-6">
-                    <FormField
-                      control={form.control}
-                      name="tenant_id"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Select Organization</FormLabel>
-                          <Select
-                            onValueChange={field.onChange}
-                            defaultValue={field.value}
-                          >
-                            <FormControl className="mt-1">
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select Organization" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {tenants?.map((tenant) => (
-                                <SelectItem
-                                  role="option"
-                                  key={tenant.id}
-                                  value={tenant.id}
-                                >
-                                  {tenant.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    {!isEditMode && (
-                      <FormField
-                        control={form.control}
-                        name="tenant_name"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Or enter new Organization name</FormLabel>
-                            <FormControl>
-                              <Input
-                                {...field}
-                                placeholder="e.g., New Organization Inc."
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    )}
-                    {/* User creation fields - only show when creating */}
-                    {!isEditMode && (
-                      <>
-                        <FormField
-                          control={form.control}
-                          name="email"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Email</FormLabel>
-                              <FormControl>
-                                <Input {...field} placeholder="Enter email" />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name="password"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Password</FormLabel>
-                              <FormControl>
-                                <Input
-                                  {...field}
-                                  placeholder="Enter password"
-                                  type="password"
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name="first_name"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>First Name</FormLabel>
-                              <FormControl>
-                                <Input {...field} placeholder="Enter first name" />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name="last_name"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Last Name</FormLabel>
-                              <FormControl>
-                                <Input {...field} placeholder="Enter last name" />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name="username"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Username</FormLabel>
-                              <FormControl>
-                                <Input {...field} placeholder="Enter username" />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name="phone_number"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Phone Number</FormLabel>
-                              <FormControl>
-                                <Input
-                                  {...field}
-                                  placeholder="Enter phone number"
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name="date_of_birth"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Date of Birth</FormLabel>
-                              <FormControl>
-                                <Input
-                                  type="date"
-                                  {...field}
-                                  value={
-                                    field.value
-                                      ? field.value.toISOString().split("T")[0]
-                                      : ""
-                                  } // Format Date to YYYY-MM-DD
-                                  onChange={(e) =>
-                                    field.onChange(
-                                      e.target.value
-                                        ? new Date(e.target.value)
-                                        : undefined
-                                    )
-                                  } // Convert string to Date
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </>
-                    )}
-                    {/* Publisher fields */}
-                    <FormField
-                      control={form.control}
-                      name="custom_domain"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Custom Domain</FormLabel>
-                          <FormControl>
-                            <Input
-                              {...field}
-                              placeholder="Enter custom domain"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+      <DialogTrigger asChild>{trigger || <Button className="booka-button-primary">Add Publisher</Button>}</DialogTrigger>
+      
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto rounded-none border-4 border-black p-0 bg-[#F4F4F4] gumroad-shadow-lg">
+        <div className="p-6 border-b-4 border-black bg-white sticky top-0 z-20">
+          <DialogTitle className="text-2xl font-black uppercase italic tracking-tighter">
+            {action} Publisher Entity<span className="text-accent">.</span>
+          </DialogTitle>
+        </div>
 
-                    <FormField
-                      control={form.control}
-                      name="bio"
-                      render={({ field }) => {
-                        const { value, ...rest } = field;
-                        return (
-                          <FormItem>
-                            <FormLabel className="text-gray-700">Bio</FormLabel>
-                            <FormControl>
-                              <Input
-                                placeholder="Enter publisher bio"
-                                {...rest}
-                                value={(value ?? "") as string}
-                                className="border-gray-300 rounded-md"
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        );
-                      }}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="slug"
-                      render={({ field }) => {
-                        const { value, ...rest } = field;
-                        return (
-                          <FormItem>
-                            <FormLabel className="text-gray-700">Slug</FormLabel>
-                            <FormControl>
-                              <Input
-                                placeholder="Enter publisher slug"
-                                {...rest}
-                                value={(value ?? "") as string}
-                                className="border-gray-300 rounded-md"
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        );
-                      }}
-                    />
-                    <div className="space-y-1">
-                      <FormItem>
-                        <FormLabel className="text-gray-700">
-                          Profile Picture
-                        </FormLabel>
-                        <br />
-                        <FormControl>
-                          <input
-                            type="file"
-                            ref={fileInputRef}
-                            className="border-gray-300 rounded-md p-2"
-                          />
-                        </FormControl>
-                      </FormItem>
-                    </div>
-                  </div>
-                  <div className="flex justify-end my-5">
-                    <Button
-                      disabled={form.formState.isSubmitting}
-                      className="bg-blue-600 text-white py-2 px-7 rounded-md"
-                      type="submit"
-                      data-cy="publisher-submit"
-                    >
-                      {action === "Add" ? "Proceed" : "Save Changes"}
-                    </Button>
-                  </div>
-                </fieldset>
-              </form>
-            </Form>
-          </CardContent>
-        </Card>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="p-8 space-y-8">
+            
+            {/* SECTION 1: ORGANIZATION DATA */}
+            <section className="space-y-4">
+              <h3 className="font-black uppercase text-xs italic opacity-40 flex items-center gap-2">
+                <Building2 size={14} /> Organization Details
+              </h3>
+              <div className="bg-white border-2 border-black p-6 space-y-4 gumroad-shadow-sm">
+                <FormField control={form.control} name="tenant_name" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-[10px] font-black uppercase">Organization Name</FormLabel>
+                    <FormControl><Input className="input-gumroad" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                
+                <FormField control={form.control} name="slug" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-[10px] font-black uppercase">Storefront Slug (booka.africa/slug)</FormLabel>
+                    <FormControl>
+                      <div className="relative">
+                        <Input className={cn("input-gumroad pr-10", 
+                          slugStatus?.available === false && debouncedSlug !== publisher?.slug && "border-red-500 bg-red-50"
+                        )} {...field} />
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                          {isCheckingSlug ? <Loader2 className="animate-spin size-4 opacity-50" /> : 
+                           shouldCheckSlug && slugStatus?.available ? <CheckCircle2 className="text-green-600 size-4" /> :
+                           shouldCheckSlug && !slugStatus?.available ? <AlertCircle className="text-red-600 size-4" /> : null}
+                        </div>
+                      </div>
+                    </FormControl>
+                    {slugStatus?.available === false && debouncedSlug !== publisher?.slug && (
+                      <p className="text-[10px] font-bold text-red-600 uppercase mt-1 italic">Slug is already taken!</p>
+                    )}
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              </div>
+            </section>
+
+            {/* SECTION 2: PERSONAL DATA */}
+            <section className="space-y-4">
+              <h3 className="font-black uppercase text-xs italic opacity-40 flex items-center gap-2">
+                <User size={14} /> Lead Publisher Account
+              </h3>
+              <div className="bg-white border-2 border-black p-6 space-y-4 gumroad-shadow-sm">
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField control={form.control} name="first_name" render={({ field }) => (
+                    <FormItem><FormLabel className="text-[10px] font-black uppercase">First Name</FormLabel><FormControl><Input className="input-gumroad" {...field} /></FormControl></FormItem>
+                  )} />
+                  <FormField control={form.control} name="last_name" render={({ field }) => (
+                    <FormItem><FormLabel className="text-[10px] font-black uppercase">Last Name</FormLabel><FormControl><Input className="input-gumroad" {...field} /></FormControl></FormItem>
+                  )} />
+                </div>
+                <FormField control={form.control} name="email" render={({ field }) => (
+                  <FormItem><FormLabel className="text-[10px] font-black uppercase">Email Address</FormLabel><FormControl><Input disabled={isEditMode} className="input-gumroad" {...field} /></FormControl></FormItem>
+                )} />
+                <FormField control={form.control} name="bio" render={({ field }) => (
+                  <FormItem><FormLabel className="text-[10px] font-black uppercase">Publisher Bio</FormLabel><FormControl><Input className="input-gumroad" {...field} /></FormControl></FormItem>
+                )} />
+              </div>
+            </section>
+
+            <Button type="submit" disabled={isAdding || isUpdating || (isCheckingSlug && shouldCheckSlug)} className="w-full h-16 bg-accent border-2 border-black font-black uppercase text-lg gumroad-shadow hover:translate-x-[2px] transition-all">
+              {isAdding || isUpdating ? <Loader2 className="animate-spin" /> : `${action} Publisher`}
+            </Button>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );

@@ -9,12 +9,14 @@ import {
   updateUser,
   updateUserProfile,
   signUpCustomer,
+  checkSlugAvailability,
+  checkUsernameAvailability,
 } from "./module/user";
 import { publicProcedure, router } from "./trpc";
 import { createPublisher, deletePublisher, getAllPublisher, updatePublisher, getPublisherByOrganization, getPublisherDashboardStats } from "./module/publisher";
-import { createAuthor, deleteAuthor, getAllAuthors, signUpAuthor, getAuthorsByUser, getAuthorBySlug, getAuthorDashboardStats } from "./module/author";
-import { createCustomer, deleteCustomer, updateCustomer, getAllCustomers, getCustomersByUser, registerGuestAndTransferCart } from "./module/customer";
-import { createBook, deleteBook, updateBook, getAllBooks, getBookById, getBookByAuthor , toggleBookFeatured,getAllFeaturedBooks, getNewArrivalBooks, getPurchasedBooksByCustomer, generateWatermarkedEbook } from "./module/book";
+import { createAuthor, updateAuthor, deleteAuthor, getAllAuthors, signUpAuthor, getAuthorsByUser, getAuthorBySlug, getAuthorDashboardStats } from "./module/author";
+import { createCustomer, deleteCustomer, updateCustomer, getAllCustomers, getCustomersByUser, registerGuestAndTransferCart, getCustomerDashboardStats } from "./module/customer";
+import { createBook, deleteBook, updateBook, getAllBooks, getBookById, getCategories, getBookByAuthor, toggleBookFeatured,getAllFeaturedBooks, getNewArrivalBooks, getPurchasedBooksByCustomer, generateWatermarkedEbook } from "./module/book";
 import { createChapter, updateChapter, deleteChapter, getAllChapters, viewChapterById, getAllChapterByBookId } from "./module/chapter";
 import {  updateTenant, getAllTenant, deleteTenant, createTenant, getTenantBySlug } from "./module/tenant";
 import { imageUpload, createImageUpload } from "./module/uploads";
@@ -32,7 +34,8 @@ import {
   getAdminUserById,
   deleteAdminUser,
   getAdminRoles,
-  getGlobalPlatformStats
+  getGlobalPlatformStats,
+  toggleFeatured
 } from "./module/admin";
 import {
   createOrderFromCart,
@@ -74,7 +77,10 @@ export const appRouter = router({
   getPublisherDashboardStats,
   updatePublisher,
   getPublisherByOrganization,
+  checkSlugAvailability,
+  checkUsernameAvailability,
   createAuthor,
+  updateAuthor,
   deleteAuthor,
   signUpAuthor,
   getAuthorBySlug,
@@ -98,6 +104,7 @@ export const appRouter = router({
   viewChapterById,
   getBookByAuthor,
   getBookById,
+  getCategories,
   getPurchasedBooksByCustomer,
   getAllChapterByBookId,
   toggleBookFeatured,
@@ -126,6 +133,7 @@ export const appRouter = router({
   getOrdersByCustomer,
   getOrdersByUser,
   getDeliveriesByCustomer,
+  getCustomerDashboardStats,
   getOrdersNeedingShipping,
   getDeliveriesByOrder,
   createDeliveryTracking,
@@ -152,6 +160,7 @@ export const appRouter = router({
   getAdminUserById,
   deleteAdminUser,
   getAdminRoles,
+  toggleFeatured,
   getGlobalPlatformStats,
   healthCheck: publicProcedure.query(() => {
     return { message: "API up and running..." };

@@ -2,217 +2,122 @@
 
 import { useState, BaseSyntheticEvent } from "react";
 import Link from "next/link";
-import { Headphones, Menu, Search, ShoppingCart } from "lucide-react";
+import { Menu, Search, ShoppingCart, User, LogOut, LayoutDashboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useSession, signOut } from "next-auth/react";
 import { trpc } from "@/app/_providers/trpc-provider";
+import { cn } from "@/lib/utils";
 
 export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const session = useSession();
-  const userId = session.data?.user.id as string;
+  const { data: session } = useSession();
+  const userId = session?.user?.id as string;
+  
   const userCart = trpc.getCartsByUser.useQuery(
-    {
-      user_id: userId,
-    },
-    {
-      enabled: !!userId, // Only fetch when user_id is available
-    }
+    { user_id: userId },
+    { enabled: !!userId }
   );
-
-  const logoutRedirectTo = "/";
 
   const logout = async (e?: BaseSyntheticEvent) => {
     e?.preventDefault();
-    await signOut({ callbackUrl: logoutRedirectTo ?? "/" });
+    await signOut({ callbackUrl: "/" });
   };
 
   return (
-    <header className="border-b">
-      {/* Centered Content Container */}
-      <div className="max-w-[80%] mx-auto px-4 md:px-6">
-        {/* Top Bar */}
-        <div className="flex items-center justify-between py-4">
-          {/* Logo */}
-          <Link
-            href="/"
-            className="text-2xl md:text-3xl font-bold text-green-600"
-          >
-            Booka.
+    <header className="sticky top-0 z-50 w-full bg-background border-b-4 border-black">
+      <div className="max-w-[95%] lg:max-w-[90%] mx-auto px-4 h-20 flex items-center justify-between gap-8">
+        
+        {/* Logo */}
+        <Link href="/" className="text-3xl font-black uppercase italic tracking-tighter shrink-0">
+          Booka<span className="text-accent">.</span>
+        </Link>
+
+        {/* Desktop Search - Neo-brutalism Style */}
+        <div className="hidden md:flex flex-1 max-w-2xl relative group">
+          <Input
+            className="input-gumroad pl-12 h-12 bg-white"
+            placeholder="Search books, authors, or publishers..."
+            type="search"
+          />
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 group-focus-within:text-black transition-colors" />
+        </div>
+
+        {/* Desktop Navigation & Actions */}
+        <nav className="hidden lg:flex items-center gap-6 font-bold text-sm uppercase">
+          <Link href="/shop" className="hover:text-accent transition-colors">Discover</Link>
+          {session && (
+            <Link href="/app" className="hover:text-accent transition-colors">Dashboard</Link>
+          )}
+          
+          <div className="h-6 w-[2px] bg-black/10 mx-2" />
+
+          {/* Cart Trigger */}
+          <Link href="/cart" className="relative p-2 hover:bg-accent/10 transition-colors">
+            <ShoppingCart className="h-6 w-6" />
+            {userCart.data && userCart.data.length > 0 && (
+              <span className="absolute -top-1 -right-1 bg-black text-accent text-[10px] font-black w-5 h-5 flex items-center justify-center border-2 border-black">
+                {userCart.data.length}
+              </span>
+            )}
           </Link>
 
-          {/* Search Bar - Hidden on mobile, visible on larger screens */}
-          <div className="hidden md:flex w-[400px] lg:w-[600px]">
-            <Input
-              className="rounded-r-none"
-              placeholder="Search entire store here"
-              type="search"
-            />
-            <Button className="rounded-l-none bg-green-600 hover:bg-green-700">
-              <Search className="h-4 w-4" />
-              <span className="ml-2 hidden sm:inline">Search</span>
-            </Button>
-          </div>
+          {/* Auth State */}
+          {!session ? (
+            <div className="flex items-center gap-2">
+              <Link href="/login">
+                <Button variant="ghost" className="font-bold uppercase text-xs">Login</Button>
+              </Link>
+              <Link href="/register">
+                <Button className="booka-button-primary py-2 px-6 h-10 text-xs">Start Selling</Button>
+              </Link>
+            </div>
+          ) : (
+            <div className="flex items-center gap-4">
+              <button onClick={logout} className="p-2 hover:text-destructive transition-colors">
+                <LogOut className="h-6 w-6" />
+              </button>
+            </div>
+          )}
+        </nav>
 
-          {/* Auth & Cart - Hidden on mobile, visible on larger screens */}
-          <div className="hidden md:flex items-center gap-4">
-            {!session.data && (
-              <div className="text-sm">
-                <Link href="/login" className="hover:text-green-600">
-                  Login
-                </Link>
-                <span className="mx-2">or</span>
-                <Link href="/register" className="hover:text-green-600">
-                  Register
-                </Link>
-              </div>
-            )}
-            {session.data && (
-              <div className="text-sm">
-                <p
-                  className="hover:text-green-600 cursor-pointer"
-                  onClick={logout}
-                >
-                  Logout
-                </p>
-              </div>
-            )}
-            <Link className="cursor-pointer" href="/cart">
-              <div className="flex items-center gap-2 relative">
-                <ShoppingCart className="h-5 w-5" />
-                {userCart.data && (
-                  <span className="absolute -top-2 -right-2 bg-red-600 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                    {userCart.data.length}
-                  </span>
-                )}
-              </div>
-            </Link>
-          </div>
-
-          {/* Mobile Menu Trigger */}
+        {/* Mobile menu trigger */}
+        <div className="flex items-center gap-4 lg:hidden">
+          <Link href="/cart" className="relative p-2">
+            <ShoppingCart className="h-6 w-6" />
+          </Link>
           <Sheet open={isMenuOpen} onOpenChange={setIsMenuOpen}>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="md:hidden">
+              <Button variant="ghost" size="icon" className="border-2 border-black">
                 <Menu className="h-6 w-6" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="w-[300px] sm:w-[400px]">
-              <nav className="flex flex-col gap-4">
-                <Link
-                  href="/"
-                  className="text-lg font-semibold hover:text-green-600"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  HOME
-                </Link>
-                <Link
-                  href="/shop"
-                  className="text-lg font-semibold hover:text-green-600"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  SHOP
-                </Link>
-                <Link
-                  href="/pages"
-                  className="text-lg font-semibold hover:text-green-600"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  PAGES
-                </Link>
-                <Link
-                  href="/blog"
-                  className="text-lg font-semibold hover:text-green-600"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  BLOG
-                </Link>
-                <Link
-                  href="/contact"
-                  className="text-lg font-semibold hover:text-green-600"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  CONTACT
-                </Link>
-              </nav>
-              <div className="mt-auto pt-4 border-t">
-                <Link
-                  href="/login"
-                  className="block py-2 hover:text-green-600"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  Login
-                </Link>
-                <Link
-                  href="/register"
-                  className="block py-2 hover:text-green-600"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  Register
-                </Link>
-                <div className="flex items-center gap-2 py-2">
-                  <ShoppingCart className="h-5 w-5" />
-                  <div>
-                    <span className="text-sm text-muted-foreground">
-                      Shopping Cart
-                    </span>
-                    <p className="font-medium">£0.00</p>
-                  </div>
+            <SheetContent side="right" className="w-full sm:w-[400px] border-l-4 border-black p-0 bg-background">
+              <div className="p-8 space-y-8 flex flex-col h-full">
+                <p className="text-3xl font-black uppercase italic">Menu<span className="text-accent">.</span></p>
+                <nav className="flex flex-col gap-6 text-2xl font-black uppercase">
+                  <Link href="/" onClick={() => setIsMenuOpen(false)}>Home</Link>
+                  <Link href="/shop" onClick={() => setIsMenuOpen(false)}>Discover</Link>
+                  {session && <Link href="/app" onClick={() => setIsMenuOpen(false)}>My Dashboard</Link>}
+                </nav>
+                <div className="mt-auto space-y-4">
+                  {!session ? (
+                    <>
+                      <Link href="/login" className="block w-full" onClick={() => setIsMenuOpen(false)}>
+                        <Button className="w-full booka-button-secondary py-6">Login</Button>
+                      </Link>
+                      <Link href="/register" className="block w-full" onClick={() => setIsMenuOpen(false)}>
+                        <Button className="w-full booka-button-primary py-6">Start Selling</Button>
+                      </Link>
+                    </>
+                  ) : (
+                    <Button onClick={logout} className="w-full booka-button-secondary py-6">Logout</Button>
+                  )}
                 </div>
               </div>
             </SheetContent>
           </Sheet>
-        </div>
-
-        {/* Mobile Search - Visible only on mobile */}
-        <div className="md:hidden pb-4">
-          <div className="flex w-full">
-            <Input
-              className="rounded-r-none"
-              placeholder="Search entire store here"
-              type="search"
-            />
-            <Button className="rounded-l-none bg-green-600 hover:bg-green-700">
-              <Search className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Full-width Green Div */}
-      <div className="w-full bg-green-600">
-        <div className="max-w-[80%] mx-auto px-4 md:px-6 flex items-center justify-between py-3 text-white">
-          {/* Support */}
-          <div className="flex items-center">
-            <Headphones className="h-5 w-5 mr-2" />
-            <div>
-              <div className="text-sm">Free Support 24/7</div>
-              <div className="font-medium">+01-202-555-0181</div>
-            </div>
-          </div>
-
-          {/* Main Navigation - Hidden on mobile, visible on larger screens */}
-          <nav className="hidden md:flex items-center gap-4">
-            <Link href="/" className="hover:text-green-100">
-              HOME
-            </Link>
-            <Link href="/shop" className="hover:text-green-100">
-              SHOP
-            </Link>
-            {session.data && (
-              <Link href="/app" className="hover:text-green-100">
-                DASHBOARD
-              </Link>
-            )}
-
-            <Link href="/blog" className="hover:text-green-100">
-              BLOG
-            </Link>
-            <Link href="/contact" className="hover:text-green-100">
-              CONTACT
-            </Link>
-          </nav>
         </div>
       </div>
     </header>

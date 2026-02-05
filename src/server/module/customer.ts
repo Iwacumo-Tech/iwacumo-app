@@ -1,105 +1,120 @@
 import prisma from "@/lib/prisma";
-import { createCustomerSchema, deleteCustomerSchema, findBookByIdSchema } from "@/server/dtos";
+import { createCustomerSchema, updateCustomerSchema, deleteCustomerSchema, findBookByIdSchema } from "@/server/dtos";
 import { publicProcedure } from "@/server/trpc";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 
-export const createCustomer = publicProcedure.input(createCustomerSchema).mutation(async (opts) => {
-  return await prisma.$transaction(async (tx) => {
-    // Create the user
-    const user = await tx.user.create({
-      data: {
-        username: opts.input.username,
-        email: opts.input.email ?? "",
-        password: opts.input.password ? bcrypt.hashSync(opts.input.password, 10) : "",
-        phone_number: opts.input.phone_number ?? "",
-        first_name: opts.input.first_name ?? "",
-        last_name: opts.input.last_name ?? ""
-      }
+export const createCustomer = publicProcedure
+  .input(createCustomerSchema)
+  .mutation(async (opts) => {
+    const { username, email, password, phone_number, first_name, last_name, author_id, publisher_id } = opts.input;
+
+    // 1. Pre-emptive Uniqueness Check for "Pure English" errors
+    const existingUser = await prisma.user.findFirst({
+      where: { OR: [{ username }, { email: email ?? "" }] }
     });
 
-    // Create the customer
-    const customer = await tx.customer.create({
-      data: {
-        author_id: opts.input.author_id ?? null,
-        publisher_id: opts.input.publisher_id ?? null,
-        user_id: user.id
-      },
-    });
-
-    // Get tenant_slug from publisher if publisher_id is set
-    let tenantSlug: string | null = null;
-    if (opts.input.publisher_id) {
-      const publisher = await tx.publisher.findUnique({
-        where: { id: opts.input.publisher_id },
-        include: { tenant: true }
+    if (existingUser) {
+      const field = existingUser.email === email ? "Email" : "Username";
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: `${field} is already taken. Please try another.`
       });
-      if (publisher?.tenant?.slug) {
-        tenantSlug = publisher.tenant.slug;
-      }
     }
 
-    // Ensure the "customer" role exists
-    const customerRole = await tx.role.findUnique({
-      where: { name: "customer" },
-    });
+    // 2. Safe Password Hashing (Outside Transaction)
+    const hashedPassword = password ? bcrypt.hashSync(password, 10) : "";
 
-    if (!customerRole) {
-      throw new Error('Default "customer" role not found. Please run the seed script.');
-    }
-
-    // Create a claim with the "customer" role
-    await tx.claim.create({
-      data: {
-        user_id: user.id,
-        role_name: customerRole.name,
-        active: true,
-        type: "ROLE",
-        tenant_slug: tenantSlug,
-      },
-    });
-
-    return customer;
-  });
-});
-
-export const updateCustomer = publicProcedure.input(createCustomerSchema).mutation(async (opts) => {
-  return await prisma.$transaction(async (tx) => {
-    // Get the customer to find the user_id
-    const customer = await tx.customer.findUnique({
-      where: { id: opts.input.id },
-    });
-
-    if (!customer) {
-      throw new Error("Customer not found");
-    }
-
-    // Update the user's information if provided
-    if (opts.input.first_name !== undefined || opts.input.last_name !== undefined || 
-        opts.input.email !== undefined || opts.input.phone_number !== undefined || 
-        opts.input.username !== undefined) {
-      await tx.user.update({
-        where: { id: customer.user_id },
+    return await prisma.$transaction(async (tx) => {
+      // 3. Create the Core User
+      const user = await tx.user.create({
         data: {
-          ...(opts.input.first_name !== undefined && { first_name: opts.input.first_name }),
-          ...(opts.input.last_name !== undefined && { last_name: opts.input.last_name }),
-          ...(opts.input.email !== undefined && { email: opts.input.email }),
-          ...(opts.input.phone_number !== undefined && { phone_number: opts.input.phone_number }),
-          ...(opts.input.username !== undefined && { username: opts.input.username }),
+          username,
+          email: email ?? "",
+          password: hashedPassword,
+          phone_number: phone_number ?? "",
+          first_name: first_name ?? "",
+          last_name: last_name ?? ""
+        }
+      });
+
+      // 4. Resolve the Organization Identity (tenant_slug)
+      let tenantSlug: string | null = null;
+      if (publisher_id) {
+        const publisher = await tx.publisher.findUnique({
+          where: { id: publisher_id },
+          select: { slug: true }
+        });
+        tenantSlug = publisher?.slug ?? null;
+      }
+
+      // 5. Create the Customer Record (Linking Author & Publisher)
+      const customer = await tx.customer.create({
+        data: {
+          user_id: user.id,
+          publisher_id: publisher_id ?? null,
+          author_id: author_id ?? null, // Allows author-specific filtering
         },
       });
-    }
 
-    // Update the customer
-    return await tx.customer.update({
-      where: { id: opts.input.id },
-      data: {
-        author_id: opts.input.author_id,
-        publisher_id: opts.input.publisher_id,
-      },
+      // 6. Assign the "Customer" Role & Permission Claims
+      const customerRole = await tx.role.findUnique({ where: { name: "customer" } });
+      if (!customerRole) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Customer role not found in system." });
+
+      await tx.claim.create({
+        data: {
+          user_id: user.id,
+          role_name: customerRole.name,
+          active: true,
+          type: "ROLE",
+          tenant_slug: tenantSlug,
+        },
+      });
+
+      return customer;
+    }, {
+      timeout: 10000 // Prevent "Transaction already closed" errors
     });
   });
-});
+
+// export const updateCustomer = publicProcedure.input(createCustomerSchema).mutation(async (opts) => {
+//   return await prisma.$transaction(async (tx) => {
+//     // Get the customer to find the user_id
+//     const customer = await tx.customer.findUnique({
+//       where: { id: opts.input.id },
+//     });
+
+//     if (!customer) {
+//       throw new Error("Customer not found");
+//     }
+
+//     // Update the user's information if provided
+//     if (opts.input.first_name !== undefined || opts.input.last_name !== undefined || 
+//         opts.input.email !== undefined || opts.input.phone_number !== undefined || 
+//         opts.input.username !== undefined) {
+//       await tx.user.update({
+//         where: { id: customer.user_id },
+//         data: {
+//           ...(opts.input.first_name !== undefined && { first_name: opts.input.first_name }),
+//           ...(opts.input.last_name !== undefined && { last_name: opts.input.last_name }),
+//           ...(opts.input.email !== undefined && { email: opts.input.email }),
+//           ...(opts.input.phone_number !== undefined && { phone_number: opts.input.phone_number }),
+//           ...(opts.input.username !== undefined && { username: opts.input.username }),
+//         },
+//       });
+//     }
+
+//     // Update the customer
+//     return await tx.customer.update({
+//       where: { id: opts.input.id },
+//       data: {
+//         author_id: opts.input.author_id,
+//         publisher_id: opts.input.publisher_id,
+//       },
+//     });
+//   });
+// });
 
 export const deleteCustomer = publicProcedure.input(deleteCustomerSchema).mutation(async (opts) => {
   return await prisma.customer.update({
@@ -131,33 +146,10 @@ export const registerGuestAndTransferCart = publicProcedure
   )
   .mutation(async (opts) => {
     return await prisma.$transaction(async (tx) => {
-      // Find publisher_id from first book in cart
-      let publisherId: string | null = null;
-      let tenantSlug: string | null = null;
-
-      if (opts.input.cart_items.length > 0) {
-        const firstBookTitle = opts.input.cart_items[0].book_title;
-        const book = await tx.book.findFirst({
-          where: {
-            title: firstBookTitle,
-            deleted_at: null,
-          },
-          include: {
-            publisher: {
-              include: {
-                tenant: true,
-              },
-            },
-          },
-        });
-
-        if (book?.publisher_id) {
-          publisherId = book.publisher_id;
-          tenantSlug = book.publisher?.tenant?.slug ?? null;
-        }
-      }
-
-      // Create the user
+      
+      // 1. CREATE THE USER ONLY (Identity)
+      // We no longer create the 'Customer' record here to avoid cluttering 
+      // publisher dashboards with unpaid leads.
       const user = await tx.user.create({
         data: {
           username: opts.input.customer_data.username ?? "",
@@ -171,36 +163,8 @@ export const registerGuestAndTransferCart = publicProcedure
         },
       });
 
-      // Create the customer
-      const customer = await tx.customer.create({
-        data: {
-          author_id: opts.input.customer_data.author_id ?? null,
-          publisher_id: publisherId,
-          user_id: user.id,
-        },
-      });
-
-      // Ensure the "customer" role exists
-      const customerRole = await tx.role.findUnique({
-        where: { name: "customer" },
-      });
-
-      if (!customerRole) {
-        throw new Error('Default "customer" role not found. Please run the seed script.');
-      }
-
-      // Create a claim with the "customer" role and tenant_slug
-      await tx.claim.create({
-        data: {
-          user_id: user.id,
-          role_name: customerRole.name,
-          active: true,
-          type: "ROLE",
-          tenant_slug: tenantSlug,
-        },
-      });
-
-      // Transfer cart items from localStorage to database
+      // 2. TRANSFER CART ITEMS
+      // We link these directly to the User ID. 
       const createdCartItems = [];
       for (const cartItem of opts.input.cart_items) {
         const cart = await tx.cart.create({
@@ -211,14 +175,15 @@ export const registerGuestAndTransferCart = publicProcedure
             price: cartItem.price,
             quantity: cartItem.quantity ?? 1,
             total: cartItem.total,
-            userId: user.id,
+            userId: user.id, // Linking to the new global Identity
           },
         });
         createdCartItems.push(cart);
       }
 
+      // We return the user info so the frontend can log them in, 
+      // but they do not have a 'customer' role or tenant_slug yet.
       return {
-        customer,
         user: {
           id: user.id,
           email: user.email,
@@ -229,82 +194,174 @@ export const registerGuestAndTransferCart = publicProcedure
     });
   });
 
-export const getCustomersByUser = publicProcedure.input(findBookByIdSchema).query(async (opts) => {
-  const user = await prisma.user.findUnique({
-    where: { id: opts.input.id },
-    include: { author: true, publisher: true, customer: true }
+export const getCustomersByUser = publicProcedure
+  .input(z.object({ id: z.string() })) // Simplified input
+  .query(async (opts) => {
+    const user = await prisma.user.findUnique({
+      where: { id: opts.input.id },
+      include: { author: true, publisher: true, customers: true, claims: true }
+    });
+
+    if (!user) return [];
+
+    // 1. CHECK FOR SUPER-ADMIN ROLE
+    const isSuperAdmin = user.claims.some(c => c.role_name === "super-admin" && c.active);
+
+    if (isSuperAdmin) {
+      // God-mode: All customers across all publishers
+      return await prisma.customer.findMany({
+        where: { deleted_at: null },
+        include: { 
+          user: true, 
+          purchased_books: true, 
+          author: true, 
+          publisher: true 
+        }
+      });
+    }
+
+    // --- LOGIC FOR PUBLISHERS ---
+    if (user.publisher) {
+      return await prisma.customer.findMany({
+        where: { publisher_id: user.publisher.id, deleted_at: null },
+        include: { user: true, purchased_books: true, author: true }
+      });
+    }
+
+    // --- LOGIC FOR AUTHORS ---
+    if (user.author) {
+      return await prisma.customer.findMany({
+        where: { author_id: user.author.id, deleted_at: null },
+        include: { user: true, author: true, purchased_books: true, publisher: true }
+      });
+    }
+
+    // --- LOGIC FOR CUSTOMERS/READERS ---
+    if (user.customers && user.customers.length > 0) {
+      const primaryPublisherId = user.customers[0].publisher_id;
+      if (primaryPublisherId) {
+        return await prisma.customer.findMany({
+          where: { publisher_id: primaryPublisherId, deleted_at: null },
+          include: { user: true, purchased_books: true, author: true, publisher: true }
+        });
+      }
+    }
+
+    return [];
   });
 
-  if (!user) {
-    return [];
-  }
-
-  // If user is a customer, get customers from the same publisher
-  if (user.customer && user.customer.publisher_id) {
-    return await prisma.customer.findMany({
-      where: { publisher_id: user.customer.publisher_id, deleted_at: null },
-      include: { 
-        user: true,
-        purchased_books: true, 
-        author: true, 
-        publisher: true 
-      }
-    });
-  }
-
-  // If user is a publisher, get customers for that publisher
-  if (user.publisher) {
-    return await prisma.customer.findMany({
-      where: { publisher_id: user.publisher.id, deleted_at: null },
-      include: { 
-        user: true,
-        purchased_books: true, 
-        author: true 
-      }
-    });
-  }
-
-  // If user is an author, get customers for that author
-  if (user.author) {
-    return await prisma.customer.findMany({
-      where: { author_id: user.author.id, deleted_at: null },
-      include: { 
-        user: true,
-        author: true, 
-        purchased_books: true, 
-        publisher: true 
-      }
-    });
-  }
-
-  // Return empty array if user is neither customer, publisher nor author
-  return [];
-});
-
+  
+/**
+ * Customer Dashboard Analytics
+ * Provides high-level metrics for the Reader/Customer view.
+ */
 export const getCustomerDashboardStats = publicProcedure
   .input(z.object({ user_id: z.string() }))
   .query(async ({ input }) => {
-    const customer = await prisma.customer.findUnique({
+    // 1. Fetch ALL customer profiles and the 5 most recent orders for the UI
+    const customerProfiles = await prisma.customer.findMany({
       where: { user_id: input.user_id },
       include: {
         orders: {
           where: { payment_status: "captured" },
           orderBy: { created_at: "desc" },
           take: 5,
-          include: { line_items: { include: { book_variant: { include: { book: true } } } } }
+          include: { 
+            line_items: { 
+              include: { 
+                book_variant: { 
+                  include: { 
+                    book: { select: { title: true } } 
+                  } 
+                } 
+              } 
+            } 
+          }
         },
         _count: {
-          select: { orders: { where: { payment_status: "captured" } } }
+          select: { 
+            orders: { where: { payment_status: "captured" } },
+            purchased_books: true 
+          }
         }
       }
     });
 
-    if (!customer) return null;
+    if (!customerProfiles.length) return null;
+
+    // 2. Fetch the TRUE total spent across all orders (not just the recent 5)
+    // This looks across the Order table for any record linked to this User's Customer IDs
+    const totalSpentAgg = await prisma.order.aggregate({
+      where: { 
+        customer: { user_id: input.user_id },
+        payment_status: "captured" 
+      },
+      _sum: {
+        total_amount: true
+      }
+    });
+
+    // 3. Aggregate simple counts and combined recent orders
+    const aggregatedData = customerProfiles.reduce((acc, profile) => {
+      return {
+        totalPurchases: acc.totalPurchases + profile._count.orders,
+        booksOwned: acc.booksOwned + profile._count.purchased_books,
+        combinedRecent: [...acc.combinedRecent, ...profile.orders]
+      };
+    }, { totalPurchases: 0, booksOwned: 0, combinedRecent: [] as any[] });
+
+    // 4. Sort and limit the combined recent orders list globally
+    const finalRecentOrders = aggregatedData.combinedRecent
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, 5);
 
     return {
-      totalPurchases: customer._count.orders,
-      recentOrders: customer.orders,
-      // Total amount spent
-      totalSpent: customer.orders.reduce((acc, order) => acc + order.total_amount, 0),
+      totalPurchases: aggregatedData.totalPurchases,
+      booksOwned: aggregatedData.booksOwned,
+      recentOrders: finalRecentOrders,
+      totalSpent: totalSpentAgg._sum.total_amount || 0, // Now reflects full history
     };
+  });
+
+export const updateCustomer = publicProcedure
+  .input(updateCustomerSchema)
+  .mutation(async ({ input }) => {
+    const { id, first_name, last_name, username, email, phone_number } = input;
+
+    // 1. Uniqueness check: Ensure the new username/email isn't taken by someone else
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        OR: [{ username }, { email }],
+        NOT: {
+          customers: {
+            some: { id: id }
+          } // Exclude the customer we are currently editing
+        }
+      }
+    });
+
+    if (existingUser) {
+      const field = existingUser.email === email ? "Email" : "Username";
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: `${field} is already in use by another account.`
+      });
+    }
+
+    // 2. Perform the nested update
+    return await prisma.customer.update({
+      where: { id },
+      data: {
+        user: {
+          update: {
+            first_name,
+            last_name,
+            username,
+            email,
+            phone_number: phone_number ?? ""
+          }
+        }
+      },
+      include: { user: true }
+    });
   });

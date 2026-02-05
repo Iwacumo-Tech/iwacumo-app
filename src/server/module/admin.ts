@@ -23,12 +23,25 @@ import {
  * Provides high-level metrics for the Super Admin Dashboard
  */
 export const getGlobalPlatformStats = publicProcedure.query(async () => {
-  const [tenantCount, totalRevenue, orderCount] = await Promise.all([
-    // 1. Total Tenants count
-    prisma.tenant.count({
-      where: { deleted_at: null },
-    }),
-    // 2. Aggregate Revenue and Platform Fees
+  const [
+    tenantCount, 
+    bookCount, 
+    customerCount, 
+    salesData, 
+    orderCount,
+    recentOrders,
+    recentUsers
+  ] = await Promise.all([
+    // 1. Total Tenants (Publishers)
+    prisma.tenant.count({ where: { deleted_at: null } }),
+    
+    // 2. Total Books in Library
+    prisma.book.count({ where: { deleted_at: null } }),
+    
+    // 3. Total Active Customers (Tribe)
+    prisma.customer.count({ where: { deleted_at: null } }),
+
+    // 4. Aggregate Revenue and Platform Fees
     prisma.orderLineItem.aggregate({
       where: {
         order: { payment_status: "captured" },
@@ -38,21 +51,47 @@ export const getGlobalPlatformStats = publicProcedure.query(async () => {
         total_price: true,
       },
     }),
-    // 3. Successful Orders count
-    prisma.order.count({
+
+    // 5. Successful Orders count
+    prisma.order.count({ where: { payment_status: "captured" } }),
+
+    // 6. Recent Activity Source: Orders
+    prisma.order.findMany({
+      take: 5,
       where: { payment_status: "captured" },
+      orderBy: { created_at: 'desc' },
+      include: { customer: { select: { name: true } } }
     }),
+
+    // 7. Recent Activity Source: New Users
+    prisma.user.findMany({
+      take: 5,
+      orderBy: { created_at: 'desc' },
+      select: { id: true, first_name: true, created_at: true }
+    })
   ]);
 
-  // 4. Fetch Top Tenants
-  // FIXED: Removed 'publishers' from _count select as it was causing the 500 error.
-  // Using 'admin_users' and 'users' which Prisma confirmed are valid options.
+  // 8. Construct Unified Activity Stream
+  const activity = [
+    ...recentOrders.map(order => ({
+      id: order.id,
+      type: 'order',
+      description: `New order #${order.order_number?.slice(-6)} by ${order.customer?.name || 'Guest'}`,
+      timestamp: order.created_at,
+    })),
+    ...recentUsers.map(user => ({
+      id: user.id,
+      type: 'user',
+      description: `New member joined the tribe: ${user.first_name}`,
+      timestamp: user.created_at,
+    }))
+  ].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+
+  // 9. Fetch Top Tenants for the Dashboard List
   const topTenants = await prisma.tenant.findMany({
     take: 5,
     where: { deleted_at: null },
-    orderBy: {
-      created_at: 'desc'
-    },
+    orderBy: { created_at: 'desc' },
     include: {
       _count: {
         select: { 
@@ -65,18 +104,18 @@ export const getGlobalPlatformStats = publicProcedure.query(async () => {
 
   return {
     totalTenants: tenantCount,
-    platformTotalEarnings: totalRevenue._sum.platform_fee || 0,
-    totalGMV: totalRevenue._sum.total_price || 0,
+    totalBooks: bookCount,
+    totalCustomers: customerCount,
+    platformTotalEarnings: salesData._sum.platform_fee || 0,
+    totalGMV: salesData._sum.total_price || 0,
     successfulOrders: orderCount,
+    activity, // This feeds the new Zap Activity section
     topTenants: topTenants.map(tenant => ({
       ...tenant,
-      // Fallback: If your UI specifically looks for 'publishers', 
-      // we map the admin_users count to it for compatibility.
       publisherCount: tenant._count.admin_users 
     })),
   };
 });
-
 /**
  * Create a new AdminUser
  * AdminUsers are staff members who can have roles scoped to publishers
@@ -581,3 +620,20 @@ export async function hasAdminRole(
 
   return adminUser ? adminUser.roles.length > 0 : false;
 }
+
+export const toggleFeatured = publicProcedure
+  .input(z.object({ 
+    bookId: z.string(), 
+    featured: z.boolean(),
+    scope: z.enum(["global", "shop"]) 
+  }))
+  .mutation(async ({ input }) => {
+    const updateData = input.scope === "global" 
+      ? { featured: input.featured } 
+      : { featured_shop: input.featured };
+
+    return await prisma.book.update({
+      where: { id: input.bookId },
+      data: updateData
+    });
+  });

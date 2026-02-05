@@ -3,17 +3,8 @@
 import { useState, useEffect } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Trash2 } from "lucide-react";
+import { Trash2, ArrowLeft, CreditCard, ShoppingBag, Truck, Download, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -25,9 +16,12 @@ import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { useSession, signIn } from "next-auth/react";
 import { trpc } from "@/app/_providers/trpc-provider";
 import { useToast } from "@/components/ui/use-toast";
+import { cn } from "@/lib/utils";
 import DeliveryForm from "@/components/checkout/delivery-form";
 import GuestRegistrationForm from "@/components/checkout/guest-registration-form";
 import { TDeliveryAddressSchema, TCreateCustomerSchema } from "@/server/dtos";
+import { GUEST_CART_KEY, notifyCartUpdate } from "@/lib/cart-utils";
+import Link from "next/link";
 
 type CartItem = {
   id: string;
@@ -39,530 +33,386 @@ type CartItem = {
   total?: number;
 };
 
-const GUEST_CART_KEY = "guest_cart_items";
 
 export default function CartPage() {
-  const session = useSession();
+  const { data: session, status, update } = useSession();
   const router = useRouter();
   const { toast } = useToast();
   const utils = trpc.useUtils();
-  const userId = session.data?.user.id as string;
-  const isAuthenticated = !!userId;
 
-  // Fetch user cart items if authenticated
-  const { data: userCartItems, isLoading: cartLoading } = trpc.getCartsByUser.useQuery({
-    user_id: userId,
-  }, {
-    enabled: !!userId,
-  });
+  const userId = session?.user?.id as string;
+  const isAuthenticated = status === "authenticated";
 
-  // State for cart items (from DB or localStorage)
+  // --- QUERIES ---
+  const { data: userCartItems, isLoading: cartLoading } = trpc.getCartsByUser.useQuery(
+    { user_id: userId },
+    { enabled: !!userId && isAuthenticated }
+  );
+
+  // --- STATE ---
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [showCheckoutDialog, setShowCheckoutDialog] = useState(false);
   const [showRegistrationDialog, setShowRegistrationDialog] = useState(false);
-  const [deliveryInfo, setDeliveryInfo] = useState<TDeliveryAddressSchema | null>(null);
   const [requiresDelivery, setRequiresDelivery] = useState(false);
+  const [registrationPassword, setRegistrationPassword] = useState<string>("");
 
-  // Load cart items from localStorage for guests or from DB for authenticated users
+  // --- EFFECTS ---
   useEffect(() => {
     if (isAuthenticated && userCartItems) {
-      // Convert null quantities to undefined for consistency
-      const normalizedCartItems = userCartItems.map(item => ({
+      setCartItems(userCartItems.map(item => ({
         ...item,
         quantity: item.quantity ?? undefined,
-      }));
-      setCartItems(normalizedCartItems);
+      })));
     } else if (!isAuthenticated) {
-      // Load from localStorage for guests
       const storedCart = localStorage.getItem(GUEST_CART_KEY);
       if (storedCart) {
         try {
-          const parsedCart = JSON.parse(storedCart);
-          setCartItems(parsedCart);
+          setCartItems(JSON.parse(storedCart));
         } catch (error) {
-          console.error("Failed to parse cart from localStorage:", error);
           localStorage.removeItem(GUEST_CART_KEY);
         }
       }
     }
   }, [isAuthenticated, userCartItems]);
 
-  // Save guest cart to localStorage whenever it changes
   useEffect(() => {
-    if (!isAuthenticated && cartItems.length > 0) {
-      localStorage.setItem(GUEST_CART_KEY, JSON.stringify(cartItems));
-    } else if (isAuthenticated && cartItems.length === 0) {
-      // Clear localStorage when user logs in
-      localStorage.removeItem(GUEST_CART_KEY);
-    }
-  }, [cartItems, isAuthenticated]);
-
-  // Check if cart contains physical items (paperback or hardcover)
-  useEffect(() => {
-    const hasPhysicalItems = cartItems?.some(
-      (item) =>
+    const physical = cartItems?.some(item =>
         item.book_type.toLowerCase().includes("paper") ||
-        item.book_type.toLowerCase().includes("hard") ||
-        item.book_type === "Paper-back" ||
-        item.book_type === "Hard-cover"
+        item.book_type.toLowerCase().includes("hard")
     );
-    setRequiresDelivery(hasPhysicalItems || false);
+    setRequiresDelivery(physical || false);
   }, [cartItems]);
 
-  // Register guest and transfer cart mutation
-  const registerGuestMutation = trpc.registerGuestAndTransferCart.useMutation({
-    onSuccess: async (data) => {
-      // Sign in the newly created user using username or email
-      const username = data.user.username || data.user.email;
-      const result = await signIn("credentials", {
-        username: username,
-        password: registrationPassword,
-        redirect: false,
+  useEffect(() => {
+  const syncGuestCart = () => {
+    if (!isAuthenticated) {
+      const stored = localStorage.getItem(GUEST_CART_KEY);
+      setCartItems(stored ? JSON.parse(stored) : []);
+    }
+  };
+
+  window.addEventListener("cart-updated", syncGuestCart);
+  return () => window.removeEventListener("cart-updated", syncGuestCart);
+}, [isAuthenticated]);
+
+  // --- MUTATIONS: THE 1-2-DONE CHAIN ---
+
+  const initializePayment = trpc.initializePayment.useMutation({
+    onSuccess: (data) => {
+      if (data.authorization_url) {
+        window.location.href = data.authorization_url;
+      }
+    },
+    onError: (err) => {
+      toast({ title: "Payment Error", variant: "destructive", description: err.message });
+    }
+  });
+
+  const createOrderMutation = trpc.createOrderFromCart.useMutation({
+    onSuccess: (order) => {
+      
+      if (!order) {
+        toast({ 
+          title: "Order Error", 
+          variant: "destructive", 
+          description: "Order was created but could not be retrieved. Please check your dashboard." 
+        });
+        return;
+      }
+
+      // Now TypeScript knows 'order' definitely exists
+      initializePayment.mutate({
+        order_id: order.id,
+        email: session?.user?.email || (order as any).customer?.user?.email,
+        amount: order.total_amount,
+        currency: "NGN",
       });
 
-      // Clear password from memory
-      setRegistrationPassword("");
+      localStorage.removeItem(GUEST_CART_KEY);
+      utils.getCartsByUser.invalidate();
+    },
+    onError: (err) => {
+      toast({ title: "Order Failed", variant: "destructive", description: err.message });
+    }
+  });
+
+  const registerGuestMutation = trpc.registerGuestAndTransferCart.useMutation({
+    onSuccess: async (data) => {
+      const username = data.user.username || data.user.email;
+      const result = await signIn("credentials", {
+        username,
+        password: registrationPassword,
+        redirect: false, // Keep them on the page to finish the flow
+      });
 
       if (result?.ok) {
-        // Clear localStorage
+        // 1. Clear the password immediately
+        setRegistrationPassword("");
+        
+        // 2. Clear guest cart from disk
         localStorage.removeItem(GUEST_CART_KEY);
-        
-        toast({
-          title: "Success",
-          variant: "default",
-          description: "Account created successfully! Proceeding to checkout...",
-        });
 
-        // Refresh session
-        await session.update();
-        setShowRegistrationDialog(false);
+        if (update) {
+          await update(); 
+        }
         
-        // Wait a bit for session to update, then proceed with checkout
+        // 3. CRITICAL: Force a session refresh
+        // const newSession = await session.update(); 
+        
+        // 4. Close the dialog explicitly
+        setShowRegistrationDialog(false);
+
+        toast({ title: "Welcome to Booka!", description: "Account created. Finalizing your order..." });
+
+        // 5. Short delay to ensure the UI state (isAuthenticated) has flipped
         setTimeout(() => {
           if (requiresDelivery) {
             setShowCheckoutDialog(true);
           } else {
             proceedWithCheckout();
           }
-        }, 1000);
-      } else {
-        toast({
-          title: "Account Created",
-          variant: "default",
-          description: "Account created successfully. Please log in to continue.",
-        });
-        router.push("/login");
+        }, 800); 
       }
-    },
-    onError: (error) => {
-      setRegistrationPassword("");
-      toast({
-        title: "Registration Failed",
-        variant: "destructive",
-        description: error.message || "Failed to create account. Please try again.",
-      });
     },
   });
 
-  // Delete cart item mutation
   const deleteCartItemMutation = trpc.deleteCartItem.useMutation({
     onSuccess: () => {
-      toast({
-        title: "Success",
-        variant: "default",
-        description: "Item removed from cart",
-      });
-      if (isAuthenticated) {
-        utils.getCartsByUser.invalidate({ user_id: userId });
-      } else {
-        // Remove from localStorage
-        const updatedCart = cartItems.filter((item) => item.id !== deleteCartItemMutation.variables?.id);
-        setCartItems(updatedCart);
-      }
-    },
-    onError: (error) => {
-      toast({
-        title: "Error",
-        variant: "destructive",
-        description: error.message || "Failed to remove item from cart",
-      });
+      toast({ title: "Success", description: "Item removed from bag" });
+      utils.getCartsByUser.invalidate();
     },
   });
 
-  // Create order from cart mutation
-  const createOrderMutation = trpc.createOrderFromCart.useMutation({
-    onSuccess: (order) => {
-      toast({
-        title: "Success",
-        variant: "default",
-        description: `Order ${order?.order_number} created successfully!`,
-      });
-      // Invalidate cart query to refresh the cart
-      if (isAuthenticated) {
-        utils.getCartsByUser.invalidate({ user_id: userId });
-      }
-      // Redirect to order details page
-      router.push(`/orders/${order?.id}`);
-    },
-    onError: (error) => {
-      toast({
-        title: "Checkout Failed",
-        variant: "destructive",
-        description: error.message || "Failed to create order. Please try again.",
-      });
-    },
-  });
+  // --- HANDLERS ---
 
   const handleDeleteItem = (id: string) => {
-    if (confirm("Are you sure you want to remove this item from your cart?")) {
+    if (confirm("Remove this masterpiece from your bag?")) {
       if (isAuthenticated) {
         deleteCartItemMutation.mutate({ id });
       } else {
-        // Remove from localStorage
         const updatedCart = cartItems.filter((item) => item.id !== id);
         setCartItems(updatedCart);
-        toast({
-          title: "Success",
-          variant: "default",
-          description: "Item removed from cart",
-        });
+        localStorage.setItem(GUEST_CART_KEY, JSON.stringify(updatedCart));
+        window.dispatchEvent(new Event("cart-updated"));
       }
     }
   };
 
-  const handleCheckout = () => {
-    if (!cartItems || cartItems.length === 0) {
-      toast({
-        title: "Cart is Empty",
-        variant: "destructive",
-        description: "Please add items to your cart before checkout",
-      });
-      return;
-    }
-
-    // If user is not authenticated, show registration form
+  const updateQuantity = (id: string, newQty: number) => {
+    const qty = Math.max(1, newQty);
+    const updated = cartItems.map(item => item.id === id ? { ...item, quantity: qty } : item);
+    setCartItems(updated);
     if (!isAuthenticated) {
-      setShowRegistrationDialog(true);
-      return;
+      localStorage.setItem(GUEST_CART_KEY, JSON.stringify(updated));
+      window.dispatchEvent(new Event("cart-updated"));
     }
+    // Note: Authenticated quantity sync would require a separate mutation
+  };
 
-    // If cart contains physical items, show delivery form
-    if (requiresDelivery) {
-      setShowCheckoutDialog(true);
-      return;
-    }
-
-    // For digital-only orders, proceed directly
+  const handleCheckout = () => {
+    if (!cartItems.length) return;
+    if (!isAuthenticated) return setShowRegistrationDialog(true);
+    if (requiresDelivery) return setShowCheckoutDialog(true);
     proceedWithCheckout();
   };
 
-  const [registrationPassword, setRegistrationPassword] = useState<string>("");
-
   const handleGuestRegistration = async (data: TCreateCustomerSchema) => {
-    // Store password temporarily for sign-in (will be cleared after use)
-    if (data.password) {
-      setRegistrationPassword(data.password);
-    }
-    
-    // Prepare cart items for transfer
-    const cartItemsForTransfer = cartItems.map((item) => ({
-      book_image: item.book_image,
-      book_title: item.book_title,
-      book_type: item.book_type,
-      price: item.price,
-      quantity: item.quantity ?? 1,
-      total: item.total ?? item.price * (item.quantity ?? 1),
-    }));
-
+    if (data.password) setRegistrationPassword(data.password);
     registerGuestMutation.mutate({
       customer_data: data,
-      cart_items: cartItemsForTransfer,
+      cart_items: cartItems.map((item) => ({
+        book_image: item.book_image,
+        book_title: item.book_title,
+        book_type: item.book_type,
+        price: item.price,
+        quantity: item.quantity ?? 1,
+        total: (item.quantity ?? 1) * item.price,
+      })),
     });
   };
 
   const handleDeliverySubmit = (data: TDeliveryAddressSchema) => {
-    setDeliveryInfo(data);
     setShowCheckoutDialog(false);
     proceedWithCheckout(data);
   };
 
   const proceedWithCheckout = (deliveryData?: TDeliveryAddressSchema) => {
     if (!isAuthenticated || !userId) return;
-
-    // Calculate shipping amount if delivery is required
-    const shippingAmount = requiresDelivery ? calculateShipping() : 0;
-
-    // Create order from cart
+    const shipping = requiresDelivery ? (500 + (cartItems.length * 200)) : 0;
     createOrderMutation.mutate({
       user_id: userId,
-      tax_amount: 0, // Can be calculated based on location
-      shipping_amount: shippingAmount,
-      discount_amount: 0, // Can be applied if there are discount codes
-      currency: "NGN", // Or get from user preferences
+      tax_amount: 0,
+      shipping_amount: shipping,
+      discount_amount: 0,
+      currency: "NGN",
       channel: "web",
       requires_delivery: requiresDelivery,
       delivery_address: deliveryData || undefined,
-      notes: deliveryData
-        ? JSON.stringify({
-            delivery_address: deliveryData,
-            delivery_required: true,
-          })
-        : undefined,
     });
   };
 
-  const calculateShipping = (): number => {
-    // Simple shipping calculation - can be enhanced based on location, weight, etc.
-    // For now, return a fixed amount or calculate based on number of physical items
-    const physicalItemCount = cartItems?.filter(
-      (item) =>
-        item.book_type.toLowerCase().includes("paper") ||
-        item.book_type.toLowerCase().includes("hard") ||
-        item.book_type === "Paper-back" ||
-        item.book_type === "Hard-cover"
-    ).length || 0;
-
-    // Base shipping + per item cost
-    return 500 + physicalItemCount * 200; // ₦500 base + ₦200 per item
-  };
-
-  const updateQuantity = (id: string, quantity: number) => {
-    const newQuantity = Math.max(1, quantity);
-    if (isAuthenticated) {
-      // For authenticated users, update in DB (would need an update mutation)
-      setCartItems((items) =>
-        items?.map((item) =>
-          item.id === id ? { ...item, quantity: newQuantity } : item
-        )
-      );
-    } else {
-      // For guests, update in localStorage
-      setCartItems((items) =>
-        items?.map((item) =>
-          item.id === id ? { ...item, quantity: newQuantity, total: item.price * newQuantity } : item
-        )
-      );
-    }
-  };
-
-  const subtotal = cartItems?.reduce(
-    (sum, item) => sum + item.price * (item.quantity ?? 1),
-    0
-  );
-  const shipping = requiresDelivery ? calculateShipping() : 0;
+  const subtotal = cartItems?.reduce((sum, item) => sum + item.price * (item.quantity ?? 1), 0);
+  const shipping = requiresDelivery ? (500 + (cartItems.length * 200)) : 0;
   const total = subtotal + shipping;
 
-  if (cartLoading && isAuthenticated) {
-    return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="text-center">Loading cart...</div>
-      </div>
-    );
-  }
-
-  if (!cartItems || cartItems.length === 0) {
-    return (
-      <div className="container mx-auto px-4 py-8">
-        <h1 className="text-2xl font-bold mb-8">Shopping Cart</h1>
-        <div className="text-center py-12">
-          <p className="text-gray-500 mb-4">Your cart is empty</p>
-          <Button
-            onClick={() => router.push("/shop")}
-            className="bg-[#82d236] hover:bg-[#72bc2d]"
-          >
-            Continue Shopping
-          </Button>
-        </div>
-      </div>
-    );
-  }
+  if (cartLoading && isAuthenticated) return <div className="p-20 text-center font-black italic">FETCHING YOUR BAG...</div>;
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <h1 className="text-2xl font-bold mb-8">Shopping Cart</h1>
+    <div className="min-h-screen bg-[#FCFAEE] py-12 lg:py-20">
+      
+      {/* 1-2-DONE OPTIMIZED OVERLAY */}
+      {(createOrderMutation.isPending || initializePayment.isPending) && (
+        <div className="fixed inset-0 z-[100] bg-primary flex flex-col items-center justify-center text-white p-6">
+          <div className="w-24 h-24 border-8 border-white/20 border-t-accent animate-spin mb-8" />
+          <h2 className="text-4xl md:text-6xl font-black uppercase italic tracking-tighter text-center leading-none">
+            Securing Your <br /> Masterpiece<span className="text-accent">.</span>
+          </h2>
+          <p className="mt-6 font-bold uppercase tracking-[0.3em] text-xs animate-pulse">Redirecting to Paystack...</p>
+        </div>
+      )}
 
-      <div className="grid lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[50px]"></TableHead>
-                <TableHead className="w-[100px]">IMAGE</TableHead>
-                <TableHead>PRODUCT</TableHead>
-                <TableHead>PRICE</TableHead>
-                <TableHead>QUANTITY</TableHead>
-                <TableHead>TOTAL</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {cartItems?.map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="icon"
+      <div className="max-w-[95%] lg:max-w-[85%] mx-auto grid lg:grid-cols-3 gap-12">
+        
+        {/* LIST OF ITEMS */}
+        <div className="lg:col-span-2 space-y-8">
+          <div className="flex justify-between items-end border-b-4 border-black pb-6">
+            <h1 className="text-4xl md:text-7xl font-black uppercase italic tracking-tighter">
+              Bag<span className="text-accent">.</span>
+            </h1>
+            <Link href="/shop" className="text-xs font-black uppercase underline flex items-center gap-2 hover:text-accent transition-colors">
+              <ArrowLeft size={14} /> Back to Library
+            </Link>
+          </div>
+
+          <div className="space-y-4">
+            {cartItems.length === 0 ? (
+              <div className="py-20 text-center border-4 border-dashed border-black/10">
+                <p className="text-2xl font-black uppercase italic opacity-20">Your bag is empty.</p>
+                <Link href="/shop"><Button className="mt-4 booka-button-secondary">Go Shopping</Button></Link>
+              </div>
+            ) : cartItems.map((item) => (
+              <div key={item.id} className="bg-white border-2 border-black p-6 flex flex-col md:flex-row gap-6 items-center gumroad-shadow-sm group">
+                <div className="h-32 w-24 relative border-2 border-black shrink-0 overflow-hidden">
+                  <Image src={item.book_image} alt={item.book_title} fill className="object-cover group-hover:scale-105 transition-transform" />
+                </div>
+                <div className="flex-1 text-center md:text-left">
+                  <h3 className="text-xl font-black uppercase italic leading-tight">{item.book_title}</h3>
+                  <div className="flex items-center justify-center md:justify-start gap-2 mt-1">
+                    {item.book_type.toLowerCase().includes("paper") ? <Truck size={12} className="text-accent" /> : <Download size={12} className="text-accent" />}
+                    <p className="text-[10px] font-black uppercase tracking-widest opacity-50">{item.book_type}</p>
+                  </div>
+                </div>
+                <div className="flex items-center border-2 border-black bg-gray-50">
+                    <button onClick={() => updateQuantity(item.id, (item.quantity ?? 1) - 1)} className="px-4 py-2 font-black border-r-2 border-black hover:bg-white">-</button>
+                    <span className="px-6 font-black text-sm">{item.quantity}</span>
+                    <button onClick={() => updateQuantity(item.id, (item.quantity ?? 1) + 1)} className="px-4 py-2 font-black border-l-2 border-black hover:bg-white">+</button>
+                </div>
+                <div className="text-right min-w-[100px]">
+                    <p className="text-xl font-black italic">₦{(item.price * (item.quantity ?? 1)).toLocaleString()}</p>
+                    <button 
                       onClick={() => handleDeleteItem(item.id)}
-                      disabled={deleteCartItemMutation.isPending}
+                      className="text-[10px] font-black uppercase text-destructive hover:underline mt-2 flex items-center gap-1 ml-auto"
                     >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </TableCell>
-                  <TableCell>
-                    <div className="relative w-20 h-20">
-                      <Image
-                        src={item.book_image}
-                        alt={item.book_title}
-                        fill
-                        className="object-cover"
-                      />
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    {item.book_title} - {item.book_type}
-                  </TableCell>
-                  <TableCell>₦{item.price.toFixed(2)}</TableCell>
-                  <TableCell>
-                    <Input
-                      type="number"
-                      min="1"
-                      value={item.quantity as number}
-                      onChange={(e) =>
-                        updateQuantity(item.id, parseInt(e.target.value))
-                      }
-                      className="w-20"
-                    />
-                  </TableCell>
-                  <TableCell>
-                    ₦{(item.price * (item.quantity ?? 1) || 0).toFixed(2)}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+                      <Trash2 size={10} /> Remove
+                    </button>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
-        <div className="lg:col-span-1">
-          <Card>
-            <CardContent className="p-6">
-              <h2 className="text-xl font-semibold mb-6">Cart Summary</h2>
-              <div className="space-y-4">
-                <div className="flex justify-between">
-                  <span>Sub Total</span>
-                  <span className="text-[#82d236]">
-                    ₦{subtotal?.toFixed(2)}
+        {/* STICKY SUMMARY */}
+        <div className="lg:sticky lg:top-28 h-fit">
+          <Card className="bg-white border-4 border-black gumroad-shadow p-2 rounded-none">
+            <CardContent className="p-6 space-y-6">
+              <h3 className="text-xl font-black uppercase italic border-b-2 border-black pb-4">Order Summary</h3>
+              <div className="space-y-3">
+                <div className="flex justify-between font-bold uppercase text-xs opacity-50">
+                  <span>Subtotal</span>
+                  <span>₦{subtotal.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between font-bold uppercase text-xs">
+                  <span className="opacity-50">Shipping</span>
+                  <span className={cn(requiresDelivery ? "text-black" : "text-primary italic")}>
+                    {requiresDelivery ? `₦${shipping.toLocaleString()}` : "Instant Digital"}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span>Shipping Cost</span>
-                  <span className="text-[#82d236]">
-                    {requiresDelivery ? `₦${shipping.toFixed(2)}` : "Free"}
-                  </span>
-                </div>
-                {requiresDelivery && (
-                  <p className="text-xs text-gray-500 mt-2">
-                    * Delivery information required for physical items
-                  </p>
-                )}
-                <div className="flex justify-between text-lg font-bold">
-                  <span>Grand Total</span>
-                  <span className="text-[#82d236]">₦{total.toFixed(2)}</span>
+                <div className="pt-4 border-t-2 border-black flex justify-between items-end">
+                  <span className="font-black uppercase text-xs">Total</span>
+                  <span className="text-4xl font-black italic">₦{total.toLocaleString()}</span>
                 </div>
               </div>
             </CardContent>
-            <CardFooter className="flex-col gap-2 p-6">
-              <Button
-                className="w-full bg-[#82d236] hover:bg-[#72bc2d]"
+            <CardFooter className="p-6 pt-0 flex flex-col gap-4">
+              <Button 
                 onClick={handleCheckout}
-                disabled={
-                  createOrderMutation.isPending ||
-                  registerGuestMutation.isPending ||
-                  !cartItems ||
-                  cartItems.length === 0
-                }
+                disabled={createOrderMutation.isPending || cartItems.length === 0}
+                className="w-full booka-button-primary h-16 text-xl group"
               >
-                {createOrderMutation.isPending || registerGuestMutation.isPending
-                  ? "Processing..."
-                  : "CHECKOUT"}
+                Checkout <CreditCard className="ml-3 group-hover:rotate-12 transition-transform" />
               </Button>
-              {!isAuthenticated && (
-                <p className="text-xs text-gray-500 text-center mt-2">
-                  You'll be asked to create an account to complete checkout
-                </p>
-              )}
+              <div className="flex items-center justify-center gap-2 opacity-30 text-[8px] font-black uppercase tracking-widest">
+                <ShieldCheck size={12} /> Secure Checkout by Paystack
+              </div>
             </CardFooter>
           </Card>
         </div>
       </div>
 
-      {/* Guest Registration Dialog */}
+      {/* DIALOGS */}
+      {!isAuthenticated && (
       <Dialog open={showRegistrationDialog} onOpenChange={setShowRegistrationDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Create Account to Continue</DialogTitle>
-            <DialogDescription>
-              Please create an account to proceed with checkout. Your cart items will be saved.
+        <DialogContent className="max-w-2xl border-4 border-black rounded-none gumroad-shadow p-0 overflow-hidden flex flex-col max-h-[90vh]">
+          <DialogHeader className="p-6 border-b-2 border-black bg-[#FCFAEE]">
+            <DialogTitle className="text-2xl font-black uppercase italic tracking-tighter">
+              Join Booka to Continue<span className="text-accent">.</span>
+            </DialogTitle>
+            <DialogDescription className="font-bold text-[10px] uppercase opacity-60">
+              Create an account to save your library and proceed to checkout.
             </DialogDescription>
           </DialogHeader>
-          <GuestRegistrationForm
-            onSubmit={handleGuestRegistration}
-            isLoading={registerGuestMutation.isPending}
-          />
-          <div className="flex gap-2 justify-end mt-4 pt-4 border-t">
-            <Button
-              variant="outline"
-              onClick={() => setShowRegistrationDialog(false)}
-              disabled={registerGuestMutation.isPending}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              form="guest-registration-form"
-              disabled={registerGuestMutation.isPending}
-              className="bg-[#82d236] hover:bg-[#72bc2d]"
-            >
-              {registerGuestMutation.isPending ? "Creating Account..." : "Create Account & Continue"}
+
+          <div className="flex-1 overflow-y-auto p-6 bg-white">
+            <GuestRegistrationForm
+              onSubmit={handleGuestRegistration}
+              isLoading={registerGuestMutation.isPending}
+            />
+          </div>
+
+          <div className="flex gap-4 justify-end p-6 border-t-2 border-black bg-gray-50">
+            <Button variant="outline" onClick={() => setShowRegistrationDialog(false)} className="rounded-none border-2 border-black font-black uppercase text-xs h-12 px-6">Cancel</Button>
+            <Button type="submit" form="guest-registration-form" disabled={registerGuestMutation.isPending} className="booka-button-primary h-12 px-8 text-xs">
+                {registerGuestMutation.isPending ? "Creating..." : "Create Account & Continue"}
             </Button>
           </div>
         </DialogContent>
       </Dialog>
+      )}
 
-      {/* Checkout Dialog with Delivery Form */}
       <Dialog open={showCheckoutDialog} onOpenChange={setShowCheckoutDialog}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Complete Your Order</DialogTitle>
-            <DialogDescription>
-              Please provide delivery information for your physical items
-            </DialogDescription>
+        <DialogContent className="max-w-3xl border-4 border-black rounded-none gumroad-shadow p-0 overflow-hidden flex flex-col max-h-[90vh]">
+          <DialogHeader className="p-6 border-b-2 border-black bg-[#FCFAEE]">
+            <DialogTitle className="text-2xl font-black uppercase italic tracking-tighter">
+              Shipping Details<span className="text-accent">.</span>
+            </DialogTitle>
+            <DialogDescription className="font-bold text-[10px] uppercase opacity-60">Where should we send your physical copies?</DialogDescription>
           </DialogHeader>
-          <DeliveryForm
-            onSubmit={handleDeliverySubmit}
-            isLoading={createOrderMutation.isPending}
-            defaultValues={
-              session.data?.user?.email
-                ? {
-                    email: session.data.user.email,
-                    full_name: session.data.user.first_name || "",
-                  }
-                : undefined
-            }
-          />
-          <div className="flex gap-2 justify-end mt-4 pt-4 border-t">
-            <Button
-              variant="outline"
-              onClick={() => setShowCheckoutDialog(false)}
-              disabled={createOrderMutation.isPending}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              form="delivery-form"
-              disabled={createOrderMutation.isPending}
-              className="bg-[#82d236] hover:bg-[#72bc2d]"
-            >
-              {createOrderMutation.isPending ? "Processing..." : "Continue to Payment"}
+
+          <div className="flex-1 overflow-y-auto p-6 bg-white">
+            <DeliveryForm
+              onSubmit={handleDeliverySubmit}
+              isLoading={createOrderMutation.isPending}
+              defaultValues={session?.user?.email ? {
+                  email: session.user.email,
+                  full_name: `${session.user.first_name || ""} ${session.user.last_name || ""}`.trim(),
+              } : undefined}
+            />
+          </div>
+
+          <div className="flex gap-4 justify-end p-6 border-t-2 border-black bg-gray-50">
+            <Button variant="outline" onClick={() => setShowCheckoutDialog(false)} className="rounded-none border-2 border-black font-black uppercase text-xs h-12 px-6">Cancel</Button>
+            <Button type="submit" form="delivery-form" disabled={createOrderMutation.isPending} className="booka-button-primary h-12 px-8 text-xs">
+                {createOrderMutation.isPending ? "Processing..." : "Continue to Payment"}
             </Button>
           </div>
         </DialogContent>

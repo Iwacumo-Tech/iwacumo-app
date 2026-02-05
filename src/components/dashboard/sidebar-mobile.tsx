@@ -1,15 +1,15 @@
 "use client";
 
-import { Link, Sidebar } from ".";
-import { BaseSyntheticEvent, Fragment, SetStateAction } from "react";
+import { Fragment, SetStateAction } from "react";
 import { Dialog, Transition } from "@headlessui/react";
 import { FaChevronLeft } from "react-icons/fa";
+import { Sidebar } from "./sidebar";
+import { type Link } from "./dashboard-shell";
 
 interface SidebarMobileProps {
-  title?: string;
   sidebarOpen: boolean;
   setSidebarOpen: React.Dispatch<SetStateAction<boolean>>;
-  logout: (e?: BaseSyntheticEvent) => void;
+  logout: (e?: React.BaseSyntheticEvent) => void;
   links?: Link[];
 }
 
@@ -18,15 +18,10 @@ export const SidebarMobile: React.FC<SidebarMobileProps> = ({
   setSidebarOpen,
   logout,
   links = [],
-  title
 }) => {
   return (
     <Transition.Root show={sidebarOpen} as={Fragment}>
-      <Dialog
-        as="div"
-        className="relative z-50 lg:hidden"
-        onClose={setSidebarOpen}
-      >
+      <Dialog as="div" className="relative z-50 lg:hidden" onClose={setSidebarOpen}>
         <Transition.Child
           as={Fragment}
           enter="transition-opacity ease-linear duration-300"
@@ -36,7 +31,7 @@ export const SidebarMobile: React.FC<SidebarMobileProps> = ({
           leaveFrom="opacity-100"
           leaveTo="opacity-0"
         >
-          <div className="fixed inset-0 bg-gray-900/80" />
+          <div className="fixed inset-0 bg-black/60" />
         </Transition.Child>
 
         <div className="fixed inset-0 flex">
@@ -49,7 +44,7 @@ export const SidebarMobile: React.FC<SidebarMobileProps> = ({
             leaveFrom="translate-x-0"
             leaveTo="-translate-x-full"
           >
-            <Dialog.Panel className="relative mr-16 flex w-full max-w-xs flex-1">
+            <Dialog.Panel className="relative flex w-full max-w-xs flex-1 border-r-4 border-black bg-white">
               <Transition.Child
                 as={Fragment}
                 enter="ease-in-out duration-300"
@@ -59,22 +54,25 @@ export const SidebarMobile: React.FC<SidebarMobileProps> = ({
                 leaveFrom="opacity-100"
                 leaveTo="opacity-0"
               >
-                <div className="absolute -right-[0.5rem] bottom-24 flex justify-center">
+                <div className="absolute right-[-52px] top-4">
                   <button
                     type="button"
-                    className="bg-white border border-white border-solid rounded-tr-xl rounded-br-xl grid items-center absolute py-1.5 pr-1"
+                    className="bg-accent border-4 border-black flex items-center justify-center w-10 h-10 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
                     onClick={() => setSidebarOpen(false)}
                   >
                     <span className="sr-only">Close sidebar</span>
-                    <FaChevronLeft className="size-3" />
+                    <FaChevronLeft className="w-4 h-4" />
                   </button>
                 </div>
               </Transition.Child>
-              <Sidebar
-                title={title}
-                links={links}
-                logout={logout}
-              />
+
+              {/* Sidebar component inside the panel */}
+              <div className="flex flex-col w-full overflow-hidden">
+                <Sidebar
+                  links={links}
+                  logout={logout}
+                />
+              </div>
             </Dialog.Panel>
           </Transition.Child>
         </div>
@@ -82,4 +80,3 @@ export const SidebarMobile: React.FC<SidebarMobileProps> = ({
     </Transition.Root>
   );
 };
-

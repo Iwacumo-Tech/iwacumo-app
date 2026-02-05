@@ -1,128 +1,186 @@
-import { Author, Claim, Publisher, User } from "@prisma/client";
-import { Dispatch, SetStateAction, useState } from "react";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+"use client";
+
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
-import { editProfileSchema, TEditProfileSchema } from "@/server/dtos";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Textarea } from "@/components/ui/textarea";
-import { uploadImage } from "@/lib/server";
+import { editProfileSchema, TEditProfileSchema } from "@/server/dtos";
 import { trpc } from "@/app/_providers/trpc-provider";
-import { toast } from "@/components/ui/use-toast";
-import Image from "next/image";
+import { useToast } from "@/components/ui/use-toast";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
+import { useDebounce } from "@/hooks/use-debounce";
+import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { cn } from "@/lib/utils";
 
-interface ProfileProps {
-  user: (User & {author: Author | null; publisher: Publisher | null; claims: Claim[]}) | null | undefined;
-  setEditProfile: Dispatch<SetStateAction<boolean>>;
-}
-
-const ProfileEdit = ({ user, setEditProfile }: ProfileProps) => {
-  const form = useForm<TEditProfileSchema>({ resolver: zodResolver(editProfileSchema) });
-  const [file, setFile] = useState<File | null>(null);
+const ProfileEdit = ({ user, setEditProfile }: any) => {
+  const { toast } = useToast();
   const utils = trpc.useUtils();
+  const isPublisher = !!user?.publisher;
+  const isAuthor = !!user?.author;
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = event.target.files?.[0] || null;
+  const form = useForm<TEditProfileSchema>({
+    resolver: zodResolver(editProfileSchema),
+    defaultValues: {
+      first_name: user?.first_name || "",
+      last_name: user?.last_name || "",
+      username: user?.username || "",
+      bio: user?.publisher?.bio || user?.author?.bio || "",
+      phone_number: user?.phone_number || "",
+      organization_name: user?.publisher?.tenant?.name || "",
+    }
+  });
 
-    setFile(selectedFile);
-  };
+  const watchUsername = form.watch("username");
+  const debouncedValue = useDebounce(watchUsername, 500);
 
-  const updateUser = trpc.updateUserProfile.useMutation({
-    onSuccess: async () => {
-      toast({
-        title: "Success",
-        variant: "default",
-        description: "Successfully updated the book",
-      });
+  /**
+   * SEPARATE CHECKS:
+   * 1. If Publisher: Check Slug availability (normalized)
+   * 2. If Reader/Author: Check Username availability (raw)
+   */
+  const normalizedSlug = debouncedValue?.toLowerCase().trim().replace(/\s+/g, "-");
 
-      form.reset();
+  // Slug Check (Publishers)
+  const { data: slugStatus, isFetching: isCheckingSlug } = trpc.checkSlugAvailability.useQuery(
+    { slug: normalizedSlug },
+    { enabled: isPublisher && !!normalizedSlug && normalizedSlug !== user?.username?.toLowerCase() }
+  );
 
-      utils.getAllUsers.invalidate().then(() => {
-      });
+  // Username Check (Readers/Authors)
+  const { data: userStatus, isFetching: isCheckingUser } = trpc.checkUsernameAvailability.useQuery(
+    { username: debouncedValue },
+    { enabled: !isPublisher && !!debouncedValue && debouncedValue !== user?.username }
+  );
+
+  const updateProfile = trpc.updateUserProfile.useMutation({
+    onSuccess: () => {
+      toast({ title: "Profile Updated", description: "Changes saved successfully." });
+      utils.getUserById.invalidate();
+      setEditProfile(false);
     },
-    onError: (error) => {
-      console.error(error);
-
-      toast({
-        title: "Error",
-        variant: "destructive",
-        description: "Error updating the book",
-      });
-    },
+    onError: (err) => toast({ variant: "destructive", title: "Error", description: err.message })
   });
 
   const onSubmit = async (values: TEditProfileSchema) => {
-    const imageUrl = await uploadImage(file!);
+    // Publisher Validation
+    if (isPublisher && normalizedSlug !== user?.username?.toLowerCase() && slugStatus?.available === false) {
+      toast({ variant: "destructive", title: "Slug Taken", description: "This storefront URL is reserved." });
+      return;
+    }
 
-    updateUser.mutate({
-      ...values,
-      id: user?.id,
-      profilePicture: imageUrl
-    });
+    // Reader/Author Validation
+    if (!isPublisher && debouncedValue !== user?.username && userStatus?.available === false) {
+      toast({ variant: "destructive", title: "Username Taken", description: "This handle is already in use." });
+      return;
+    }
+    
+    updateProfile.mutate({ ...values, id: user?.id });
   };
 
+  const isPending = isCheckingSlug || isCheckingUser;
+  const isAvailable = isPublisher ? slugStatus?.available : userStatus?.available;
+
   return (
+    <div className="max-w-2xl space-y-10 animate-in fade-in slide-in-from-bottom-4">
+      <div className="flex items-center justify-between border-b-4 border-black pb-6">
+        <h2 className="text-4xl font-black uppercase italic tracking-tighter">
+          Edit Profile<span className="text-accent">.</span>
+        </h2>
+      </div>
 
-    <div>
-      <div>
-        <h2 className="my-8">Profile Edit</h2>
-
-        <div className="my-6 mb-16">
-          <div className="flex gap-2 items-center">
-            <div className="w-[52px] h-[52px] rounded-full bg-slate-100 flex items-center justify-center font-semibold">
-              {user?.author?.profile_picture ? <Image src={user.author.profile_picture} alt="img" className="w-full h-full object-cover rounded-full" width={100} height={100} /> : "JD"}
-            </div>
-            <div>
-              <label
-                htmlFor="fileUpload"
-                className="cursor-pointer w-full px-4 py-2 text-slate-100 rounded-md flex items-center gap-3"
-              >
-                <span className="bg-blue-700 p-1 text-sm rounded">Upload File</span>
-                {file && (
-                  <p className="mt-2 text-sm text-gray-700">
-                    {file.name}
-                  </p>
-                )}
-              </label>
-              <input
-                id="fileUpload"
-                type="file"
-                onChange={handleFileChange}
-                className="hidden"
-              />
-            </div>
-          </div>
-          <p className="text-slate-500 my-2 text-sm w-[500px]"><span className="text-yellow-400">Warning: </span> Please note that only JPEG and PNG image files are accepted. Any files in other formats will not be processed. </p>
-        </div>
-
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="w-[550px]">
-            <FormField
-              control={form.control}
-              name="bio"
-              //   defaultValue={user?.publisher?.id ? user.publisher.bio : user?.author?.bio}
-              render={({ field }) => (
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+          
+          {isPublisher && (
+            <div className="bg-accent border-4 border-black p-8 gumroad-shadow space-y-4">
+              <FormField control={form.control} name="organization_name" render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-700">Bio</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      placeholder="Talk about yourself..."
-                      {...field}
-                      className="border-gray-300 rounded-md h-32"
-                    />
-                  </FormControl>
+                  <FormLabel className="text-[10px] font-black uppercase tracking-widest">Storefront Name</FormLabel>
+                  <FormControl><Input className="booka-input-minimal bg-white" {...field} /></FormControl>
                   <FormMessage />
                 </FormItem>
-              )}
-            />
-            <div className="flex items-center gap-3">
-              <button disabled={form.formState.isSubmitting} type="submit" className="bg-green-500 text-white p-2 px-8 my-10 rounded-3xl">{form.formState.isSubmitting ? "Loading..." : "Submit"}</button>
-              <button onClick={() => setEditProfile(false)} className="bg-red-500 text-white p-2 px-8 my-10 rounded-3xl">Close</button>
+              )} />
+            </div>
+          )}
+
+          <div className="bg-white border-4 border-black p-8 gumroad-shadow space-y-6">
+            <div className="grid grid-cols-2 gap-6">
+              <FormField control={form.control} name="first_name" render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-[10px] font-black uppercase tracking-widest">First Name</FormLabel>
+                  <FormControl><Input className="booka-input-minimal" {...field} /></FormControl>
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="last_name" render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-[10px] font-black uppercase tracking-widest">Last Name</FormLabel>
+                  <FormControl><Input className="booka-input-minimal" {...field} /></FormControl>
+                </FormItem>
+              )} />
             </div>
 
-          </form>
-        </Form>
+            {/* IDENTITY FIELD: Toggle between Slug Label and Username Label */}
+            <FormField control={form.control} name="username" render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-[10px] font-black uppercase tracking-widest">
+                  {isPublisher ? "Storefront Slug" : "Username"}
+                </FormLabel>
+                <div className="relative">
+                  <FormControl>
+                    <Input 
+                      className={cn(
+                        "booka-input-minimal", 
+                        isAvailable === false && "border-red-500 bg-red-50"
+                      )} 
+                      {...field} 
+                    />
+                  </FormControl>
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                    {isPending ? <Loader2 className="animate-spin size-4 opacity-40" /> : 
+                     isAvailable ? <CheckCircle2 className="text-green-600 size-5" /> :
+                     isAvailable === false ? <AlertCircle className="text-red-600 size-5" /> : null}
+                  </div>
+                </div>
+                <FormMessage />
+                {isPublisher && (
+                  <p className="text-[9px] font-bold opacity-40 uppercase mt-1 italic">
+                    Public URL: booka.africa/{normalizedSlug || "..." }
+                  </p>
+                )}
+              </FormItem>
+            )} />
 
-      </div>
+            {isPublisher || isAuthor && 
+              (<FormField control={form.control} name="bio" render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-[10px] font-black uppercase tracking-widest">Biography</FormLabel>
+                  <FormControl><Textarea className="booka-input-minimal h-32" {...field} /></FormControl>
+                </FormItem>
+              )} />
+            )}
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-4 pt-6">
+            <Button 
+              type="submit" 
+              disabled={updateProfile.isPending || isAvailable === false} 
+              className="booka-button-primary h-16 text-lg flex-1"
+            >
+              {updateProfile.isPending ? <Loader2 className="animate-spin" /> : "Save Changes"}
+            </Button>
+            <Button 
+              type="button" 
+              onClick={() => setEditProfile(false)} 
+              variant="outline" 
+              className="h-16 border-4 border-black font-black uppercase italic px-10"
+            >
+              Discard
+            </Button>
+          </div>
+        </form>
+      </Form>
     </div>
   );
 };

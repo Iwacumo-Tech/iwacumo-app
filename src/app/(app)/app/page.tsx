@@ -2,193 +2,180 @@
 
 import { useSession } from "next-auth/react";
 import { trpc } from "@/app/_providers/trpc-provider";
-import Image from "next/image";
 import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { DataTable } from "@/components/table/data-table";
-import { deliveryColumns } from "@/components/deliveries/delivery-columns";
-import { Skeleton } from "@/components/ui/skeleton";
-import { BookOpen, Users, DollarSign, ShoppingCart, BarChart3, Star, ExternalLink } from "lucide-react";
+import { 
+  BookOpen, Users, DollarSign, ShoppingCart, Building2,
+  BarChart3, Star, ExternalLink, Zap, Package, ArrowRight,
+  Sparkles, Library
+} from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export default function AppPage() {
-  const session = useSession();
-  const userId = session.data?.user.id as string;
-  const userRoles = session.data?.roles || [];
+  const { data: session } = useSession();
+  const userId = session?.user?.id as string;
+  const userRoles = session?.roles || [];
 
-  // Role detection
   const isSuperAdmin = userRoles.some(r => r.name === "super-admin");
-  const isTenantAdmin = userRoles.some(r => r.name === "admin" || r.name === "tenant-admin");
   const isPublisher = userRoles.some(r => r.name === "publisher");
   const isAuthor = userRoles.some(r => r.name === "author");
-  const isCustomer = userRoles.some(r => r.name === "customer");
+  const isCustomer = session?.user?.isCustomer;
 
-  // Fetch role-specific data
-  const { data: globalStats, isLoading: globalLoading } = trpc.getGlobalPlatformStats.useQuery(undefined, { enabled: isSuperAdmin });
-  const { data: publisherStats, isLoading: pubLoading } = trpc.getPublisherDashboardStats.useQuery({ publisher_id: session.data?.user.publisher_id || "" }, { enabled: isPublisher });
-  const { data: authorStats, isLoading: authorLoading } = trpc.getAuthorDashboardStats.useQuery({ author_id: session.data?.user.author_id || "" }, { enabled: isAuthor });
-  
-  // Existing customer logic preserved
-  const { data: purchasedBooks, isLoading: booksLoading } = trpc.getPurchasedBooksByCustomer.useQuery(
-    { id: userId },
-    { enabled: !!userId && isCustomer }
-  );
+  // Fetch Stats (Scoped by Role)
+  const { data: globalStats } = trpc.getGlobalPlatformStats.useQuery(undefined, { enabled: isSuperAdmin });
+  const { data: publisherStats } = trpc.getPublisherDashboardStats.useQuery({ publisher_id: session?.user.publisher_id || "" }, { enabled: isPublisher });
+  const { data: authorStats } = trpc.getAuthorDashboardStats.useQuery({ author_id: session?.user.author_id || "" }, { enabled: isAuthor });
+  const { data: customerStats } = trpc.getCustomerDashboardStats.useQuery({ user_id: userId }, { enabled: !!isCustomer });
 
-  const { data: deliveries, isLoading: deliveriesLoading } = trpc.getDeliveriesByCustomer.useQuery(
-    { user_id: userId },
-    { enabled: !!userId && isCustomer }
-  );
+  // Activity stream normalization
+  const unifiedActivity = [
+    ...(globalStats?.activity || []),
+    ...(publisherStats?.recentOrders?.map(o => ({ description: `New order by ${o.customer?.name || 'Guest'}`, timestamp: o.created_at })) || []),
+    ...(authorStats?.recentReviews?.map(r => ({ description: `New review on "${r.book.title}"`, timestamp: r.created_at })) || []),
+    ...(customerStats?.recentOrders?.map(o => ({ description: `Purchased "${o.line_items[0]?.book_variant?.book?.title || 'a book'}"`, timestamp: o.created_at })) || [])
+  ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-  // Helper for stats cards
-  const StatCard = ({ title, value, icon: Icon, subtitle }: any) => (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
-        <Icon className="w-4 h-4 text-muted-foreground" />
-      </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
-        {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
-      </CardContent>
-    </Card>
-  );
-
-  if (isCustomer && !isPublisher && !isAuthor && !isSuperAdmin) {
-    return (
-      <div className="p-6 space-y-8">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold mb-2">
-              {isCustomer && !isPublisher && !isAuthor && !isSuperAdmin 
-                ? `Welcome back, ${session.data?.user.first_name}!` 
-                : `Hello, ${session.data?.user.first_name}`}
-            </h1>
-            <p className="text-muted-foreground">
-              {isCustomer ? "Your digital library and tracking" : "Management Overview"}
-            </p>
-          </div>
-            
-            {/* Visit Store Link */}
-            <Link 
-              href="/" 
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors w-fit shadow-sm"
-            >
-              <ExternalLink className="w-4 h-4" />
-              <span className="font-medium">Visit Store</span>
-            </Link>
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <StatCard title="My Books" value={purchasedBooks?.length || 0} icon={BookOpen} />
-          <StatCard title="Active Deliveries" value={deliveries?.filter(d => d.status !== 'delivered').length || 0} icon={ShoppingCart} />
-        </div>
-
-        <div>
-          <h2 className="text-2xl font-semibold mb-4">My Books</h2>
-          {booksLoading ? (
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="aspect-[4/5] w-full rounded-lg" />)}
-            </div>
-          ) : purchasedBooks && purchasedBooks.length > 0 ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-              {purchasedBooks.map((book) => (
-                <Link key={book.id} href={`/app/books/view/${book.id}`}>
-                  <Card className="hover:shadow-lg transition-shadow cursor-pointer h-full group">
-                    <div className="relative aspect-[4/5] w-full overflow-hidden rounded-t-lg">
-                      <Image
-                        src={book.book_cover || book.cover_image_url || "/bookcover.png"}
-                        alt={book.title}
-                        fill
-                        className="object-cover transition-transform group-hover:scale-105"
-                      />
-                    </div>
-                    <CardHeader className="p-3 pb-0 space-y-1">
-                      <p className="text-xs text-muted-foreground truncate">{book.author?.name || "Unknown Author"}</p>
-                      <h3 className="font-semibold leading-tight text-sm line-clamp-2">{book.title}</h3>
-                    </CardHeader>
-                    <CardContent className="p-3 pt-2">
-                       <div className="text-[10px] bg-primary/10 text-primary w-fit px-2 py-0.5 rounded">Digital Copy</div>
-                    </CardContent>
-                  </Card>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-12 border-2 border-dashed rounded-xl">
-              <p className="text-muted-foreground mb-4">You haven't purchased any books yet.</p>
-              <Link href="/shop" className="inline-block px-6 py-2 bg-primary text-white rounded-md">Browse Catalog</Link>
-            </div>
-          )}
-        </div>
+  const StatBox = ({ title, value, icon: Icon, color = "bg-white" }: any) => (
+    <div className={cn("border-4 border-primary p-6 gumroad-shadow transition-transform hover:-translate-y-1", color)}>
+      <div className="flex justify-between items-start mb-4">
+        <Icon className="w-8 h-8 text-primary" />
+        <span className="text-[10px] font-black uppercase tracking-widest opacity-40">{title}</span>
       </div>
-    );
-  }
+      <div className="text-3xl font-black italic tracking-tighter text-primary truncate">{value}</div>
+    </div>
+  );
 
-  // Dashboard for Staff (Admin/Publisher/Author)
   return (
-    <div className="p-6 space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold mb-2">Hello, {session.data?.user.first_name}</h1>
-        <p className="text-muted-foreground">Management Overview</p>
+    <div className="space-y-12">
+      {/* 1. Dynamic Header */}
+      <div className="flex flex-col md:flex-row justify-between items-end gap-6 border-b-4 border-primary pb-8">
+        <div>
+          <h1 className="text-4xl md:text-6xl font-black uppercase italic tracking-tighter">
+            {isSuperAdmin ? "Platform" : isPublisher ? "Publisher" : isAuthor ? "Author" : "Reader"} Portal<span className="text-accent">.</span>
+          </h1>
+          <p className="font-bold text-xs uppercase opacity-40 tracking-widest mt-2">
+            Status: {isSuperAdmin ? "Command" : isPublisher ? "Manage" : isAuthor ? "Create" : "Explore"} — {new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
+          </p>
+        </div>
+        <Link href="/shop" className="booka-button-secondary h-12 flex items-center gap-3">
+           <ExternalLink size={16} /> Visit Market
+        </Link>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      {/* 2. Intelligent Metric Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+        {/* SUPER ADMIN VIEW */}
         {isSuperAdmin && (
           <>
-            <StatCard title="Total Tenants" value={globalStats?.totalTenants || 0} icon={Users} />
-            <StatCard title="Total GMV" value={`₦${(globalStats?.totalGMV || 0).toLocaleString()}`} icon={BarChart3} />
-            <StatCard title="Platform Fees" value={`₦${(globalStats?.platformTotalEarnings || 0).toLocaleString()}`} icon={DollarSign} />
-            <StatCard title="Success Orders" value={globalStats?.successfulOrders || 0} icon={ShoppingCart} />
+            <StatBox title="Publishers" value={globalStats?.totalTenants || 0} icon={Building2} color="bg-accent" />
+            <StatBox title="Global Books" value={globalStats?.totalBooks || 0} icon={BookOpen} />
+            <StatBox title="Global GMV" value={`₦${(globalStats?.totalGMV || 0).toLocaleString()}`} icon={BarChart3} />
+            <StatBox title="Platform Cut" value={`₦${(globalStats?.platformTotalEarnings || 0).toLocaleString()}`} icon={DollarSign} />
           </>
         )}
+
+        {/* PUBLISHER VIEW (Only if not Super Admin, to avoid clutter) */}
         {isPublisher && !isSuperAdmin && (
           <>
-            <StatCard title="Total Authors" value={publisherStats?.totalAuthors || 0} icon={Users} />
-            <StatCard title="Books in Catalog" value={publisherStats?.totalBooks || 0} icon={BookOpen} />
-            <StatCard title="Net Earnings" value={`₦${(publisherStats?.totalEarnings || 0).toLocaleString()}`} icon={DollarSign} />
-            <StatCard title="Total Revenue" value={`₦${(publisherStats?.totalRevenue || 0).toLocaleString()}`} icon={BarChart3} />
+            <StatBox title="Authors" value={publisherStats?.totalAuthors || 0} icon={Users} color="bg-accent" />
+            <StatBox title="Sales" value={publisherStats?.recentOrders?.length || 0} icon={Package} />
+            <StatBox title="Net Profit" value={`₦${(publisherStats?.totalEarnings || 0).toLocaleString()}`} icon={DollarSign} />
+            <StatBox title="Revenue" value={`₦${(publisherStats?.totalRevenue || 0).toLocaleString()}`} icon={BarChart3} />
           </>
         )}
-        {isAuthor && !isPublisher && !isSuperAdmin && (
+
+        {/* AUTHOR VIEW */}
+        {isAuthor && (
           <>
-            <StatCard title="My Books" value={authorStats?.totalBooks || 0} icon={BookOpen} />
-            <StatCard title="Accrued Royalties" value={`₦${(authorStats?.totalEarnings || 0).toLocaleString()}`} icon={DollarSign} />
-            <StatCard title="Generated Revenue" value={`₦${(authorStats?.totalRevenueGenerated || 0).toLocaleString()}`} icon={BarChart3} />
+            <StatBox title="Published" value={authorStats?.totalBooks || 0} icon={BookOpen} color="bg-[#82d236]" />
+            <StatBox title="Reviews" value={authorStats?.recentReviews?.length || 0} icon={Star} />
+            <StatBox title="Earnings" value={`₦${(authorStats?.totalEarnings || 0).toLocaleString()}`} icon={DollarSign} />
+            <StatBox title="Gross" value={`₦${(authorStats?.totalRevenueGenerated || 0).toLocaleString()}`} icon={BarChart3} />
           </>
+        )}
+
+        {/* CUSTOMER VIEW (The converted reader) */}
+        {isCustomer ? (
+          <>
+            <StatBox title="Library" value={customerStats?.booksOwned || 0} icon={Library} color="bg-accent" />
+            <StatBox title="Spent" value={`₦${(customerStats?.totalSpent || 0).toLocaleString()}`} icon={DollarSign} />
+            <StatBox title="Purchases" value={customerStats?.totalPurchases || 0} icon={ShoppingCart} />
+            <StatBox title="Recent" value={customerStats?.recentOrders?.length || 0} icon={Package} />
+          </>
+        ) : (!isAuthor && !isPublisher && !isSuperAdmin) && (
+          /* GUEST READER VIEW (Onboarding State) */
+          <div className="col-span-full bg-accent border-4 border-primary p-10 gumroad-shadow flex flex-col md:flex-row items-center justify-between gap-8">
+            <div className="space-y-4 text-center md:text-left">
+              <div className="inline-flex items-center gap-2 bg-white px-3 py-1 border-2 border-primary font-black uppercase text-[10px]">
+                <Sparkles size={12} className="text-accent" /> New Member
+              </div>
+              <h2 className="text-4xl font-black uppercase italic tracking-tighter">Your Library is waiting<span className="text-white">.</span></h2>
+              <p className="font-bold text-sm max-w-md">You haven't purchased any books yet. Explore the marketplace to start building your digital collection.</p>
+            </div>
+            <Link href="/shop" className="booka-button-primary h-16 px-10 text-lg flex items-center gap-3">
+              Browse Books <ArrowRight size={20} />
+            </Link>
+          </div>
         )}
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent Activity</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isAuthor && authorStats?.recentReviews && authorStats.recentReviews.length > 0 ? (
-            <div className="space-y-4">
-              {authorStats.recentReviews.map((review) => (
-                <div key={review.id} className="flex items-start gap-4 p-3 border rounded-lg">
-                  <div className="bg-yellow-100 p-2 rounded-full">
-                    <Star className="w-4 h-4 text-yellow-600 fill-yellow-600" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">New Review on <span className="text-primary">{review.book.title}</span></p>
-                    <p className="text-xs text-muted-foreground mt-1 italic">"{review.comment}"</p>
-                    <div className="flex items-center gap-1 mt-2">
-                       {Array.from({ length: 5 }).map((_, i) => (
-                         <Star key={i} className={`w-3 h-3 ${i < review.rating ? "fill-yellow-500 text-yellow-500" : "text-gray-300"}`} />
-                       ))}
-                    </div>
-                  </div>
-                  <span className="text-[10px] text-muted-foreground">
-                    {new Date(review.created_at).toLocaleDateString()}
-                  </span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">No recent activity to show.</p>
-          )}
-        </CardContent>
-      </Card>
+      {/* 3. Activity & Next Steps */}
+      <div className="grid lg:grid-cols-3 gap-12">
+        <div className="lg:col-span-2 space-y-6">
+          <h3 className="text-xl font-black uppercase italic flex items-center gap-3">
+            <Zap className="text-accent fill-accent" /> Pulse Feed
+          </h3>
+          <div className="space-y-4">
+            {unifiedActivity.length > 0 ? (
+              <div className="border-4 border-primary bg-white gumroad-shadow">
+                {unifiedActivity.slice(0, 5).map((item: any, i: number) => (
+                   <div key={i} className="p-6 border-b-2 border-primary last:border-0 flex justify-between items-center hover:bg-accent/5 transition-colors group cursor-default">
+                      <div className="flex gap-4 items-center">
+                        <div className="w-2 h-2 rounded-full bg-accent" />
+                        <div>
+                          <p className="font-black uppercase text-sm italic">{item.description}</p>
+                          <p className="text-[10px] font-bold opacity-40 uppercase">
+                            {new Date(item.timestamp).toLocaleDateString()} — {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+                      </div>
+                   </div>
+                ))}
+              </div>
+            ) : (
+              <div className="border-4 border-dashed border-primary/20 p-20 text-center">
+                 <p className="font-black uppercase italic opacity-20 text-2xl">Awaiting Activity...</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <aside className="space-y-6">
+           <h3 className="text-xl font-black uppercase italic">Actions</h3>
+           <div className="bg-primary text-white p-8 gumroad-shadow space-y-6">
+              <ul className="space-y-4">
+                 {(isPublisher || isAuthor) && (
+                  <li>
+                    <Link href="/app/books" className="text-sm font-bold uppercase italic hover:text-accent transition-colors flex items-center gap-2">
+                      <ArrowRight size={12} /> Manage My Catalog
+                    </Link>
+                  </li>
+                 )}
+                 {isCustomer && (
+                   <li>
+                    <Link href="/app/library" className="text-sm font-bold uppercase italic hover:text-accent transition-colors flex items-center gap-2">
+                      <ArrowRight size={12} /> Open My Library
+                    </Link>
+                  </li>
+                 )}
+                 <li>
+                    <Link href="/app/profile" className="text-sm font-bold uppercase italic hover:text-accent transition-colors flex items-center gap-2">
+                      <ArrowRight size={12} /> Update Identity
+                    </Link>
+                 </li>
+              </ul>
+           </div>
+        </aside>
+      </div>
     </div>
   );
 }
