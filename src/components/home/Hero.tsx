@@ -4,127 +4,143 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { MoveRight, Sparkles, BookOpen, Globe, Zap } from "lucide-react";
 
 export default function Hero() {
   return (
-    <section className="relative border-b-4 border-black overflow-hidden bg-[#FCFAEE]">
-      {/* Background Decorative Patterns */}
-      <div className="absolute top-0 right-0 w-1/2 h-full bg-[#1B4332]/5 -skew-x-12 translate-x-32 hidden lg:block" />
+    <section className="relative bg-[#FAF9F6] pt-16 pb-24 lg:pt-28 lg:pb-40 overflow-hidden border-b-[1.5px] border-black">
+      
+      {/* 1. Subtle Background Depth */}
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute top-[-10%] right-[-5%] w-[600px] h-[600px] bg-accent/20 rounded-full blur-[120px]" />
+        <div className="absolute bottom-[-10%] left-[-5%] w-[400px] h-[400px] bg-black/5 rounded-full blur-[100px]" />
+      </div>
 
-      <div className="max-w-[95%] lg:max-w-[90%] mx-auto grid lg:grid-cols-2 min-h-[85vh] items-center gap-16 py-16 lg:py-0">
-        
-        {/* Left Side: Copy */}
-        <div className="space-y-10 z-20 relative text-center lg:text-left">
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-          >
-            <h1 className="text-6xl sm:text-7xl md:text-8xl font-black uppercase italic leading-[0.85] tracking-tighter">
-              Publish <br /> 
-              <span className="text-primary not-italic">Beyond</span> <br /> 
-              Limits<span className="text-accent">.</span>
-            </h1>
-            <p className="mt-8 text-lg md:text-2xl font-bold max-w-xl mx-auto lg:mx-0 leading-tight opacity-90">
-              The premium marketplace for African storytellers. Reach global readers with E-books and high-quality print.
-            </p>
-          </motion.div>
-
-          <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
-            <Link href="/shop" className="w-full sm:w-auto">
-              <Button className="booka-button-primary w-full text-xl h-16 px-10">
-                Explore Shop
-              </Button>
-            </Link>
-            <Link href="/register" className="w-full sm:w-auto">
-              <Button className="booka-button-secondary w-full text-xl h-16 px-10">
-                Start Selling
-              </Button>
-            </Link>
-          </div>
-        </div>
-
-        {/* Right Side: Visual Collage */}
-        <div className="relative h-[450px] sm:h-[600px] lg:h-full flex items-center justify-center pt-10 lg:pt-0">
+      {/* 2. Increased Max-Width Container */}
+      <div className="max-w-[1280px] mx-auto px-6 md:px-12 relative">
+        <div className="grid lg:grid-cols-[1.1fr_0.9fr] gap-12 lg:gap-24 items-center">
           
-          {/* Central Glow */}
-          <div className="absolute w-64 h-64 bg-accent/30 rounded-full blur-[100px]" />
-
-          <div className="relative w-full max-w-[320px] sm:max-w-[400px] aspect-[3/4]">
-            
-            {/* 1. The "Hardcover" (Main Bottom Layer) */}
+          {/* Left Side: Massive Typography */}
+          <div className="relative z-20 text-center lg:text-left order-2 lg:order-1">
             <motion.div 
-              initial={{ rotate: -5, x: -20, opacity: 0 }}
-              animate={{ rotate: -8, x: -30, opacity: 1 }}
-              transition={{ delay: 0.2, duration: 0.8 }}
-              className="absolute inset-0 border-4 border-black bg-[#1B4332] gumroad-shadow flex items-center justify-center"
+              initial={{ opacity: 0, x: -30 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
             >
-                <div className="p-4 text-center">
-                    <div className="w-12 h-1 bg-accent mx-auto mb-4" />
-                    <p className="text-white font-black uppercase text-xs tracking-[0.2em]">Hardcover Edition</p>
-                </div>
+              <div className="inline-flex items-center gap-2 bg-black text-accent px-4 py-1.5 rounded-full text-[10px] md:text-[11px] font-black uppercase tracking-[0.25em] mb-10 gumroad-shadow-sm">
+                <Sparkles size={14} className="animate-pulse" /> Africa's Digital Bookstore
+              </div>
+
+              <h1 className="text-6xl sm:text-8xl md:text-[6.5rem] lg:text-[8rem] font-black uppercase italic leading-[0.82] tracking-tighter text-black">
+                Write <br /> 
+                <span className="text-accent not-italic drop-shadow-[2px_2px_0px_#000]">Your</span> <br /> 
+                Fortune<span className="text-accent">.</span>
+              </h1>
+
+              <p className="mt-8 text-lg md:text-2xl font-bold max-w-xl mx-auto lg:mx-0 leading-tight text-black/80">
+                The high-performance publishing engine for African storytellers. Reach global readers instantly.
+              </p>
             </motion.div>
 
-            {/* 2. The "E-Book" Tablet (Middle Layer) */}
             <motion.div 
-              initial={{ rotate: 5, x: 20, opacity: 0 }}
-              animate={{ rotate: 4, x: 10, opacity: 1 }}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.4, duration: 0.8 }}
-              className="absolute inset-0 border-4 border-black bg-white gumroad-shadow overflow-hidden"
+              className="flex flex-col sm:flex-row gap-4 mt-12 justify-center lg:justify-start"
             >
-              <div className="h-full w-full flex flex-col">
-                <div className="h-full bg-gray-100 flex items-center justify-center p-6 border-b-4 border-black">
-                   <div className="w-full h-full bg-accent/20 border-2 border-dashed border-black/20 flex items-center justify-center font-black italic text-black/20 text-4xl">
-                     PREVIEW
-                   </div>
-                </div>
-                <div className="p-4 bg-white">
-                   <div className="h-2 w-1/2 bg-black mb-2" />
-                   <div className="h-2 w-full bg-black/10" />
-                </div>
-              </div>
+              <Link href="/shop" className="w-full sm:w-auto">
+                <Button className="booka-button-primary h-16 px-12 text-lg group w-full">
+                  Explore Shop <MoveRight className="ml-2 group-hover:translate-x-2 transition-transform" />
+                </Button>
+              </Link>
+              <Link href="/register" className="w-full sm:w-auto">
+                <Button className="booka-button-secondary h-16 px-12 text-lg w-full">
+                  Start Selling
+                </Button>
+              </Link>
             </motion.div>
-
-            {/* 3. The "Hero Book" (Top Layer) */}
-            <motion.div 
-              whileHover={{ scale: 1.02, rotate: 0 }}
-              className="absolute inset-0 border-4 border-black bg-white gumroad-shadow-sm overflow-hidden flex flex-col cursor-pointer z-10"
-            >
-              <div className="flex-1 bg-gradient-to-br from-gray-50 to-gray-200 relative">
-                 <div className="absolute inset-0 flex flex-col justify-end p-6 bg-gradient-to-t from-black/90 via-black/40 to-transparent text-white">
-                    <span className="bg-accent text-black self-start px-2 py-0.5 text-[10px] font-black uppercase mb-3 border-2 border-black">New Release</span>
-                    <h3 className="text-2xl sm:text-3xl font-black uppercase italic leading-none mb-1">Revelation</h3>
-                    <p className="text-sm font-bold opacity-80 uppercase tracking-widest">Israel Ayeni</p>
-                 </div>
-              </div>
-            </motion.div>
-
-            {/* 4. Floating "100% Royalty" Badge */}
-            <motion.div 
-              animate={{ 
-                y: [0, -12, 0],
-                rotate: [-12, -8, -12] 
-              }}
-              transition={{ repeat: Infinity, duration: 5, ease: "easeInOut" }}
-              className={cn(
-                "absolute z-20 -top-8 -right-8 sm:-top-12 sm:-right-12",
-                "w-24 h-24 sm:w-32 sm:h-32 rounded-full bg-accent border-4 border-black",
-                "gumroad-shadow flex flex-col items-center justify-center text-center p-2"
-              )}
-            >
-              <span className="text-[10px] sm:text-xs font-black uppercase leading-none">Up to</span>
-              <span className="text-xl sm:text-3xl font-black italic leading-none">100%</span>
-              <span className="text-[10px] sm:text-xs font-black uppercase leading-none">Royalty</span>
-            </motion.div>
-
-            {/* 5. Mini "Verified" Circle */}
-            <div className="absolute -bottom-4 -left-4 z-20 w-12 h-12 bg-primary rounded-full border-4 border-black flex items-center justify-center text-accent">
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={4}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-            </div>
-
           </div>
+
+          {/* Right Side: The "Dynamic Prism" Concept */}
+          <div className="relative flex items-center justify-center order-1 lg:order-2 py-12 lg:py-0">
+            <div className="relative w-full max-w-[500px] aspect-square flex items-center justify-center">
+              
+              {/* Layer 1: The "Global Reach" Ring */}
+              <motion.div 
+                animate={{ rotate: 360 }}
+                transition={{ repeat: Infinity, duration: 20, ease: "linear" }}
+                className="absolute inset-0 border-[1.5px] border-dashed border-black/20 rounded-full"
+              />
+
+              {/* Layer 2: Floating Feature Cards */}
+              
+              {/* Digital Card */}
+              <motion.div 
+                animate={{ y: [0, -15, 0], x: [0, 5, 0] }}
+                transition={{ repeat: Infinity, duration: 5, ease: "easeInOut" }}
+                className="absolute top-[10%] left-[10%] w-32 h-32 sm:w-44 sm:h-44 bg-accent border-[1.5px] border-black rounded-[var(--radius)] gumroad-shadow rotate-[-12deg] z-30 flex flex-col items-center justify-center p-4 text-center"
+              >
+                <Zap className="mb-2" size={28} />
+                <p className="font-black uppercase italic text-[10px] sm:text-xs leading-none">Instant <br /> Delivery</p>
+              </motion.div>
+
+              {/* Global Card */}
+              <motion.div 
+                animate={{ y: [0, 15, 0], x: [0, -5, 0] }}
+                transition={{ repeat: Infinity, duration: 6, ease: "easeInOut", delay: 0.5 }}
+                className="absolute bottom-[10%] right-[5%] w-32 h-32 sm:w-48 sm:h-48 bg-black border-[1.5px] border-accent rounded-[var(--radius)] gumroad-shadow rotate-[8deg] z-10 flex flex-col items-center justify-center p-4 text-center text-white"
+              >
+                <Globe className="mb-2 text-accent" size={32} />
+                <p className="font-black uppercase italic text-[10px] sm:text-xs leading-none tracking-widest">Global <br /> Audience</p>
+              </motion.div>
+
+              {/* Central Core: The "Booka" Totem */}
+              <motion.div 
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ duration: 1 }}
+                className="relative w-48 h-64 sm:w-64 sm:h-80 bg-white border-[1.5px] border-black rounded-[var(--radius)] gumroad-shadow-sm overflow-hidden flex flex-col z-20"
+              >
+                <div className="flex-1 bg-accent/10 flex items-center justify-center p-8 border-b-[1.5px] border-black">
+                  <div className="relative group">
+                    <BookOpen size={64} className="text-black transition-transform group-hover:scale-110" />
+                    <motion.div 
+                      animate={{ scale: [1, 1.2, 1], opacity: [0.5, 0, 0.5] }}
+                      transition={{ repeat: Infinity, duration: 2 }}
+                      className="absolute inset-0 bg-accent rounded-full -z-10 blur-xl"
+                    />
+                  </div>
+                </div>
+                <div className="p-4 sm:p-6 bg-white">
+                  <div className="h-1.5 w-12 bg-black mb-3" />
+                  <p className="text-sm sm:text-lg font-black uppercase italic leading-none tracking-tighter">Your Legacy Starts Here.</p>
+                </div>
+              </motion.div>
+
+              {/* Decorative Floating Dots */}
+              {[...Array(6)].map((_, i) => (
+                <motion.div
+                  key={i}
+                  animate={{ 
+                    scale: [1, 1.5, 1],
+                    opacity: [0.3, 0.8, 0.3]
+                  }}
+                  transition={{ 
+                    repeat: Infinity, 
+                    duration: 2 + i,
+                    delay: i * 0.2
+                  }}
+                  className="absolute w-2 h-2 bg-black rounded-full"
+                  style={{
+                    top: `${Math.random() * 100}%`,
+                    left: `${Math.random() * 100}%`,
+                  }}
+                />
+              ))}
+
+            </div>
+          </div>
+
         </div>
       </div>
     </section>

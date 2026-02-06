@@ -28,6 +28,20 @@
     --radius: 0.75rem;             /* Modern "Extra-Large" rounding */
   }
 
+  html {
+    /* Sets the baseline for 1rem. 
+       93.75% = 15px (Down from 16px). 
+       This subtle 1px shift usually fixes that "120% zoom" feeling immediately. */
+    font-size: 70%; 
+  }
+
+  /* Optional: On very large screens, you might want to bring it down even more */
+  @media (min-width: 1440px) {
+    html {
+      font-size: 80%; /* 14px baseline for ultra-wide desktops */
+    }
+  }
+
   body {
     @apply bg-[#FAF9F6] text-foreground selection:bg-accent selection:text-black antialiased;
   }
@@ -62,21 +76,21 @@
 
   /* Robust, Curvy Buttons */
   .booka-button-primary {
-    @apply bg-accent border-[1.5px] border-black text-black font-bold uppercase px-8 py-4 
-           rounded-[var(--radius)] transition-all hover:bg-[#FFE833]
-           gumroad-shadow hover:translate-y-[1px] hover:shadow-none active:translate-y-[2px];
+    @apply bg-accent border-[1.5px] border-black text-black font-bold uppercase px-6 py-3 
+           text-xs tracking-wider rounded-[var(--radius)] transition-all hover:bg-[#FFE833]
+           gumroad-shadow-sm hover:translate-y-[1px] hover:shadow-none active:translate-y-[2px];
   }
 
   .booka-button-secondary {
-    @apply bg-white border-[1.5px] border-black text-black font-bold uppercase px-8 py-4 
-           rounded-[var(--radius)] transition-all
-           gumroad-shadow hover:translate-y-[1px] hover:shadow-none;
+    @apply bg-white border-[1.5px] border-black text-black font-bold uppercase px-6 py-3 
+           text-xs tracking-wider rounded-[var(--radius)] transition-all
+           gumroad-shadow-sm hover:translate-y-[1px] hover:shadow-none;
   }
 
   /* Soft Stat Cards */
   .booka-stat-card {
-    @apply bg-white border-[1.5px] border-black p-6 rounded-[var(--radius)] 
-           transition-all hover:translate-y-[-2px] hover:shadow-[0px_8px_20px_-10px_rgba(0,0,0,0.15)];
+    @apply bg-white border-[1.5px] border-black p-5 rounded-[var(--radius)] 
+           transition-all hover:translate-y-[-2px];
   }
 
   /* Product Cards: The "Curvy" Look */
