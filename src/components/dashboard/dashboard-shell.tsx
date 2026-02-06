@@ -59,7 +59,7 @@ export default function DashboardShell({
 
       {/* Desktop Persistent Sidebar */}
       <aside className="hidden lg:flex lg:fixed lg:inset-y-0 lg:z-50 lg:w-72 lg:flex-col border-r-4 border-black bg-white">
-        <Sidebar links={links} logout={logout} />
+        <Sidebar links={links} logout={logout} setIsOpen={setSidebarOpen} />
       </aside>
 
       {/* Main Content Area */}

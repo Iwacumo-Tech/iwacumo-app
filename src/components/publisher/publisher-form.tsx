@@ -7,8 +7,6 @@ import { Button } from "@/components/ui/button";
 import { 
   createPublisherSchema, 
   updatePublisherSchema,
-  TCreatePublisherSchema,
-  TupdatePublisherSchema 
 } from "@/server/dtos";
 import {
   Dialog,
@@ -27,14 +25,13 @@ import {
 } from "@/components/ui/form";
 import { useToast } from "@/components/ui/use-toast";
 import { trpc } from "@/app/_providers/trpc-provider";
-import { Publisher } from "@prisma/client";
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { Loader2, CheckCircle2, AlertCircle, Building2, User } from "lucide-react";
+import { Loader2, CheckCircle2, AlertCircle, Building2, User, Lock, Fingerprint } from "lucide-react";
 import { useDebounce } from "@/hooks/use-debounce";
 
 interface PublisherFormProps {
-  publisher?: any; // Using any to handle nested tenant data from columns
+  publisher?: any; 
   action: "Add" | "Edit";
   trigger?: React.ReactNode;
 }
@@ -45,7 +42,7 @@ const PublisherForm = ({ publisher, action, trigger }: PublisherFormProps) => {
   const [open, setOpen] = useState(false);
   const isEditMode = action === "Edit" && publisher?.id;
 
-  // 1. Setup Form with proper typing
+  // 1. Setup Form with proper defaults
   const form = useForm<any>({
     resolver: zodResolver(isEditMode ? updatePublisherSchema : createPublisherSchema),
     defaultValues: {
@@ -54,11 +51,13 @@ const PublisherForm = ({ publisher, action, trigger }: PublisherFormProps) => {
       first_name: "",
       last_name: "",
       email: "",
+      username: "", 
+      password: "", 
       bio: "",
     }
   });
 
-  // 2. FIX: Pre-fill logic using Reset
+  // 2. Pre-fill logic using Reset
   useEffect(() => {
     if (open && isEditMode && publisher) {
       form.reset({
@@ -79,11 +78,9 @@ const PublisherForm = ({ publisher, action, trigger }: PublisherFormProps) => {
     }
   }, [open, isEditMode, publisher, form]);
 
-  // 3. Slug Checker Logic
   const slugValue = form.watch("slug");
   const debouncedSlug = useDebounce(slugValue, 500);
   
-  // We only check if the slug is different from the current one (if editing)
   const shouldCheckSlug = debouncedSlug && debouncedSlug.length > 2 && debouncedSlug !== publisher?.slug;
   const { data: slugStatus, isFetching: isCheckingSlug } = trpc.checkSlugAvailability.useQuery(
     { slug: debouncedSlug },
@@ -111,17 +108,15 @@ const PublisherForm = ({ publisher, action, trigger }: PublisherFormProps) => {
     if (slugStatus?.available === false && debouncedSlug !== publisher?.slug) {
       return toast({ variant: "destructive", title: "Invalid Slug", description: "This slug is already taken." });
     }
-    // isEditMode ? updatePublisher(values) : addPublisher(values);
 
     if (isEditMode) {
       updatePublisher({
         id: publisher.id,
-        tenant_id: publisher.tenant_id, // Crucial for the nested update
+        tenant_id: publisher.tenant_id,
         tenant_name: values.tenant_name,
         slug: values.slug,
         bio: values.bio,
         profile_picture: values.profile_picture,
-        custom_domain: values.custom_domain
       });
     } else {
       addPublisher(values);
@@ -158,7 +153,7 @@ const PublisherForm = ({ publisher, action, trigger }: PublisherFormProps) => {
                 
                 <FormField control={form.control} name="slug" render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-[10px] font-black uppercase">Storefront Slug (booka.africa/slug)</FormLabel>
+                    <FormLabel className="text-[10px] font-black uppercase">Storefront Slug</FormLabel>
                     <FormControl>
                       <div className="relative">
                         <Input className={cn("input-gumroad pr-10", 
@@ -166,24 +161,21 @@ const PublisherForm = ({ publisher, action, trigger }: PublisherFormProps) => {
                         )} {...field} />
                         <div className="absolute right-3 top-1/2 -translate-y-1/2">
                           {isCheckingSlug ? <Loader2 className="animate-spin size-4 opacity-50" /> : 
-                           shouldCheckSlug && slugStatus?.available ? <CheckCircle2 className="text-green-600 size-4" /> :
-                           shouldCheckSlug && !slugStatus?.available ? <AlertCircle className="text-red-600 size-4" /> : null}
+                            shouldCheckSlug && slugStatus?.available ? <CheckCircle2 className="text-green-600 size-4" /> :
+                            shouldCheckSlug && !slugStatus?.available ? <AlertCircle className="text-red-600 size-4" /> : null}
                         </div>
                       </div>
                     </FormControl>
-                    {slugStatus?.available === false && debouncedSlug !== publisher?.slug && (
-                      <p className="text-[10px] font-bold text-red-600 uppercase mt-1 italic">Slug is already taken!</p>
-                    )}
                     <FormMessage />
                   </FormItem>
                 )} />
               </div>
             </section>
 
-            {/* SECTION 2: PERSONAL DATA */}
+            {/* SECTION 2: PERSONAL & AUTH DATA */}
             <section className="space-y-4">
               <h3 className="font-black uppercase text-xs italic opacity-40 flex items-center gap-2">
-                <User size={14} /> Lead Publisher Account
+                <User size={14} /> Account Credentials
               </h3>
               <div className="bg-white border-2 border-black p-6 space-y-4 gumroad-shadow-sm">
                 <div className="grid grid-cols-2 gap-4">
@@ -194,9 +186,31 @@ const PublisherForm = ({ publisher, action, trigger }: PublisherFormProps) => {
                     <FormItem><FormLabel className="text-[10px] font-black uppercase">Last Name</FormLabel><FormControl><Input className="input-gumroad" {...field} /></FormControl></FormItem>
                   )} />
                 </div>
+
+                {/* Only show Username and Password on "Add" mode */}
+                {!isEditMode && (
+                  <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2">
+                    <FormField control={form.control} name="username" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-[10px] font-black uppercase flex items-center gap-1"><Fingerprint size={10}/> Username</FormLabel>
+                        <FormControl><Input className="input-gumroad" placeholder="johndoe" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="password" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-[10px] font-black uppercase flex items-center gap-1"><Lock size={10}/> Password</FormLabel>
+                        <FormControl><Input type="password" className="input-gumroad" placeholder="••••••••" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  </div>
+                )}
+
                 <FormField control={form.control} name="email" render={({ field }) => (
-                  <FormItem><FormLabel className="text-[10px] font-black uppercase">Email Address</FormLabel><FormControl><Input disabled={isEditMode} className="input-gumroad" {...field} /></FormControl></FormItem>
+                  <FormItem><FormLabel className="text-[10px] font-black uppercase">Email Address</FormLabel><FormControl><Input disabled={isEditMode} className="input-gumroad" {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
+                
                 <FormField control={form.control} name="bio" render={({ field }) => (
                   <FormItem><FormLabel className="text-[10px] font-black uppercase">Publisher Bio</FormLabel><FormControl><Input className="input-gumroad" {...field} /></FormControl></FormItem>
                 )} />

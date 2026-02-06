@@ -1,18 +1,34 @@
 "use client";
 
-import { useState, BaseSyntheticEvent } from "react";
+import { useState, useRef, useEffect, BaseSyntheticEvent, Suspense } from "react";
 import Link from "next/link";
-import { Menu, Search, ShoppingCart, User, LogOut, LayoutDashboard } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { 
+  Menu, 
+  Search, 
+  ShoppingCart, 
+  LogOut, 
+  X, 
+  LayoutDashboard,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useSession, signOut } from "next-auth/react";
 import { trpc } from "@/app/_providers/trpc-provider";
 import { cn } from "@/lib/utils";
+import { SearchOverlay } from "../shared/SearchOverlay";
 
-export default function Header() {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
+function HeaderContent() {
+  const pathname = usePathname();
   const { data: session } = useSession();
+  
+  // States
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  
+  const searchRef = useRef<HTMLDivElement>(null);
   const userId = session?.user?.id as string;
   
   const userCart = trpc.getCartsByUser.useQuery(
@@ -20,106 +36,185 @@ export default function Header() {
     { enabled: !!userId }
   );
 
+  // Close search overlay when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setIsSearchOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Close menu on navigation
+  useEffect(() => {
+    setIsMenuOpen(false);
+  }, [pathname]);
+
   const logout = async (e?: BaseSyntheticEvent) => {
     e?.preventDefault();
     await signOut({ callbackUrl: "/" });
   };
 
   return (
-    <header className="sticky top-0 z-50 w-full bg-background border-b-4 border-black">
-      <div className="max-w-[95%] lg:max-w-[90%] mx-auto px-4 h-20 flex items-center justify-between gap-8">
+    <header className="sticky top-0 z-50 w-full bg-white/80 backdrop-blur-md border-b-[1.5px] border-black">
+      <div className="max-w-[95%] lg:max-w-[90%] mx-auto px-4 h-20 flex items-center justify-between gap-4 relative">
         
-        {/* Logo */}
-        <Link href="/" className="text-3xl font-black uppercase italic tracking-tighter shrink-0">
+        {/* --- 1. LOGO --- */}
+        <Link href="/" className="text-3xl font-black uppercase italic tracking-tighter shrink-0 hover:opacity-80 transition-opacity">
           Booka<span className="text-accent">.</span>
         </Link>
 
-        {/* Desktop Search - Neo-brutalism Style */}
-        <div className="hidden md:flex flex-1 max-w-2xl relative group">
-          <Input
-            className="input-gumroad pl-12 h-12 bg-white"
-            placeholder="Search books, authors, or publishers..."
-            type="search"
+        {/* --- 2. UNIFIED SEARCH BAR (Desktop + Mobile) --- */}
+        <div ref={searchRef} className="flex flex-1 max-w-xl relative group">
+          <div className="relative w-full">
+            <Input
+              className="booka-input-minimal pl-10 md:pl-12 h-10 md:h-12 bg-[#F9F9F9] focus:bg-white text-sm md:text-base"
+              placeholder="Search library..."
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setIsSearchOpen(true);
+              }}
+              onFocus={() => setIsSearchOpen(true)}
+              type="search"
+            />
+            <Search className={cn(
+              "absolute left-3 md:left-4 top-1/2 -translate-y-1/2 h-4 w-4 md:h-5 md:w-5 transition-colors",
+              isSearchOpen ? "text-black" : "text-gray-400"
+            )} />
+            
+            {searchQuery && (
+              <button 
+                onClick={() => setSearchQuery("")}
+                className="absolute right-3 md:right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-black"
+              >
+                <X size={16} />
+              </button>
+            )}
+          </div>
+
+          <SearchOverlay 
+            query={searchQuery} 
+            isOpen={isSearchOpen} 
+            onClose={() => setIsSearchOpen(false)} 
           />
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 group-focus-within:text-black transition-colors" />
         </div>
 
-        {/* Desktop Navigation & Actions */}
-        <nav className="hidden lg:flex items-center gap-6 font-bold text-sm uppercase">
-          <Link href="/shop" className="hover:text-accent transition-colors">Discover</Link>
-          {session && (
-            <Link href="/app" className="hover:text-accent transition-colors">Dashboard</Link>
-          )}
+        {/* --- 3. DESKTOP NAVIGATION --- */}
+        <nav className="hidden lg:flex items-center gap-6 font-bold text-xs uppercase tracking-widest">
+          <Link href="/shop" className={cn(
+            "hover:text-accent transition-colors",
+            pathname === "/shop" ? "text-accent" : "text-primary"
+          )}>
+            Discover
+          </Link>
           
-          <div className="h-6 w-[2px] bg-black/10 mx-2" />
+          {session && (
+            <Link href="/app" className="flex items-center gap-2 hover:text-accent transition-colors">
+              <LayoutDashboard size={16} /> Dashboard
+            </Link>
+          )}
 
-          {/* Cart Trigger */}
-          <Link href="/cart" className="relative p-2 hover:bg-accent/10 transition-colors">
-            <ShoppingCart className="h-6 w-6" />
+          <div className="h-4 w-[1px] bg-black/10 mx-2" />
+
+          <Link href="/cart" className="relative p-2 group">
+            <ShoppingCart className="h-6 w-6 group-hover:scale-110 transition-transform" />
             {userCart.data && userCart.data.length > 0 && (
-              <span className="absolute -top-1 -right-1 bg-black text-accent text-[10px] font-black w-5 h-5 flex items-center justify-center border-2 border-black">
+              <span className="absolute -top-1 -right-1 bg-black text-accent text-[9px] font-black w-5 h-5 flex items-center justify-center rounded-full border-2 border-white">
                 {userCart.data.length}
               </span>
             )}
           </Link>
 
-          {/* Auth State */}
           {!session ? (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <Link href="/login">
-                <Button variant="ghost" className="font-bold uppercase text-xs">Login</Button>
+                <Button variant="ghost" className="font-bold uppercase text-[11px]">Login</Button>
               </Link>
               <Link href="/register">
-                <Button className="booka-button-primary py-2 px-6 h-10 text-xs">Start Selling</Button>
+                <Button className="booka-button-primary h-11 px-6 text-[11px]">Start Selling</Button>
               </Link>
             </div>
           ) : (
-            <div className="flex items-center gap-4">
-              <button onClick={logout} className="p-2 hover:text-destructive transition-colors">
-                <LogOut className="h-6 w-6" />
+            <div className="flex items-center gap-2">
+               <button 
+                onClick={logout} 
+                className="p-2 text-gray-400 hover:text-destructive transition-colors group"
+                title="Logout"
+              >
+                <LogOut className="h-5 w-5 group-hover:-translate-x-1 transition-transform" />
               </button>
             </div>
           )}
         </nav>
 
-        {/* Mobile menu trigger */}
-        <div className="flex items-center gap-4 lg:hidden">
+        {/* --- 4. MOBILE ACTIONS --- */}
+        <div className="flex items-center gap-3 lg:hidden">
           <Link href="/cart" className="relative p-2">
             <ShoppingCart className="h-6 w-6" />
+            {userCart.data && userCart.data.length > 0 && (
+              <span className="absolute -top-1 -right-1 bg-black text-accent text-[8px] font-black w-4 h-4 flex items-center justify-center rounded-full border-[1.5px] border-white">
+                {userCart.data.length}
+              </span>
+            )}
           </Link>
+          
           <Sheet open={isMenuOpen} onOpenChange={setIsMenuOpen}>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="border-2 border-black">
+              <Button variant="ghost" size="icon" className="border-[1.5px] border-black rounded-[var(--radius)]">
                 <Menu className="h-6 w-6" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="right" className="w-full sm:w-[400px] border-l-4 border-black p-0 bg-background">
-              <div className="p-8 space-y-8 flex flex-col h-full">
-                <p className="text-3xl font-black uppercase italic">Menu<span className="text-accent">.</span></p>
-                <nav className="flex flex-col gap-6 text-2xl font-black uppercase">
-                  <Link href="/" onClick={() => setIsMenuOpen(false)}>Home</Link>
-                  <Link href="/shop" onClick={() => setIsMenuOpen(false)}>Discover</Link>
-                  {session && <Link href="/app" onClick={() => setIsMenuOpen(false)}>My Dashboard</Link>}
+            <SheetContent side="right" className="w-full sm:w-[400px] border-l-[1.5px] border-black p-0 bg-background flex flex-col">
+              <div className="p-8 border-b-[1.5px] border-black bg-white">
+                 <p className="text-3xl font-black uppercase italic tracking-tighter">Menu<span className="text-accent">.</span></p>
+              </div>
+              
+              <div className="flex-1 p-8 space-y-10 overflow-y-auto">
+                <nav className="flex flex-col gap-6 text-3xl font-black uppercase italic">
+                  <Link href="/" className="hover:text-accent">Home</Link>
+                  <Link href="/shop" className="hover:text-accent">Discover</Link>
+                  {session && <Link href="/app" className="hover:text-accent">Dashboard</Link>}
                 </nav>
-                <div className="mt-auto space-y-4">
-                  {!session ? (
-                    <>
-                      <Link href="/login" className="block w-full" onClick={() => setIsMenuOpen(false)}>
-                        <Button className="w-full booka-button-secondary py-6">Login</Button>
+
+                <div className="space-y-4 pt-10 border-t border-black/5">
+                   <p className="text-[10px] font-black uppercase tracking-widest opacity-30">Account</p>
+                   {!session ? (
+                    <div className="grid gap-4">
+                      <Link href="/login" className="w-full">
+                        <Button className="w-full booka-button-secondary h-16 text-lg">Login</Button>
                       </Link>
-                      <Link href="/register" className="block w-full" onClick={() => setIsMenuOpen(false)}>
-                        <Button className="w-full booka-button-primary py-6">Start Selling</Button>
+                      <Link href="/register" className="w-full">
+                        <Button className="w-full booka-button-primary h-16 text-lg">Join Booka</Button>
                       </Link>
-                    </>
+                    </div>
                   ) : (
-                    <Button onClick={logout} className="w-full booka-button-secondary py-6">Logout</Button>
+                    <Button onClick={logout} className="w-full booka-button-secondary h-16 text-lg flex gap-2">
+                      <LogOut /> Sign Out
+                    </Button>
                   )}
                 </div>
+              </div>
+
+              <div className="p-8 bg-accent border-t-[1.5px] border-black">
+                <p className="text-[10px] font-black uppercase leading-tight italic">
+                  Empowering the African creative economy through literature.
+                </p>
               </div>
             </SheetContent>
           </Sheet>
         </div>
       </div>
     </header>
+  );
+}
+
+export default function Header() {
+  return (
+    <Suspense fallback={<div className="h-20 bg-white border-b-[1.5px] border-black animate-pulse" />}>
+      <HeaderContent />
+    </Suspense>
   );
 }

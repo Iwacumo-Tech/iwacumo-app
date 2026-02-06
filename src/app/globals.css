@@ -4,112 +4,92 @@
 
 @layer base {
   :root {
-    /* Modern & Minimalist Palette */
-    --background: 0 0% 100%;       /* Pure White #FFFFFF */
-    --foreground: 0 0% 15%;        /* Near Black #262626 */
+    /* 1. Softened Palette */
+    --background: 0 0% 100%;       /* Pure White */
+    --foreground: 0 0% 10%;        /* Softer Black #1A1A1A */
     
-    --card: 0 0% 100%;
-    --card-foreground: 0 0% 15%;
-    
-    --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 15%;
-    
-    /* Primary: Charcoal Gray #4D4D4D */
-    --primary: 0 0% 30%;           
+    --primary: 0 0% 15%;           /* Deep Charcoal */
     --primary-foreground: 0 0% 100%;
     
-    /* Secondary: Muted Light Gray */
-    --secondary: 0 0% 96%; 
-    --secondary-foreground: 0 0% 30%;
+    --secondary: 0 0% 98%;         /* Off-white smoke */
+    --secondary-foreground: 0 0% 20%;
     
-    --muted: 0 0% 96%;
-    --muted-foreground: 0 0% 45%;
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 0 0% 45.1%;
     
-    /* Accent: Vibrant Yellow #FFE100 */
-    --accent: 53 100% 50%;  
+    /* Gumroad's Signature Pink/Red or sticking with your Yellow Accent */
+    --accent: 53 100% 50%;         
     --accent-foreground: 0 0% 0%;
     
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 89.8%;          /* Light, subtle borders for layout */
+    --input: 0 0% 89.8%;
     
-    /* Border: Fixed Charcoal #4D4D4D for the "Ink" look */
-    --border: 0 0% 30%;           
-    --input: 0 0% 30%;
-    --ring: 53 100% 50%;
-    
-    --radius: 0rem;
+    /* 2. THE SECRET SAUCE: CURVES */
+    --radius: 0.75rem;             /* Modern "Extra-Large" rounding */
   }
 
   body {
-    @apply bg-background text-foreground selection:bg-accent selection:text-black antialiased;
+    @apply bg-[#FAF9F6] text-foreground selection:bg-accent selection:text-black antialiased;
   }
 
   /**
-   * NEO-BRUTALISM CORE UTILITIES
-   * We use #000000 for shadows to ensure visibility against the #4D4D4D Charcoal.
+   * 3. EVOLVED SHADOWS
+   * Moving from hard black blocks to "Elevated 2.5D"
    */
   .gumroad-shadow {
-    box-shadow: 6px 6px 0px 0px #000000;
+    box-shadow: 0px 4px 0px 0px #000000; /* Flat bottom shadow only */
   }
   
   .gumroad-shadow-sm {
-    box-shadow: 3px 3px 0px 0px #000000;
+    box-shadow: 0px 2px 0px 0px #000000;
   }
 
-  /* Force standard border color regardless of background */
   .gumroad-border {
-    border: 2px solid #000000 !important;
+    @apply border-[1.5px] border-black;
   }
 
   .gumroad-border-bold {
-    border: 4px solid #000000 !important;
+    @apply border-2 border-black;
   }
 }
 
 @layer components {
-  /* Minimalist Input */
+  /* Curvy Modern Input */
   .booka-input-minimal {
-    @apply bg-white border-2 border-black rounded-none px-4 py-3 focus:outline-none focus:ring-2 focus:ring-accent transition-all placeholder:text-muted-foreground;
+    @apply bg-white border-[1.5px] border-black rounded-[var(--radius)] px-5 py-3 
+           focus:ring-2 focus:ring-accent/50 transition-all placeholder:text-muted-foreground/50;
   }
 
-  /* High-Pop Interactive Buttons (Yellow) */
+  /* Robust, Curvy Buttons */
   .booka-button-primary {
-    @apply bg-accent border-2 border-black text-black font-black uppercase px-8 py-4 
-           hover:-translate-x-1 hover:-translate-y-1 transition-all 
-           gumroad-shadow hover:shadow-none active:translate-x-0 active:translate-y-0;
+    @apply bg-accent border-[1.5px] border-black text-black font-bold uppercase px-8 py-4 
+           rounded-[var(--radius)] transition-all hover:bg-[#FFE833]
+           gumroad-shadow hover:translate-y-[1px] hover:shadow-none active:translate-y-[2px];
   }
 
-  /* Secondary Buttons (White) */
   .booka-button-secondary {
-    @apply bg-white border-2 border-black text-black font-black uppercase px-8 py-4 
-           hover:-translate-x-1 hover:-translate-y-1 transition-all 
-           gumroad-shadow hover:shadow-none;
+    @apply bg-white border-[1.5px] border-black text-black font-bold uppercase px-8 py-4 
+           rounded-[var(--radius)] transition-all
+           gumroad-shadow hover:translate-y-[1px] hover:shadow-none;
   }
 
-  /* Stat Cards and Dashboard Banners */
-  .booka-banner {
-    @apply bg-primary text-white border-4 border-black p-8 gumroad-shadow;
-  }
-
+  /* Soft Stat Cards */
   .booka-stat-card {
-    @apply bg-white border-2 border-black p-6 rounded-none transition-all hover:gumroad-shadow-sm;
+    @apply bg-white border-[1.5px] border-black p-6 rounded-[var(--radius)] 
+           transition-all hover:translate-y-[-2px] hover:shadow-[0px_8px_20px_-10px_rgba(0,0,0,0.15)];
   }
 
-  /* Legacy compatibility classes */
-  .input-gumroad { @apply booka-input-minimal; }
+  /* Product Cards: The "Curvy" Look */
   .product-card {
-    @apply bg-white border-2 border-black rounded-none overflow-hidden transition-all 
-           hover:gumroad-shadow hover:-translate-y-1;
+    @apply bg-white border-[1.5px] border-black rounded-[var(--radius)] overflow-hidden 
+           transition-all hover:translate-y-[-4px] hover:shadow-[0px_10px_0px_0px_rgba(0,0,0,1)];
   }
+
+  /* Legacy compatibility */
+  .input-gumroad { @apply booka-input-minimal; }
 }
 
-/* Minimalist Scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-}
-::-webkit-scrollbar-track {
-  @apply bg-white;
-}
-::-webkit-scrollbar-thumb {
-  @apply bg-primary border-2 border-white;
-}
+/* Modern Minimalist Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { @apply bg-transparent; }
+::-webkit-scrollbar-thumb { @apply bg-black/10 rounded-full hover:bg-black/20; }

@@ -162,7 +162,7 @@ export default function AppPage() {
                  )}
                  {isCustomer && (
                    <li>
-                    <Link href="/app/library" className="text-sm font-bold uppercase italic hover:text-accent transition-colors flex items-center gap-2">
+                    <Link href="/app/books" className="text-sm font-bold uppercase italic hover:text-accent transition-colors flex items-center gap-2">
                       <ArrowRight size={12} /> Open My Library
                     </Link>
                   </li>

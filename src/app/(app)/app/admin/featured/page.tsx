@@ -54,7 +54,7 @@ export default function GlobalFeaturedPage() {
           <TableHeader className="bg-primary">
             <TableRow className="hover:bg-transparent border-none">
               <TableHead className="text-white font-black uppercase italic py-6">Master Library</TableHead>
-              <TableHead className="text-white font-black uppercase italic">Publisher</TableHead>
+              {/* <TableHead className="text-white font-black uppercase italic">Publisher</TableHead> */}
               <TableHead className="text-white font-black uppercase italic text-center">Featured Status</TableHead>
             </TableRow>
           </TableHeader>
@@ -65,11 +65,11 @@ export default function GlobalFeaturedPage() {
                   <p className="font-black uppercase italic text-primary">{book.title}</p>
                   <p className="text-[10px] font-bold opacity-40 uppercase tracking-widest">by {book.author?.name}</p>
                 </TableCell>
-                <TableCell>
+                {/* <TableCell>
                    <span className="bg-primary text-white text-[9px] font-black uppercase px-2 py-1 italic">
                      {book.publisher?.slug || "Booka Direct"}
                    </span>
-                </TableCell>
+                </TableCell> */}
                 <TableCell className="text-center">
                   <div className="flex justify-center items-center gap-4">
                     {/* Yellow Star for Featured Items */}

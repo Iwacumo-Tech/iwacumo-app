@@ -19,10 +19,17 @@ export function SidebarItem({ href, name, icon, className, onClick, ...props }: 
   const pathname = usePathname();
   const isActive = href ? pathname === href : false;
 
+  const content = (
+    <div className="w-full flex flex-row justify-start items-center gap-3 font-black uppercase italic text-xs tracking-widest">
+      <span className={cn(isActive ? "text-black" : "opacity-50")}>{icon}</span>
+      {name}
+    </div>
+  );
+
   return (
     <Button
       variant="ghost"
-      onClick={onClick}
+      onClick={onClick} 
       className={cn(
         "w-full h-12 justify-start rounded-none border-2 border-transparent transition-all",
         isActive ? "bg-accent text-black border-black translate-x-1 -translate-y-1 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]" : "hover:bg-accent/10",
@@ -30,15 +37,11 @@ export function SidebarItem({ href, name, icon, className, onClick, ...props }: 
       )}
     >
       {href ? (
-        <Link href={href} className="w-full flex flex-row justify-start items-center gap-3 font-black uppercase italic text-xs tracking-widest">
-          <span className={cn(isActive ? "text-black" : "opacity-50")}>{icon}</span>
-          {name}
+        <Link href={href} className="w-full h-full flex items-center">
+          {content}
         </Link>
       ) : (
-        <div className="w-full flex flex-row justify-start items-center gap-3 font-black uppercase italic text-xs tracking-widest">
-          {icon}
-          {name}
-        </div>
+        content
       )}
     </Button>
   );

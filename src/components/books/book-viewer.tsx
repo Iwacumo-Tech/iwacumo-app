@@ -1,17 +1,23 @@
 "use client";
 
-import "@fortawesome/fontawesome-free/css/all.min.css";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { useState } from "react";
-import { ToastContainer } from "react-toastify";
+import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { Author, Book, Chapter } from "@prisma/client";
-import "react-quill/dist/quill.snow.css";
 import BookReader from "./reader";
 import { trpc } from "@/app/_providers/trpc-provider";
-import { FileDown, ShieldCheck, Loader2 } from "lucide-react";
+import { 
+  FileDown, 
+  ShieldCheck, 
+  Loader2, 
+  ChevronLeft, 
+  ChevronRight, 
+  BookOpen,
+  Lock
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { toast } from "react-toastify";
+import { cn } from "@/lib/utils";
 
 interface BookViewerProps {
   book: Book & { chapters: Chapter[]; author: Author | null };
@@ -21,7 +27,6 @@ export default function ViewBookPage({ book }: BookViewerProps) {
   const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
   const [isGenerating, setIsGenerating] = useState(false);
 
-  // tRPC Mutation to trigger the watermarking
   const watermarkMutation = trpc.generateWatermarkedEbook.useMutation({
     onSuccess: (data) => {
       const link = document.createElement("a");
@@ -34,8 +39,11 @@ export default function ViewBookPage({ book }: BookViewerProps) {
       toast.success("Secure PDF generated successfully!");
     },
     onError: (err) => {
-      setIsGenerating(false);
       toast.error(`Error: ${err.message}`);
+    },
+    
+    onSettled: () => {
+      setIsGenerating(false);
     }
   });
 
@@ -58,67 +66,120 @@ export default function ViewBookPage({ book }: BookViewerProps) {
 
   const currentChapter = book.chapters[currentChapterIndex];
 
-  // LOGIC: If the book has a PDF URL, prioritize the Secure Download flow
+  // CASE A: SECURE PDF DOWNLOAD FLOW
   if (book.pdf_url) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[70vh] p-8 text-center">
-        <div className="relative mb-8">
-          <div className="bg-blue-50 p-8 rounded-full">
-            <FileDown className="w-20 h-20 text-blue-600" />
-          </div>
-          <ShieldCheck className="w-10 h-10 text-green-500 absolute -bottom-2 -right-2 bg-white rounded-full p-1 border shadow-sm" />
-        </div>
-
-        <h2 className="text-3xl font-bold mb-3">{book.title}</h2>
-        <p className="text-gray-500 max-w-md mb-8">
-          This digital edition is protected. We will generate a secure PDF
-          watermarked with your credentials for your personal use.
-        </p>
-
-        <Button 
-          size="lg" 
-          className="h-16 px-10 text-lg shadow-lg"
-          onClick={handleDownload}
-          disabled={isGenerating}
+      <div className="min-h-[80vh] flex items-center justify-center p-6 bg-[#FAF9F6]">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="max-w-md w-full bg-white border-[1.5px] border-black rounded-[var(--radius)] p-10 text-center gumroad-shadow"
         >
-          {isGenerating ? (
-            <>
-              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-              Applying Watermark...
-            </>
-          ) : (
-            "Generate & Download PDF"
-          )}
-        </Button>
-        <ToastContainer />
+          <div className="relative w-24 h-24 mx-auto mb-8">
+            <div className="absolute inset-0 bg-accent rounded-full animate-pulse opacity-20" />
+            <div className="relative bg-white border-[1.5px] border-black rounded-full w-full h-full flex items-center justify-center">
+              <Lock className="w-10 h-10 text-black" />
+            </div>
+            <ShieldCheck className="absolute -bottom-1 -right-1 w-8 h-8 text-green-500 bg-white rounded-full p-1 border-[1.5px] border-black" />
+          </div>
+
+          <h2 className="text-3xl font-black uppercase italic tracking-tighter mb-4">
+            Secure Access<span className="text-accent">.</span>
+          </h2>
+          
+          <div className="space-y-4 mb-10">
+            <p className="text-[11px] font-black uppercase tracking-widest text-gray-400">
+              {book.title}
+            </p>
+            <p className="text-sm font-medium leading-relaxed text-gray-600">
+              This digital edition is protected. We are ready to generate a 
+              <span className="font-bold text-black"> personalized, watermarked PDF</span> for your private library.
+            </p>
+          </div>
+
+          <Button 
+            size="lg" 
+            className="w-full h-16 booka-button-primary text-md"
+            onClick={handleDownload}
+            disabled={isGenerating}
+          >
+            {isGenerating ? (
+              <>
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                Encrypting...
+              </>
+            ) : (
+              <>
+                <FileDown className="mr-2 h-5 w-5" />
+                Generate Secure PDF
+              </>
+            )}
+          </Button>
+
+          <p className="mt-6 text-[9px] font-bold uppercase opacity-30 tracking-tighter">
+            Generation usually takes less than 10 seconds.
+          </p>
+        </motion.div>
+        <ToastContainer position="bottom-center" />
       </div>
     );
   }
 
-  // FALLBACK: Standard Reader for Text/DOCX books
-  if (!book.chapters.length) return <p className="text-center p-20">No readable content found for this book.</p>;
+  // CASE B: ZEN READER FLOW (DOCX/TEXT)
+  if (!book.chapters.length) {
+    return (
+      <div className="min-h-[70vh] flex flex-col items-center justify-center opacity-20 italic font-black uppercase">
+        <BookOpen size={48} className="mb-4" />
+        <p>No readable content found</p>
+      </div>
+    );
+  }
 
   return (
-    <motion.div
-      transition={{ type: "spring", damping: 40, mass: 0.75 }}
-      initial={{ opacity: 0, x: 1000 }}
-      animate={{ opacity: 1, x: 0 }}
-    >
-      <motion.section
-        className="flex w-[90%] mx-auto justify-between items-center min-h-[5vh] my-2"
-      >
-        <i style={iconStyle} className="fas fa-chevron-left" onClick={handlePrevChapter}></i>
-        <div>
-          <h2 className="text-center font-semibold uppercase">{book.title}</h2>
-          <p className="text-xs text-center">Chapter {currentChapter.chapter_number}</p>
-        </div>
-        <i style={iconStyle} className="fas fa-chevron-right" onClick={handleNextChapter}></i>
-      </motion.section>
+    <div className="min-h-screen bg-white">
+      {/* Sticky Reader Header */}
+      <header className="sticky top-0 z-50 w-full bg-white/90 backdrop-blur-md border-b-[1.5px] border-black px-4 h-20">
+        <div className="max-w-4xl mx-auto h-full flex items-center justify-between">
+          <button 
+            onClick={handlePrevChapter}
+            disabled={currentChapterIndex === 0}
+            className="p-3 hover:bg-accent rounded-full transition-all border-[1.5px] border-transparent hover:border-black disabled:opacity-10"
+          >
+            <ChevronLeft size={24} />
+          </button>
 
-      <BookReader bookId={book.id} initialChapterId={currentChapter?.id} />
+          <div className="text-center">
+            <h2 className="text-[13px] font-black uppercase italic tracking-tighter line-clamp-1">
+              {book.title}
+            </h2>
+            <p className="text-[9px] font-bold uppercase text-accent bg-black px-2 py-0.5 rounded-full inline-block mt-1">
+              Chapter {currentChapter.chapter_number}
+            </p>
+          </div>
+
+          <button 
+            onClick={handleNextChapter}
+            disabled={currentChapterIndex === book.chapters.length - 1}
+            className="p-3 hover:bg-accent rounded-full transition-all border-[1.5px] border-transparent hover:border-black disabled:opacity-10"
+          >
+            <ChevronRight size={24} />
+          </button>
+        </div>
+      </header>
+
+      {/* Main Reader Surface */}
+      <main className="max-w-4xl mx-auto py-12 px-6">
+        <motion.div
+          key={currentChapter.id}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+        >
+          <BookReader bookId={book.id} initialChapterId={currentChapter?.id} />
+        </motion.div>
+      </main>
+
       <ToastContainer />
-    </motion.div>
+    </div>
   );
 }
-
-const iconStyle = { fontSize: "20px", cursor: "pointer" };

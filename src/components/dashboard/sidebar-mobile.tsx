@@ -71,6 +71,7 @@ export const SidebarMobile: React.FC<SidebarMobileProps> = ({
                 <Sidebar
                   links={links}
                   logout={logout}
+                  setIsOpen={setSidebarOpen}
                 />
               </div>
             </Dialog.Panel>

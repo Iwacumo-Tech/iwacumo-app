@@ -419,26 +419,39 @@ export const deleteBook = publicProcedure.input(deleteBookSchema).mutation(async
 });
 
 export const getAllBooks = publicProcedure.query(async ({ ctx }) => {
-  // 1. Resolve User/Claims to check for Super Admin status
-  const user = await prisma.user.findUnique({
-    where: { id: ctx.session?.user?.id },
-    include: { claims: true }
-  });
-
-  const isSuperAdmin = user?.claims.some(c => c.role_name === "super-admin" && c.active);
+  // 1. Resolve User/Claims only if session exists
+  let isSuperAdmin = false;
+  
+  if (ctx.session?.user?.id) {
+    const user = await prisma.user.findUnique({
+      where: { id: ctx.session.user.id },
+      include: { claims: true }
+    });
+    isSuperAdmin = user?.claims.some(c => c.role_name === "super-admin" && c.active) || false;
+  }
 
   // 2. Fetch Books
+  // If you want logged-out users to only see "published" books, 
+  // you should add { published: true } to the where clause unless isSuperAdmin is true.
   const books = await prisma.book.findMany({
     where: { 
       deleted_at: null,
-      // Logic: Super Admin sees everything. 
-      // Publishers/Authors only see their own (if you want to apply that here)
-      // For now, making it GLOBAL for management
+      // Optional: hide unpublished books from public if not an admin
+      // ...(isSuperAdmin ? {} : { published: true }) 
     },
     include: {
       chapters: true,
-      author: true,
-      publisher: true,
+      author: {
+        include: {
+          user: {
+            select: {
+              first_name: true,
+              last_name: true,
+            }
+          }
+        }
+      },
+      // publisher: true,
       categories: true,
       variants: {
         include: {
@@ -455,10 +468,9 @@ export const getAllBooks = publicProcedure.query(async ({ ctx }) => {
     orderBy: { created_at: "desc" }
   });
 
-  // 3. Robust Mapping for salesCount
+  // 3. Mapping for salesCount
   return books.map(book => {
     const totalSales = book.variants?.reduce((acc, variant) => {
-      // Accessing the specific count path from the Prisma include
       const count = variant._count?.order_lineitems || 0;
       return acc + count;
     }, 0) || 0;
@@ -654,4 +666,49 @@ export const generateWatermarkedEbook = publicProcedure
         message: "Watermarking failed. Please try again.",
       });
     }
+  });
+
+
+export const searchEverything = publicProcedure
+  .input(z.object({ query: z.string().min(2) }))
+  .query(async ({ input }) => {
+    const { query } = input;
+
+    const books = await prisma.book.findMany({
+      where: {
+        deleted_at: null,
+        // published: true, // Only show books that are actually live
+        OR: [
+          { title: { contains: query, mode: "insensitive" } },
+          { 
+            author: { 
+              user: { 
+                OR: [
+                  { first_name: { contains: query, mode: "insensitive" } },
+                  { last_name: { contains: query, mode: "insensitive" } }
+                ]
+              } 
+            } 
+          },
+          { 
+            categories: { 
+              some: { 
+                name: { contains: query, mode: "insensitive" } 
+              } 
+            } 
+          }
+        ],
+      },
+      include: {
+        author: { 
+          include: { 
+            user: { select: { first_name: true, last_name: true } } 
+          } 
+        },
+        categories: { select: { name: true, slug: true } }
+      },
+      take: 8,
+    });
+
+    return books;
   });

@@ -258,21 +258,18 @@ export const getCustomersByUser = publicProcedure
 export const getCustomerDashboardStats = publicProcedure
   .input(z.object({ user_id: z.string() }))
   .query(async ({ input }) => {
-    // 1. Fetch ALL customer profiles and the 5 most recent orders for the UI
+    // 1. Fetch ALL customer profiles with their captured orders and line items
     const customerProfiles = await prisma.customer.findMany({
       where: { user_id: input.user_id },
       include: {
         orders: {
           where: { payment_status: "captured" },
           orderBy: { created_at: "desc" },
-          take: 5,
           include: { 
             line_items: { 
               include: { 
                 book_variant: { 
-                  include: { 
-                    book: { select: { title: true } } 
-                  } 
+                  select: { book_id: true } // We only need the ID to count unique books
                 } 
               } 
             } 
@@ -281,7 +278,6 @@ export const getCustomerDashboardStats = publicProcedure
         _count: {
           select: { 
             orders: { where: { payment_status: "captured" } },
-            purchased_books: true 
           }
         }
       }
@@ -289,37 +285,45 @@ export const getCustomerDashboardStats = publicProcedure
 
     if (!customerProfiles.length) return null;
 
-    // 2. Fetch the TRUE total spent across all orders (not just the recent 5)
-    // This looks across the Order table for any record linked to this User's Customer IDs
+    // 2. Fetch Total Spent (Aggregation)
     const totalSpentAgg = await prisma.order.aggregate({
       where: { 
         customer: { user_id: input.user_id },
         payment_status: "captured" 
       },
-      _sum: {
-        total_amount: true
-      }
+      _sum: { total_amount: true }
     });
 
-    // 3. Aggregate simple counts and combined recent orders
-    const aggregatedData = customerProfiles.reduce((acc, profile) => {
-      return {
-        totalPurchases: acc.totalPurchases + profile._count.orders,
-        booksOwned: acc.booksOwned + profile._count.purchased_books,
-        combinedRecent: [...acc.combinedRecent, ...profile.orders]
-      };
-    }, { totalPurchases: 0, booksOwned: 0, combinedRecent: [] as any[] });
+    // 3. Extract Unique Books and Aggregate Recent Orders
+    const uniqueBookIds = new Set<string>();
+    let totalPurchases = 0;
+    const combinedRecent: any[] = [];
 
-    // 4. Sort and limit the combined recent orders list globally
-    const finalRecentOrders = aggregatedData.combinedRecent
+    customerProfiles.forEach(profile => {
+      totalPurchases += profile._count.orders;
+      
+      profile.orders.forEach(order => {
+        combinedRecent.push(order);
+        
+        // Add every book_id from the line items to the Set
+        order.line_items.forEach(item => {
+          if (item.book_variant?.book_id) {
+            uniqueBookIds.add(item.book_variant.book_id);
+          }
+        });
+      });
+    });
+
+    // 4. Sort and limit recent orders to the top 5 globally
+    const finalRecentOrders = combinedRecent
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
       .slice(0, 5);
 
     return {
-      totalPurchases: aggregatedData.totalPurchases,
-      booksOwned: aggregatedData.booksOwned,
+      totalPurchases: totalPurchases,
+      booksOwned: uniqueBookIds.size, 
       recentOrders: finalRecentOrders,
-      totalSpent: totalSpentAgg._sum.total_amount || 0, // Now reflects full history
+      totalSpent: totalSpentAgg._sum.total_amount || 0,
     };
   });
 
