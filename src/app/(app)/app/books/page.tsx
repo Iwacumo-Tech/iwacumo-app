@@ -20,13 +20,15 @@ export default function BooksPage() {
   const isAuthor = userRoles.some(r => r.name === "author");
   const isCustomer = session?.user.isCustomer;
 
+  const isStaff = isSuperAdmin || isPublisher || isAuthor;
+
   // Data Fetching
   const { data: authorBooks } = trpc.getBookByAuthor.useQuery({ id: userId }, { enabled: isAuthor || isPublisher });
   const { data: allBooks } = trpc.getAllBooks.useQuery(undefined, { enabled: isSuperAdmin });
   const { data: purchasedBooks } = trpc.getPurchasedBooksByCustomer.useQuery({ id: userId }, { enabled: isCustomer });
 
   const displayData = isSuperAdmin ? (allBooks || []) : (isAuthor || isPublisher) ? (authorBooks || []) : (purchasedBooks || []);
-  const columns = isCustomer ? readerBookColumns : staffBookColumns;
+  const columns = isStaff ? staffBookColumns : readerBookColumns;
 
   return (
     <div className="space-y-10">
