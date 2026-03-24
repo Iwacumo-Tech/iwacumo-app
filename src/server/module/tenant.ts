@@ -107,3 +107,45 @@ export const getTenantBySlug = publicProcedure
       include: { publishers: true }
     });
   });
+
+
+export const getStoreBySlug = publicProcedure
+  .input(z.object({ slug: z.string() }))
+  .query(async ({ input, ctx }) => {
+    const tenant = await ctx.prisma.tenant.findUnique({
+      where: { slug: input.slug },
+      include: {
+        publishers: {
+          include: {
+            books: {
+              where: { published: true, deleted_at: null },
+              include: { 
+                author: { include: { user: true } }, 
+                categories: true 
+              }
+            }
+          }
+        },
+        banners: { where: { isShow: true, deleted_at: null } },
+        hero_slides: { where: { deleted_at: null } }
+      }
+    });
+
+    if (!tenant) return null;
+
+    // Use Tenant branding if available, otherwise fetch global system defaults
+    const slides = tenant.hero_slides.length > 0 
+      ? tenant.hero_slides 
+      : await ctx.prisma.heroSlide.findMany({ where: { tenant_id: null, deleted_at: null } });
+
+    const banners = tenant.banners.length > 0 
+      ? tenant.banners 
+      : await ctx.prisma.banner.findMany({ where: { tenant_id: null, deleted_at: null, isShow: true } });
+
+    return {
+      ...tenant,
+      hero_slides: slides,
+      banners: banners,
+      books: tenant.publishers?.books || []
+    };
+  });

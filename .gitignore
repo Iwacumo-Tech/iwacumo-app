@@ -44,3 +44,7 @@ tools.env.sh
 firebase.json
 firebase-adminsdk-*.json
 *.serviceAccount.json
+
+# Agents
+CLAUDE.md
+/docs

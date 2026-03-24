@@ -18,7 +18,7 @@ import { createAuthor, updateAuthor, deleteAuthor, getAllAuthors, signUpAuthor, 
 import { createCustomer, deleteCustomer, updateCustomer, getAllCustomers, getCustomersByUser, registerGuestAndTransferCart, getCustomerDashboardStats } from "./module/customer";
 import { createBook, deleteBook, updateBook, getAllBooks, getBookById, getCategories, getBookByAuthor, toggleBookFeatured,getAllFeaturedBooks, getNewArrivalBooks, getPurchasedBooksByCustomer, generateWatermarkedEbook, searchEverything } from "./module/book";
 import { createChapter, updateChapter, deleteChapter, getAllChapters, viewChapterById, getAllChapterByBookId } from "./module/chapter";
-import {  updateTenant, getAllTenant, deleteTenant, createTenant, getTenantBySlug } from "./module/tenant";
+import {  updateTenant, getAllTenant, deleteTenant, createTenant, getTenantBySlug, getStoreBySlug } from "./module/tenant";
 import { imageUpload, createImageUpload } from "./module/uploads";
 import { createHeroSlide, getAllHeroSlides } from "./module/slider";
 import { getAllBanners, createBanner, toggleBannerVisibility } from "./module/banner";
@@ -35,7 +35,9 @@ import {
   deleteAdminUser,
   getAdminRoles,
   getGlobalPlatformStats,
-  toggleFeatured
+  toggleFeatured,
+  getSystemSettings,
+  updateSystemSettings
 } from "./module/admin";
 import {
   createOrderFromCart,
@@ -77,6 +79,7 @@ export const appRouter = router({
   getPublisherDashboardStats,
   updatePublisher,
   getPublisherByOrganization,
+  getStoreBySlug,
   checkSlugAvailability,
   checkUsernameAvailability,
   createAuthor,
@@ -163,6 +166,9 @@ export const appRouter = router({
   getAdminRoles,
   toggleFeatured,
   getGlobalPlatformStats,
+  getSystemSettings,
+  updateSystemSettings,
+  
   healthCheck: publicProcedure.query(() => {
     return { message: "API up and running..." };
   }),

@@ -32,13 +32,13 @@
     /* Sets the baseline for 1rem. 
        93.75% = 15px (Down from 16px). 
        This subtle 1px shift usually fixes that "120% zoom" feeling immediately. */
-    font-size: 70%; 
+    font-size: 80%; 
   }
 
   /* Optional: On very large screens, you might want to bring it down even more */
   @media (min-width: 1440px) {
     html {
-      font-size: 80%; /* 14px baseline for ultra-wide desktops */
+      font-size: 85%; /* 14px baseline for ultra-wide desktops */
     }
   }
 

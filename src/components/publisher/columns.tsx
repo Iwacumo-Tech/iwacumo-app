@@ -1,7 +1,7 @@
 "use client";
 
 import { ColumnDef } from "@tanstack/react-table";
-import { MoreHorizontal, Trash2, Edit3, ExternalLink, Globe } from "lucide-react";
+import { MoreHorizontal, Trash2, Edit3, ExternalLink, Globe, Shield } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
@@ -11,17 +11,38 @@ import { useToast } from "@/components/ui/use-toast";
 import { trpc } from "@/app/_providers/trpc-provider";
 import PublisherForm from "./publisher-form";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Switch } from "@/components/ui/switch";
+import { useSession } from "next-auth/react";
 
 const menuButtonStyle = "w-full text-left px-3 py-2.5 text-xs font-black uppercase italic hover:bg-accent cursor-pointer flex items-center gap-2 transition-colors rounded-none outline-none border-none bg-transparent text-black shadow-none";
 
 function PublisherAction({ publisher }: { publisher: any }) {
   const { toast } = useToast();
   const utils = trpc.useUtils();
+  const { data: session } = useSession();
+  const isSuperAdmin = session?.roles?.some(r => r.name === "super-admin");
 
   const deletePublisher = trpc.deletePublisher.useMutation({
     onSuccess: () => {
       toast({ title: "Removed", description: "Publisher and associated tenant account deactivated." });
       utils.getAllPublisher.invalidate();
+    }
+  });
+
+  const toggleWhiteLabel = trpc.updatePublisher.useMutation({
+    onSuccess: () => {
+      toast({
+        title: publisher.white_label ? "White-label disabled" : "White-label enabled",
+        description: `Publisher ${publisher.tenant?.name} is now ${publisher.white_label ? "normal" : "white-label"}.`
+      });
+      utils.getAllPublisher.invalidate();
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update white-label status",
+        variant: "destructive"
+      });
     }
   });
 
@@ -36,16 +57,36 @@ function PublisherAction({ publisher }: { publisher: any }) {
         <DropdownMenuLabel className="font-black uppercase italic text-[10px] opacity-40 px-3 py-2 border-b-2 border-black/10">
           Entity Control
         </DropdownMenuLabel>
-        
-        <PublisherForm 
-          action="Edit" 
-          publisher={publisher} 
+
+        <PublisherForm
+          action="Edit"
+          publisher={publisher}
           trigger={<div className={menuButtonStyle}><Edit3 size={14} /> Update Entity</div>}
         />
 
         <a href={`https://${publisher.slug}.booka.africa`} target="_blank" className={menuButtonStyle}>
           <ExternalLink size={14} /> Visit Storefront
         </a>
+
+        {isSuperAdmin && (
+          <>
+            <DropdownMenuSeparator className="bg-black m-0 h-[2px]" />
+            <div className="px-3 py-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase italic">White-Label</span>
+                <Switch
+                  checked={publisher.white_label}
+                  onCheckedChange={(checked) => {
+                    toggleWhiteLabel.mutate({
+                      id: publisher.id,
+                      white_label: checked
+                    });
+                  }}
+                />
+              </div>
+            </div>
+          </>
+        )}
 
         <DropdownMenuSeparator className="bg-black m-0 h-[2px]" />
 

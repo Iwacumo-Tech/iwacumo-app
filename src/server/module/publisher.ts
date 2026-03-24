@@ -146,28 +146,37 @@ export const createPublisher = publicProcedure
 export const updatePublisher = publicProcedure
   .input(updatePublisherSchema)
   .mutation(async (opts) => {
-    const { id, tenant_id, tenant_name, slug, bio, custom_domain, profile_picture } = opts.input;
+    const { id, tenant_id, tenant_name, slug, bio, custom_domain, profile_picture, white_label } = opts.input;
+
+    // Build the update data object dynamically
+    const updateData: any = {};
+
+    // Only include fields that are provided
+    if (bio !== undefined) updateData.bio = bio;
+    if (slug !== undefined) {
+      updateData.slug = slug;
+      updateData.custom_domain = custom_domain || `${slug}.booka.africa`;
+    }
+    if (custom_domain !== undefined) updateData.custom_domain = custom_domain;
+    if (profile_picture !== undefined) updateData.profile_picture = profile_picture;
+    if (white_label !== undefined) updateData.white_label = white_label;
+
+    // Only update tenant if both tenant_id and tenant_name are provided
+    if (tenant_id && tenant_name) {
+      updateData.tenant = {
+        update: {
+          where: { id: tenant_id },
+          data: {
+            name: tenant_name,
+            ...(slug && { slug }) // Update tenant slug only if slug is provided
+          }
+        }
+      };
+    }
 
     return await prisma.publisher.update({
       where: { id },
-      data: {
-        // Update Publisher metadata
-        bio,
-        slug, // Syncing the publisher slug
-        custom_domain: custom_domain || `${slug}.booka.africa`, // Standardized subdomain
-        profile_picture,
-        
-        // Reach into the Tenant table and update the organization details
-        tenant: {
-          update: {
-            where: { id: tenant_id },
-            data: {
-              name: tenant_name,
-              slug: slug // Ensuring organization slug matches publisher slug
-            }
-          }
-        }
-      }
+      data: updateData
     });
   });
 

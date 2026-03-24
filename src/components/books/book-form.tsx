@@ -8,16 +8,39 @@ import { useState, useEffect, useMemo } from "react";
 import { createBookSchema, TCreateBookSchema } from "@/server/dtos";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { useToast } from "@/components/ui/use-toast";
 import { trpc } from "@/app/_providers/trpc-provider";
 import { Book } from "@prisma/client";
 import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import axios from "axios";
-import { Loader2, CheckCircle2, UploadCloud, Edit3 } from "lucide-react";
+import { Loader2, CheckCircle2, UploadCloud, Edit3, TrendingUp, Info } from "lucide-react";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────────────────────
 
 interface BookFormProps {
   book?: Book;
@@ -25,110 +48,362 @@ interface BookFormProps {
   trigger?: React.ReactNode;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Pricing helpers  (pure functions — defined outside component)
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface SystemSettings {
+  printing_costs: {
+    paperback: Record<string, { cover: number; page: number }>;
+    hardcover: Record<string, { cover: number; page: number }>;
+  };
+  platform_fee: { type: "percentage" | "flat"; value: number };
+  default_markup: number;
+}
+
+function calcPrintCost(
+  settings: SystemSettings,
+  format: "paperback" | "hardcover",
+  size: string,
+  pageCount: number
+): number {
+  const cfg = settings.printing_costs[format]?.[size];
+  if (!cfg) return 0;
+  return cfg.cover + cfg.page * pageCount;
+}
+
+function calcPlatformFee(settings: SystemSettings, printCost: number): number {
+  if (settings.platform_fee.type === "flat") return settings.platform_fee.value;
+  return printCost * (settings.platform_fee.value / 100);
+}
+
+function calcDefaultMarkup(settings: SystemSettings, printCost: number): number {
+  return printCost * (settings.default_markup / 100);
+}
+
+function calcAuthorMarkup(
+  markupType: "percentage" | "flat",
+  markupValue: number,
+  baseCost: number
+): number {
+  if (markupType === "flat") return markupValue;
+  return baseCost * (markupValue / 100);
+}
+
+function roundUp100(n: number): number {
+  return Math.ceil(n / 100) * 100;
+}
+
+interface PriceBreakdown {
+  printCost: number;
+  platformFee: number;
+  defaultMarkup: number;
+  baseCost: number;       // printCost + platformFee + defaultMarkup  (minimum sell price)
+  authorMarkup: number;
+  finalPrice: number;     // baseCost + authorMarkup  (what buyer pays)
+}
+
+function buildBreakdown(
+  settings: SystemSettings,
+  format: "paperback" | "hardcover",
+  size: string,
+  pageCount: number,
+  markupType: "percentage" | "flat",
+  markupValue: number
+): PriceBreakdown {
+  const printCost     = calcPrintCost(settings, format, size, pageCount);
+  const platformFee   = calcPlatformFee(settings, printCost);
+  const defaultMarkup = calcDefaultMarkup(settings, printCost);
+  const baseCost      = printCost + platformFee + defaultMarkup;
+  const authorMarkup  = calcAuthorMarkup(markupType, markupValue, baseCost);
+  const rawFinal = baseCost + authorMarkup;
+  const finalPrice = roundUp100(baseCost + authorMarkup);
+  return { printCost, platformFee, defaultMarkup, baseCost, authorMarkup, finalPrice };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UploadField  (defined outside — avoids remount / focus-loss bug)
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface UploadState {
+  progress: number;
+  url: string;
+  loading: boolean;
+}
+
+interface UploadFieldProps {
+  label: string;
+  type: string;
+  uploads: Record<string, UploadState>;
+  onUpload: (file: File, type: string) => void;
+  accept: string;
+}
+
+function UploadField({ label, type, uploads, onUpload, accept }: UploadFieldProps) {
+  const data = uploads[type];
+  return (
+    <div className="space-y-1">
+      <label className="text-[9px] font-black uppercase text-gray-500">{label}</label>
+      <div
+        className={cn(
+          "border-2 border-dashed border-black h-16 flex flex-col items-center justify-center cursor-pointer bg-secondary/10 transition-colors hover:bg-white",
+          data?.url && "border-green-600 bg-green-50"
+        )}
+        onClick={() => document.getElementById(`upload-${type}`)?.click()}
+      >
+        <input
+          id={`upload-${type}`}
+          type="file"
+          accept={accept}
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) onUpload(file, type);
+          }}
+        />
+        {data?.loading ? (
+          <div className="w-full px-4">
+            <div className="h-1 bg-gray-200 w-full rounded-full overflow-hidden">
+              <div
+                className="h-full bg-black transition-all duration-300"
+                style={{ width: `${data.progress}%` }}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="text-[10px] font-black uppercase italic text-center px-2">
+            {data?.url ? (
+              <span className="text-green-700 flex items-center gap-1">
+                <CheckCircle2 size={12} /> Uploaded
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 opacity-50">
+                <UploadCloud size={12} /> {label}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PricingBreakdownCard  (defined outside)
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface PricingBreakdownCardProps {
+  breakdown: PriceBreakdown;
+  format: "paperback" | "hardcover";
+  platformFeeType: "percentage" | "flat";
+  platformFeeValue: number;
+  defaultMarkupPct: number;
+}
+
+function PricingBreakdownCard({
+  breakdown,
+  platformFeeType,
+  platformFeeValue,
+  defaultMarkupPct,
+}: PricingBreakdownCardProps) {
+  const fmt = (n: number) => `₦${Math.ceil(n).toLocaleString()}`;
+  const authorEarnings = breakdown.finalPrice - breakdown.printCost - breakdown.platformFee;
+
+  return (
+    <div className="border-2 border-black bg-[#f9f6f0] p-4 space-y-3 text-xs font-mono">
+      <p className="text-[9px] font-black uppercase tracking-widest opacity-50 flex items-center gap-1">
+        <Info size={10} /> Pricing Breakdown
+      </p>
+
+      {/* Cost stack */}
+      <div className="space-y-1.5">
+        <div className="flex justify-between">
+          <span className="opacity-60">Print cost</span>
+          <span className="font-bold text-red-600">−{fmt(breakdown.printCost)}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="opacity-60">
+            Platform fee ({platformFeeType === "percentage" ? `${platformFeeValue}%` : "flat"})
+          </span>
+          <span className="font-bold text-red-600">−{fmt(breakdown.platformFee)}</span>
+        </div>
+        <div className="flex justify-between border-t border-black/10 pt-1.5">
+          <span className="opacity-80 font-bold">Min. sell price</span>
+          <span className="font-bold">{fmt(breakdown.baseCost)}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="opacity-60">
+            Platform default markup ({defaultMarkupPct}%)
+          </span>
+          <span className="font-bold text-emerald-600">+{fmt(breakdown.defaultMarkup)}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="opacity-60">Your markup</span>
+          <span className="font-bold text-emerald-600">+{fmt(breakdown.authorMarkup)}</span>
+        </div>
+      </div>
+
+      {/* Final price */}
+      <div className="border-t-2 border-black pt-3 flex justify-between items-center">
+        <span className="font-black uppercase text-[10px] tracking-widest">Sell price</span>
+        <span className="font-black text-lg tracking-tight">{fmt(breakdown.finalPrice)}</span>
+      </div>
+
+      {/* Author earnings */}
+      <div className="bg-emerald-50 border border-emerald-300 px-3 py-2 flex justify-between items-center">
+        <span className="text-[9px] font-black uppercase tracking-wider text-emerald-700 flex items-center gap-1">
+          <TrendingUp size={10} /> Your net earnings / copy
+        </span>
+        <span className="font-black text-emerald-700">{fmt(authorEarnings)}</span>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main component
+// ─────────────────────────────────────────────────────────────────────────────
+
 const BookForm = ({ book, action, trigger }: BookFormProps) => {
   const { toast } = useToast();
   const utils = trpc.useUtils();
   const [open, setOpen] = useState(false);
-  // const { data: session } = useSession();
   const session = useSession();
-
   const sessionAuthorId = (session.data?.user as any)?.author_id;
-  
-  const { data: authors } = trpc.getAuthorsByUser.useQuery({
-    id: session.data?.user.id as string,
-  }, {
-    // Only fetch authors list if the logged-in user is NOT an author (e.g., a Publisher)
-    enabled: !!session.data?.user.id && !sessionAuthorId
-  });
+
+  const { data: authors } = trpc.getAuthorsByUser.useQuery(
+    { id: session.data?.user.id as string },
+    { enabled: !!session.data?.user.id && !sessionAuthorId }
+  );
 
   const { data: categories } = trpc.getCategories.useQuery();
+  const { data: systemSettings } = trpc.getSystemSettings.useQuery();
 
-  // Extract initial prices from variants or legacy price field
+  // ── Initial prices from existing variants (edit mode) ──────────────────────
   const initialPrices = useMemo(() => {
     if (book && (book as any).variants) {
       const variants = (book as any).variants || [];
       const prices: { paperback?: number; hardcover?: number; ebook?: number } = {};
-      variants.forEach((variant: any) => {
-        if (variant.format === "paperback") prices.paperback = variant.list_price;
-        if (variant.format === "ebook") prices.ebook = variant.list_price;
-        if (variant.format === "hardcover") prices.hardcover = variant.list_price;
+      variants.forEach((v: any) => {
+        if (v.format === "paperback") prices.paperback = v.list_price;
+        if (v.format === "ebook")     prices.ebook     = v.list_price;
+        if (v.format === "hardcover") prices.hardcover = v.list_price;
       });
       return prices;
     }
-    return { 
-      paperback: (book as any)?.price || 0, 
-      ebook: (book as any)?.price || 0, 
-      hardcover: (book as any)?.price || 0 
+    return {
+      paperback: (book as any)?.price || 0,
+      ebook:     (book as any)?.price || 0,
+      hardcover: (book as any)?.price || 0,
     };
   }, [book]);
 
-  // Comprehensive Upload State mapped to Prisma fields
-  const [uploads, setUploads] = useState({
-    front: { progress: 0, url: book?.book_cover || "", loading: false },
-    back: { progress: 0, url: book?.book_cover2 || "", loading: false },
-    spine: { progress: 0, url: book?.book_cover3 || "", loading: false },
+  // ── Upload state ────────────────────────────────────────────────────────────
+  const [uploads, setUploads] = useState<Record<string, UploadState>>({
+    front:  { progress: 0, url: book?.book_cover  || "", loading: false },
+    back:   { progress: 0, url: book?.book_cover2 || "", loading: false },
+    spine:  { progress: 0, url: book?.book_cover3 || "", loading: false },
     spread: { progress: 0, url: book?.book_cover4 || "", loading: false },
-    pdf: { progress: 0, url: book?.pdf_url || "", loading: false },
-    docx: { progress: 0, url: book?.text_url || "", loading: false },
+    pdf:    { progress: 0, url: book?.pdf_url     || "", loading: false },
+    docx:   { progress: 0, url: book?.text_url    || "", loading: false },
   });
 
+  // ── Form ────────────────────────────────────────────────────────────────────
   const form = useForm<TCreateBookSchema>({
     resolver: zodResolver(createBookSchema),
     defaultValues: {
-      title: book?.title ?? "",
+      title:             book?.title            ?? "",
       short_description: book?.short_description ?? "",
-      long_description: book?.long_description ?? "",
-      page_count: book?.page_count ?? 0,
-      // author_id: book?.author_id ?? "",
-      author_id: book?.author_id ?? sessionAuthorId ?? "",
-      publisher_id: book?.publisher_id ?? (session.data?.user as any)?.publisher_id ?? "",
-      category_ids: (book as any)?.categories?.map((c: any) => c.id) ?? [],
-      paper_back: book?.paper_back ?? false,
-      e_copy: book?.e_copy ?? true,
-      hard_cover: book?.hard_cover ?? false,
-      paperback_price: initialPrices.paperback,
-      ebook_price: initialPrices.ebook,
-      hardcover_price: initialPrices.hardcover,
+      long_description:  book?.long_description  ?? "",
+      page_count:        book?.page_count        ?? 0,
+      author_id:         book?.author_id         ?? sessionAuthorId ?? "",
+      publisher_id:      book?.publisher_id      ?? (session.data?.user as any)?.publisher_id ?? "",
+      category_ids:      (book as any)?.categories?.map((c: any) => c.id) ?? [],
+      paper_back:        book?.paper_back ?? false,
+      e_copy:            book?.e_copy     ?? true,
+      hard_cover:        book?.hard_cover ?? false,
+      paperback_price:   initialPrices.paperback,
+      ebook_price:       initialPrices.ebook,
+      hardcover_price:   initialPrices.hardcover,
+      size:              (book as any)?.variants?.[0]?.size || "A5",
+      author_markup_type:  "percentage",
+      author_markup_value: 0,
     },
   });
 
   const watched = useWatch({ control: form.control });
 
-  // Instant Upload Logic via Vercel Blob with progress tracking
-  const handleInstantUpload = async (file: File, type: keyof typeof uploads) => {
-    setUploads(prev => ({ ...prev, [type]: { ...prev[type], loading: true, progress: 0 } }));
+  // ── Upload handler ──────────────────────────────────────────────────────────
+  const handleInstantUpload = async (file: File, type: string) => {
+    setUploads((prev) => ({ ...prev, [type]: { ...prev[type], loading: true, progress: 0 } }));
     const formData = new FormData();
     formData.append("file", file);
-
     try {
-      const { data } = await axios.post(`/api/avatar/upload?filename=${encodeURIComponent(file.name)}`, formData, {
-        onUploadProgress: (p) => {
-          setUploads(prev => ({ ...prev, [type]: { ...prev[type], progress: Math.round((p.loaded * 100) / (p.total || 1)) } }));
+      const { data } = await axios.post(
+        `/api/avatar/upload?filename=${encodeURIComponent(file.name)}`,
+        formData,
+        {
+          onUploadProgress: (p) => {
+            setUploads((prev) => ({
+              ...prev,
+              [type]: { ...prev[type], progress: Math.round((p.loaded * 100) / (p.total || 1)) },
+            }));
+          },
         }
-      });
-      setUploads(prev => ({ ...prev, [type]: { ...prev[type], url: data.url, loading: false } }));
-    } catch (error) {
-      setUploads(prev => ({ ...prev, [type]: { ...prev[type], loading: false, progress: 0 } }));
+      );
+      setUploads((prev) => ({ ...prev, [type]: { ...prev[type], url: data.url, loading: false } }));
+    } catch {
+      setUploads((prev) => ({ ...prev, [type]: { ...prev[type], loading: false, progress: 0 } }));
       toast({ variant: "destructive", title: "Upload Failed", description: "Could not upload asset." });
     }
   };
 
-  // Automated Pricing Calculation based on Nigerian printing standards
+  // ── Compute pricing breakdowns ──────────────────────────────────────────────
+  const physicalFormat: "paperback" | "hardcover" | null = watched.paper_back
+    ? "paperback"
+    : watched.hard_cover
+    ? "hardcover"
+    : null;
+
+  const pbBreakdown = useMemo<PriceBreakdown | null>(() => {
+    if (!systemSettings || !watched.paper_back || !watched.page_count || watched.page_count <= 0) return null;
+    return buildBreakdown(
+      systemSettings as SystemSettings,
+      "paperback",
+      watched.size || "A5",
+      watched.page_count,
+      (watched.author_markup_type as any) || "percentage",
+      watched.author_markup_value || 0
+    );
+  }, [systemSettings, watched.paper_back, watched.page_count, watched.size, watched.author_markup_type, watched.author_markup_value]);
+
+  const hcBreakdown = useMemo<PriceBreakdown | null>(() => {
+    if (!systemSettings || !watched.hard_cover || !watched.page_count || watched.page_count <= 0) return null;
+    return buildBreakdown(
+      systemSettings as SystemSettings,
+      "hardcover",
+      watched.size || "A5",
+      watched.page_count,
+      (watched.author_markup_type as any) || "percentage",
+      watched.author_markup_value || 0
+    );
+  }, [systemSettings, watched.hard_cover, watched.page_count, watched.size, watched.author_markup_type, watched.author_markup_value]);
+
+  // ── Sync computed prices back into the form fields ──────────────────────────
   useEffect(() => {
-    const base = 2000;
-    const pageCost = (watched.page_count || 0) * 10;
-    const markup = 1.3;
+    if (pbBreakdown) form.setValue("paperback_price", pbBreakdown.finalPrice);
+  }, [pbBreakdown, form]);
 
-    if (watched.paper_back) form.setValue("paperback_price", Math.ceil((base + pageCost) * markup));
-    if (watched.hard_cover) form.setValue("hardcover_price", Math.ceil((base + pageCost + 1500) * markup));
-  }, [watched.page_count, watched.paper_back, watched.hard_cover, form]);
+  useEffect(() => {
+    if (hcBreakdown) form.setValue("hardcover_price", hcBreakdown.finalPrice);
+  }, [hcBreakdown, form]);
 
-  // Logic to determine if the form is valid for specific toasts
+  // ── Form validity ───────────────────────────────────────────────────────────
   const isFormValid = useMemo(() => {
-    const hasBaseInfo = !!(watched.title && watched.author_id && watched.long_description);
-    const hasFormat = !!(watched.e_copy || watched.paper_back || watched.hard_cover);
+    const hasBaseInfo   = !!(watched.title && watched.author_id && watched.long_description);
+    const hasFormat     = !!(watched.e_copy || watched.paper_back || watched.hard_cover);
     const frontUploaded = !!uploads.front.url;
-    const isAnyLoading = Object.values(uploads).some(u => u.loading);
+    const isAnyLoading  = Object.values(uploads).some((u) => u.loading);
 
     if (!hasBaseInfo || !hasFormat || isAnyLoading || !frontUploaded) return false;
 
@@ -136,119 +411,120 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
       const docUploaded = !!(uploads.pdf.url || uploads.docx.url);
       if (!docUploaded || !watched.ebook_price || watched.ebook_price <= 0) return false;
     }
-
     if (watched.paper_back || watched.hard_cover) {
       if (!watched.page_count || watched.page_count <= 0) return false;
+      if (!watched.size) return false;
     }
-
     return true;
   }, [watched, uploads]);
 
-  const { mutate: submitBook, isPending } = trpc[action === "Add" ? "createBook" : "updateBook"].useMutation({
-    onSuccess: () => {
-      toast({ title: "Success", description: `Product ${action === "Add" ? "published" : "updated"} successfully.` });
-      Promise.all([
-        utils.getAllBooks.invalidate(),           // Global list
-        // utils.getBooksByAuthor.invalidate(),  
-        utils.getBookByAuthor.invalidate(),    // The Author's private roster
-        // utils.getBooksByPublisher.invalidate(),   // The Publisher's catalog
-        // utils.getBooks.invalidate()               // Generic public list
-      ]).then(() => {
-        setOpen(false); // Close modal only after cache is cleared
-      });
-    },
-    onError: (err) => toast({ variant: "destructive", title: "Submission Failed", description: err.message })
-  });
+  // ── Mutations ───────────────────────────────────────────────────────────────
+  const { mutate: submitBook, isPending } =
+    trpc[action === "Add" ? "createBook" : "updateBook"].useMutation({
+      onSuccess: () => {
+        toast({
+          title: "Success",
+          description: `Product ${action === "Add" ? "published" : "updated"} successfully.`,
+        });
+        Promise.all([utils.getAllBooks.invalidate(), utils.getBookByAuthor.invalidate()]).then(
+          () => setOpen(false)
+        );
+      },
+      onError: (err) =>
+        toast({ variant: "destructive", title: "Submission Failed", description: err.message }),
+    });
 
+  // ── Submit ──────────────────────────────────────────────────────────────────
   const onFinalSubmit = (values: TCreateBookSchema) => {
-    // 1. Mandatory Front Cover check
     if (!uploads.front.url) {
-      toast({ variant: "destructive", title: "Missing Cover", description: "The front cover image is required for all formats." });
+      toast({ variant: "destructive", title: "Missing Cover", description: "Front cover is required." });
       return;
     }
-
-    // 2. Format-specific asset validation
     if (values.e_copy && !uploads.pdf.url && !uploads.docx.url) {
-      toast({ variant: "destructive", title: "Missing Document", description: "Please upload a PDF or DOCX for the E-Book." });
+      toast({ variant: "destructive", title: "Missing Document", description: "Upload a PDF or DOCX for the e-book." });
       return;
     }
-
     const finalAuthorId = values.author_id || sessionAuthorId;
-
     if (!finalAuthorId) {
       toast({ variant: "destructive", title: "Validation Error", description: "Author context is missing." });
       return;
     }
 
-    // 3. Prepare Payload: strip values for unselected formats to avoid Zod schema conflicts
     const payload = {
       ...values,
-      id: book?.id,
-      author_id: finalAuthorId,
-      book_cover: uploads.front.url || null,
-      
-      // Cleanup associated physical fields if not selected
-      book_cover2: (values.paper_back || values.hard_cover) ? (uploads.back.url || null) : null,
-      book_cover3: (values.paper_back || values.hard_cover) ? (uploads.spine.url || null) : null,
+      id:          book?.id,
+      author_id:   finalAuthorId,
+      book_cover:  uploads.front.url  || null,
+      book_cover2: (values.paper_back || values.hard_cover) ? (uploads.back.url   || null) : null,
+      book_cover3: (values.paper_back || values.hard_cover) ? (uploads.spine.url  || null) : null,
       book_cover4: (values.paper_back || values.hard_cover) ? (uploads.spread.url || null) : null,
-      page_count: (values.paper_back || values.hard_cover) ? (values.page_count || 0) : undefined,
-      paperback_price: values.paper_back ? values.paperback_price : undefined,
-      hardcover_price: values.hard_cover ? values.hardcover_price : undefined,
-      
-      // Cleanup digital fields if not selected
-      pdf_url: values.e_copy ? (uploads.pdf.url || null) : null,
-      text_url: values.e_copy ? (uploads.docx.url || null) : null,
-      ebook_price: values.e_copy ? values.ebook_price : undefined,
-      
-      // Explicitly pass boolean status for backend removal logic
-      paper_back: !!values.paper_back,
-      hard_cover: !!values.hard_cover,
-      e_copy: !!values.e_copy,
-      
-      // Resolve the primary price scalar for backwards compatibility
-      price: values.e_copy 
-        ? (values.ebook_price || 0) 
+      page_count:  (values.paper_back || values.hard_cover) ? (values.page_count  || 0)   : undefined,
+      paperback_price: values.paper_back  ? values.paperback_price  : undefined,
+      hardcover_price: values.hard_cover  ? values.hardcover_price  : undefined,
+      pdf_url:     values.e_copy ? (uploads.pdf.url  || null) : null,
+      text_url:    values.e_copy ? (uploads.docx.url || null) : null,
+      ebook_price: values.e_copy ? values.ebook_price           : undefined,
+      paper_back:  !!values.paper_back,
+      hard_cover:  !!values.hard_cover,
+      e_copy:      !!values.e_copy,
+      price: values.e_copy
+        ? (values.ebook_price     || 0)
         : (values.paperback_price || values.hardcover_price || 0),
+      variants: [
+        ...(values.paper_back ? [{
+          format:     "paperback" as const,
+          size:       values.size || "A5",
+          list_price: values.paperback_price!,
+          status:     "active"   as const,
+        }] : []),
+        ...(values.hard_cover ? [{
+          format:     "hardcover" as const,
+          size:       values.size || "A5",
+          list_price: values.hardcover_price!,
+          status:     "active"   as const,
+        }] : []),
+        ...(values.e_copy ? [{
+          format:     "ebook"  as const,
+          list_price: values.ebook_price!,
+          status:     "active" as const,
+        }] : []),
+      ],
     };
 
     submitBook(payload as any);
   };
 
   const handleFormError = (errors: any) => {
-    // Provide specific feedback for the first validation error found
     const errorEntries = Object.entries(errors);
-    if (errorEntries.length > 0) {
-      const [field, error] = errorEntries[0] as [string, any];
-      
-      // Skip irrelevant errors based on format selection
-      if (field === 'page_count' && !watched.paper_back && !watched.hard_cover) return;
-      if (field === 'ebook_price' && !watched.e_copy) return;
-      if (field === 'paperback_price' && !watched.paper_back) return;
-      if (field === 'hardcover_price' && !watched.hard_cover) return;
-
-      toast({
-        variant: "destructive",
-        title: "Validation Error",
-        description: error?.message || `Please check the ${field.replace('_', ' ')} field.`,
-      });
-    }
+    if (!errorEntries.length) return;
+    const [field, error] = errorEntries[0] as [string, any];
+    if (field === "page_count"      && !watched.paper_back && !watched.hard_cover) return;
+    if (field === "ebook_price"     && !watched.e_copy)     return;
+    if (field === "paperback_price" && !watched.paper_back) return;
+    if (field === "hardcover_price" && !watched.hard_cover) return;
+    toast({
+      variant: "destructive",
+      title: "Validation Error",
+      description: (error as any)?.message || `Please check the ${field.replace("_", " ")} field.`,
+    });
   };
 
-  const menuButtonStyle = "w-full text-left px-3 py-2.5 text-xs font-black uppercase italic hover:bg-accent cursor-pointer flex items-center gap-2 transition-colors rounded-none outline-none border-none bg-transparent text-black shadow-none";
+  const menuButtonStyle =
+    "w-full text-left px-3 py-2.5 text-xs font-black uppercase italic hover:bg-accent cursor-pointer flex items-center gap-2 transition-colors rounded-none outline-none border-none bg-transparent text-black shadow-none";
 
+  // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        {/* Logic: Use external trigger if provided; otherwise, use the internal styled button */}
         {trigger ? (
           trigger
         ) : (
-          <Button 
+          <Button
             className={cn(
               "rounded-none border-2 border-black transition-all font-black uppercase italic text-xs tracking-widest",
-              action === "Edit" 
-                ? menuButtonStyle // Blends into the management dropdown
-                : "bg-black text-white gumroad-shadow h-14 px-8 hover:translate-x-[2px] block" // Standalone 'Add' button style
+              action === "Edit"
+                ? menuButtonStyle
+                : "bg-black text-white gumroad-shadow h-14 px-8 hover:translate-x-[2px] block"
             )}
           >
             {action === "Edit" && <Edit3 size={14} />}
@@ -256,43 +532,71 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
           </Button>
         )}
       </DialogTrigger>
+
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto rounded-none border-2 border-black p-0 bg-[#F4F4F4]">
         <div className="p-6 border-b-2 border-black bg-white sticky top-0 z-20">
-          <DialogTitle className="text-2xl font-black uppercase italic">{action} Book</DialogTitle>
+          <DialogTitle className="text-2xl font-black uppercase italic">
+            {action} Book
+          </DialogTitle>
         </div>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onFinalSubmit, handleFormError)} className="p-6 space-y-8">
-            
-            {/* 1. PRODUCT INFORMATION */}
+          <form
+            onSubmit={form.handleSubmit(onFinalSubmit, handleFormError)}
+            className="p-6 space-y-8"
+          >
+            {/* ── Section 1: Product Info ─────────────────────────────── */}
             <section className="space-y-4">
               <div className="flex items-center gap-2">
                 <span className="h-8 w-8 bg-black text-white flex items-center justify-center font-bold">1</span>
                 <h3 className="font-bold uppercase tracking-tight">Product Information</h3>
               </div>
+
               <div className="bg-white border-2 border-black p-6 space-y-4">
-                <FormField control={form.control} name="title" render={({ field }) => (
-                  <FormItem><FormLabel className="font-bold text-xs">TITLE *</FormLabel><FormControl><Input className="input-gumroad" {...field} /></FormControl></FormItem>
-                )} />
-                {!sessionAuthorId && (
-                  <FormField control={form.control} name="author_id" render={({ field }) => (
+                {/* Title */}
+                <FormField
+                  control={form.control}
+                  name="title"
+                  render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="font-bold text-xs">AUTHOR *</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger className="input-gumroad">
-                            <SelectValue placeholder="Select Author" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent className="rounded-none border-2 border-black">
-                          {authors?.map(a => (
-                            <SelectItem key={a.id} value={a.id}>{a.user.first_name} {a.user.last_name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <FormLabel className="font-bold text-xs">TITLE *</FormLabel>
+                      <FormControl>
+                        <Input className="input-gumroad" {...field} />
+                      </FormControl>
+                      <FormMessage />
                     </FormItem>
-                  )} />
+                  )}
+                />
+
+                {/* Author select (only if not already an author) */}
+                {!sessionAuthorId && (
+                  <FormField
+                    control={form.control}
+                    name="author_id"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="font-bold text-xs">AUTHOR *</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger className="input-gumroad">
+                              <SelectValue placeholder="Select Author" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent className="rounded-none border-2 border-black bg-white">
+                            {authors?.map((a) => (
+                              <SelectItem key={a.id} value={a.id}>
+                                {a.user.first_name} {a.user.last_name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                 )}
+
+                {/* Categories */}
                 <FormField
                   control={form.control}
                   name="category_ids"
@@ -307,12 +611,14 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                               checked={field.value?.includes(cat.id)}
                               onCheckedChange={(checked) => {
                                 const current = field.value || [];
-                                return checked
-                                  ? field.onChange([...current, cat.id])
-                                  : field.onChange(current.filter((value) => value !== cat.id));
+                                field.onChange(
+                                  checked
+                                    ? [...current, cat.id]
+                                    : current.filter((v) => v !== cat.id)
+                                );
                               }}
                             />
-                            <label htmlFor={cat.id} className="text-sm font-medium leading-none cursor-pointer">
+                            <label htmlFor={cat.id} className="text-sm font-medium cursor-pointer">
                               {cat.name}
                             </label>
                           </div>
@@ -322,88 +628,330 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                     </FormItem>
                   )}
                 />
-                <FormField control={form.control} name="long_description" render={({ field }) => (
-                  <FormItem><FormLabel className="font-bold text-xs">DESCRIPTION *</FormLabel><FormControl><Textarea className="input-gumroad min-h-[100px]" {...field} /></FormControl></FormItem>
-                )} />
+
+                {/* Description */}
+                <FormField
+                  control={form.control}
+                  name="long_description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="font-bold text-xs">DESCRIPTION *</FormLabel>
+                      <FormControl>
+                        <Textarea className="input-gumroad min-h-[100px]" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
               </div>
             </section>
 
-            {/* 2. FORMAT SELECTION & PRICING */}
+            {/* ── Section 2: Format & Pricing ────────────────────────── */}
             <section className="space-y-4">
               <div className="flex items-center gap-2">
                 <span className="h-8 w-8 bg-black text-white flex items-center justify-center font-bold">2</span>
-                <h3 className="font-bold uppercase tracking-tight">Format & Pricing</h3>
+                <h3 className="font-bold uppercase tracking-tight">Format &amp; Pricing</h3>
               </div>
+
               <div className="bg-white border-2 border-black divide-y-2 divide-black">
-                
-                {/* Physical Book Settings */}
+
+                {/* ── Physical formats (Paperback / Hardcover) ─────────── */}
                 <div className="p-6 space-y-6">
                   <div className="flex gap-6">
-                    <div className="flex items-center gap-2"><Checkbox checked={watched.paper_back} onCheckedChange={v => form.setValue("paper_back", !!v)} /><label className="font-bold text-sm">Paperback</label></div>
-                    <div className="flex items-center gap-2"><Checkbox checked={watched.hard_cover} onCheckedChange={v => form.setValue("hard_cover", !!v)} /><label className="font-bold text-sm">Hardcover</label></div>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        checked={!!watched.paper_back}
+                        onCheckedChange={(v) => form.setValue("paper_back", !!v)}
+                      />
+                      <label className="font-bold text-sm">Paperback</label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        checked={!!watched.hard_cover}
+                        onCheckedChange={(v) => form.setValue("hard_cover", !!v)}
+                      />
+                      <label className="font-bold text-sm">Hardcover</label>
+                    </div>
                   </div>
-                  
+
                   {(watched.paper_back || watched.hard_cover) && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pl-6 border-l-2 border-black animate-in fade-in slide-in-from-top-2">
-                      <FormField control={form.control} name="page_count" render={({ field }) => (
-                        <FormItem><FormLabel className="text-[10px] font-black uppercase">Page Count *</FormLabel><Input type="number" className="input-gumroad" {...field} value={field.value ?? ""} onChange={e => field.onChange(Number(e.target.value))} /></FormItem>
-                      )} />
-                      <div className="p-4 bg-[#82d236]/10 border border-black/10">
-                        <p className="text-[10px] font-black uppercase mb-2">Automated Pricing (NGN)</p>
-                        {watched.paper_back && <div className="flex justify-between font-bold text-sm italic"><span>Paperback:</span><span>₦{watched.paperback_price?.toLocaleString()}</span></div>}
-                        {watched.hard_cover && <div className="flex justify-between font-bold text-sm italic"><span>Hardcover:</span><span>₦{watched.hardcover_price?.toLocaleString()}</span></div>}
+                    <div className="space-y-6 pl-6 border-l-2 border-black animate-in fade-in slide-in-from-top-2">
+
+                      {/* Size + Page count row */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <FormField
+                          control={form.control}
+                          name="size"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="text-[10px] font-black uppercase">Book Size *</FormLabel>
+                              <Select onValueChange={field.onChange} value={field.value}>
+                                <FormControl>
+                                  <SelectTrigger className="input-gumroad">
+                                    <SelectValue placeholder="Select Size" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent className="rounded-none border-2 border-black bg-white">
+                                  <SelectItem value="A6">A6 — Pocket (105 × 148 mm)</SelectItem>
+                                  <SelectItem value="A5">A5 — Standard (148 × 210 mm)</SelectItem>
+                                  <SelectItem value="A4">A4 — Large (210 × 297 mm)</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+
+                        <FormField
+                          control={form.control}
+                          name="page_count"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="text-[10px] font-black uppercase">Page Count *</FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="number"
+                                  className="input-gumroad"
+                                  {...field}
+                                  value={field.value ?? ""}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    field.onChange(val === "" ? 0 : Number(val));
+                                  }}
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
                       </div>
+
+                      {/* Author markup row */}
+                      {systemSettings && watched.page_count && watched.page_count > 0 && (
+                        <div className="space-y-4">
+                          <p className="text-[10px] font-black uppercase tracking-widest opacity-50">
+                            Your Markup
+                          </p>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <FormField
+                              control={form.control}
+                              name="author_markup_type"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel className="text-[10px] font-black uppercase">Markup Type</FormLabel>
+                                  <Select onValueChange={field.onChange} value={field.value as string}>
+                                    <FormControl>
+                                      <SelectTrigger className="input-gumroad">
+                                        <SelectValue placeholder="Type" />
+                                      </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent className="rounded-none border-2 border-black bg-white">
+                                      <SelectItem value="percentage">Percentage (%)</SelectItem>
+                                      <SelectItem value="flat">Fixed Amount (₦)</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </FormItem>
+                              )}
+                            />
+
+                            <FormField
+                              control={form.control}
+                              name="author_markup_value"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel className="text-[10px] font-black uppercase">
+                                    {watched.author_markup_type === "flat" ? "Amount (₦)" : "Percentage (%)"}
+                                  </FormLabel>
+                                  <FormControl>
+                                    <Input
+                                      type="number"
+                                      className="input-gumroad"
+                                      min={0}
+                                      value={field.value ?? ""}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        field.onChange(val === "" ? 0 : Number(val));
+                                      }}
+                                    />
+                                  </FormControl>
+                                </FormItem>
+                              )}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Pricing breakdown cards */}
+                      {pbBreakdown && watched.paper_back && (
+                        <div className="space-y-1">
+                          <p className="text-[9px] font-black uppercase tracking-widest opacity-40">Paperback</p>
+                          <PricingBreakdownCard
+                            breakdown={pbBreakdown}
+                            format="paperback"
+                            platformFeeType={systemSettings!.platform_fee.type}
+                            platformFeeValue={systemSettings!.platform_fee.value}
+                            defaultMarkupPct={systemSettings!.default_markup as number}
+                          />
+                        </div>
+                      )}
+
+                      {hcBreakdown && watched.hard_cover && (
+                        <div className="space-y-1">
+                          <p className="text-[9px] font-black uppercase tracking-widest opacity-40">Hardcover</p>
+                          <PricingBreakdownCard
+                            breakdown={hcBreakdown}
+                            format="hardcover"
+                            platformFeeType={systemSettings!.platform_fee.type}
+                            platformFeeValue={systemSettings!.platform_fee.value}
+                            defaultMarkupPct={systemSettings!.default_markup as number}
+                          />
+                        </div>
+                      )}
+
+                      {/* Final prices (read-only, auto-computed) */}
+                      {(pbBreakdown || hcBreakdown) && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                          {watched.paper_back && (
+                            <FormField
+                              control={form.control}
+                              name="paperback_price"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel className="text-[10px] font-black uppercase">
+                                    Paperback Sell Price (₦)
+                                  </FormLabel>
+                                  <FormControl>
+                                    <Input
+                                      type="number"
+                                      className="input-gumroad bg-gray-50"
+                                      {...field}
+                                      value={field.value ?? ""}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        field.onChange(val === "" ? 0 : Number(val));
+                                      }}
+                                    />
+                                  </FormControl>
+                                  <p className="text-[9px] opacity-40 font-medium">
+                                    Auto-calculated. You can override.
+                                  </p>
+                                </FormItem>
+                              )}
+                            />
+                          )}
+                          {watched.hard_cover && (
+                            <FormField
+                              control={form.control}
+                              name="hardcover_price"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel className="text-[10px] font-black uppercase">
+                                    Hardcover Sell Price (₦)
+                                  </FormLabel>
+                                  <FormControl>
+                                    <Input
+                                      type="number"
+                                      className="input-gumroad bg-gray-50"
+                                      {...field}
+                                      value={field.value ?? ""}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        field.onChange(val === "" ? 0 : Number(val));
+                                      }}
+                                    />
+                                  </FormControl>
+                                  <p className="text-[9px] opacity-40 font-medium">
+                                    Auto-calculated. You can override.
+                                  </p>
+                                </FormItem>
+                              )}
+                            />
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
 
-                {/* Ebook Settings */}
+                {/* ── E-Copy ────────────────────────────────────────────── */}
                 <div className="p-6 space-y-6">
-                  <div className="flex items-center gap-2"><Checkbox checked={watched.e_copy} onCheckedChange={v => form.setValue("e_copy", !!v)} /><label className="font-bold text-sm">E-Copy (Digital)</label></div>
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      checked={!!watched.e_copy}
+                      onCheckedChange={(v) => form.setValue("e_copy", !!v)}
+                    />
+                    <label className="font-bold text-sm">E-Copy (Digital)</label>
+                  </div>
+
                   {watched.e_copy && (
                     <div className="pl-6 border-l-2 border-black animate-in fade-in slide-in-from-top-2">
-                      <FormField control={form.control} name="ebook_price" render={({ field }) => (
-                        <FormItem className="max-w-[200px]"><FormLabel className="text-[10px] font-black uppercase">E-Copy Price (NGN) *</FormLabel><Input type="number" className="input-gumroad" {...field} value={field.value ?? ""} onChange={e => field.onChange(Number(e.target.value))} /></FormItem>
-                      )} />
+                      <FormField
+                        control={form.control}
+                        name="ebook_price"
+                        render={({ field }) => (
+                          <FormItem className="max-w-[200px]">
+                            <FormLabel className="text-[10px] font-black uppercase">
+                              E-Copy Price (₦) *
+                            </FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                className="input-gumroad"
+                                {...field}
+                                value={field.value ?? ""}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  field.onChange(val === "" ? 0 : Number(val));
+                                }}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
                     </div>
                   )}
                 </div>
               </div>
             </section>
 
-            {/* 3. MEDIA & CONTENT UPLOADS */}
+            {/* ── Section 3: Content & Media ─────────────────────────── */}
             <section className="space-y-4">
               <div className="flex items-center gap-2">
                 <span className="h-8 w-8 bg-black text-white flex items-center justify-center font-bold">3</span>
-                <h3 className="font-bold uppercase tracking-tight">Content & Media</h3>
+                <h3 className="font-bold uppercase tracking-tight">Content &amp; Media</h3>
               </div>
-              <div className="bg-white border-2 border-black p-6 space-y-8">
-                
-                {/* Global assets */}
-                <UploadField label="Main Front Cover (Mandatory) *" type="front" uploads={uploads} onUpload={handleInstantUpload} accept="image/*" />
 
-                {/* Format-specific physical assets */}
+              <div className="bg-white border-2 border-black p-6 space-y-8">
+                <UploadField
+                  label="Main Front Cover (Mandatory) *"
+                  type="front"
+                  uploads={uploads}
+                  onUpload={handleInstantUpload}
+                  accept="image/*"
+                />
+
                 {(watched.paper_back || watched.hard_cover) && (
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4 border-t-2 border-black pt-8 animate-in fade-in">
-                    <UploadField label="Back Cover" type="back" uploads={uploads} onUpload={handleInstantUpload} accept="image/*" />
-                    <UploadField label="Spine" type="spine" uploads={uploads} onUpload={handleInstantUpload} accept="image/*" />
+                    <UploadField label="Back Cover"        type="back"   uploads={uploads} onUpload={handleInstantUpload} accept="image/*" />
+                    <UploadField label="Spine"             type="spine"  uploads={uploads} onUpload={handleInstantUpload} accept="image/*" />
                     <UploadField label="Full Cover Spread" type="spread" uploads={uploads} onUpload={handleInstantUpload} accept="image/*" />
                   </div>
                 )}
 
-                {/* Format-specific digital assets */}
                 {watched.e_copy && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t-2 border-black pt-8 animate-in fade-in">
-                    <UploadField label="PDF Document *" type="pdf" uploads={uploads} onUpload={handleInstantUpload} accept=".pdf" />
+                    <UploadField label="PDF Document *"      type="pdf"  uploads={uploads} onUpload={handleInstantUpload} accept=".pdf"  />
                     <UploadField label="Web Reader (DOCX) *" type="docx" uploads={uploads} onUpload={handleInstantUpload} accept=".docx" />
                   </div>
                 )}
               </div>
             </section>
 
-            <Button 
-              type="submit" 
-              disabled={isPending || Object.values(uploads).some(u => u.loading)} 
+            {/* ── Submit ─────────────────────────────────────────────── */}
+            <Button
+              type="submit"
+              disabled={isPending || Object.values(uploads).some((u) => u.loading)}
               className="w-full h-16 bg-[#82d236] text-black font-black uppercase text-xl rounded-none border-2 border-black gumroad-shadow hover:translate-x-[3px] transition-all disabled:opacity-50 disabled:bg-gray-200 disabled:cursor-not-allowed"
             >
               {isPending ? <Loader2 className="animate-spin" /> : `${action} Product`}
@@ -412,29 +960,6 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
         </Form>
       </DialogContent>
     </Dialog>
-  );
-};
-
-const UploadField = ({ label, type, uploads, onUpload, accept }: any) => {
-  const data = uploads[type];
-  return (
-    <div className="space-y-1">
-      <label className="text-[9px] font-black uppercase text-gray-500">{label}</label>
-      <div className={cn("border-2 border-dashed border-black h-16 flex flex-col items-center justify-center cursor-pointer bg-secondary/10 transition-colors hover:bg-white", data.url && "border-green-600 bg-green-50")} onClick={() => document.getElementById(type)?.click()}>
-        {data.loading ? (
-          <div className="w-full px-4">
-            <div className="h-1 bg-gray-200 w-full rounded-full overflow-hidden">
-              <div className="h-full bg-black transition-all duration-300" style={{ width: `${data.progress}%` }} />
-            </div>
-          </div>
-        ) : data.url ? (
-          <div className="flex items-center gap-1 text-green-600 font-bold text-[10px]"><CheckCircle2 size={16} /> COMPLETED</div>
-        ) : (
-          <UploadCloud size={20} />
-        )}
-      </div>
-      <input id={type} type="file" className="hidden" accept={accept} onChange={e => e.target.files?.[0] && onUpload(e.target.files[0], type)} />
-    </div>
   );
 };
 

@@ -622,14 +622,14 @@ export async function hasAdminRole(
 }
 
 export const toggleFeatured = publicProcedure
-  .input(z.object({ 
-    bookId: z.string(), 
+  .input(z.object({
+    bookId: z.string(),
     featured: z.boolean(),
-    scope: z.enum(["global", "shop"]) 
+    scope: z.enum(["global", "shop"])
   }))
   .mutation(async ({ input }) => {
-    const updateData = input.scope === "global" 
-      ? { featured: input.featured } 
+    const updateData = input.scope === "global"
+      ? { featured: input.featured }
       : { featured_shop: input.featured };
 
     return await prisma.book.update({
@@ -637,3 +637,86 @@ export const toggleFeatured = publicProcedure
       data: updateData
     });
   });
+
+// System Settings Management
+// Unwraps any nesting level of { value: N }, { v: N }, or plain N
+function normalisePrimitive(raw: any, fallback: number): number {
+  if (raw === null || raw === undefined) return fallback;
+  if (typeof raw === "number") return raw;
+  let val = raw;
+  while (typeof val === "object" && val !== null) {
+    if ("v" in val) { val = val.v; continue; }
+    if ("value" in val) { val = val.value; continue; }
+    break;
+  }
+  return typeof val === "number" ? val : fallback;
+}
+ 
+export const getSystemSettings = publicProcedure
+  .query(async () => {
+    const settings = await prisma.systemSettings.findMany({
+      orderBy: { created_at: "desc" },
+    });
+ 
+    const settingsMap: Record<string, any> = {};
+    settings.forEach((setting) => {
+      settingsMap[setting.key] = setting.value;
+    });
+ 
+    // Always return clean, flat shapes — callers never need to unwrap
+    return {
+      printing_costs: settingsMap.printing_costs ?? {
+        paperback: {
+          A6: { cover: 1500, page: 5 },
+          A5: { cover: 2000, page: 10 },
+          A4: { cover: 3000, page: 15 },
+        },
+        hardcover: {
+          A6: { cover: 2500, page: 5 },
+          A5: { cover: 3500, page: 10 },
+          A4: { cover: 5000, page: 15 },
+        },
+      },
+      platform_fee: {
+        type: settingsMap.platform_fee?.type ?? "percentage",
+        value: normalisePrimitive(settingsMap.platform_fee?.value, 30),
+      },
+      default_markup: normalisePrimitive(settingsMap.default_markup, 20),
+      isbn_cost: normalisePrimitive(settingsMap.isbn_cost, 0),
+      shipping_rates: settingsMap.shipping_rates ?? {
+        Z1: { constant: 1500, variable: 200 },
+        Z2: { constant: 2000, variable: 250 },
+        Z3: { constant: 1200, variable: 180 },
+        Z4: { constant: 1000, variable: 150 },
+      },
+      book_weights: settingsMap.book_weights ?? {
+        paperback: {
+          A6: { cover: 50, page: 3 },
+          A5: { cover: 70, page: 4 },
+          A4: { cover: 90, page: 6 },
+        },
+        hardcover: {
+          A6: { cover: 120, page: 3 },
+          A5: { cover: 160, page: 4 },
+          A4: { cover: 200, page: 6 },
+        },
+      },
+    };
+  });
+ 
+export const updateSystemSettings = publicProcedure
+  .input(
+    z.object({
+      key: z.string(),
+      value: z.record(z.any()),
+    })
+  )
+  .mutation(async ({ input }) => {
+    const setting = await prisma.systemSettings.upsert({
+      where: { key: input.key },
+      update: { value: input.value },
+      create: { key: input.key, value: input.value },
+    });
+    return setting;
+  });
+ 

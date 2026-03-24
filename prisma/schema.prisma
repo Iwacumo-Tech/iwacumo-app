@@ -115,6 +115,8 @@ model Tenant {
   brand_color      String?
   secondary_color  String?
   social_links     Json?
+  banners     Banner[]
+  hero_slides HeroSlide[]
 
   @@map("tenants")
 }
@@ -137,6 +139,7 @@ model Publisher {
   orders          Order[]
   admin_user_roles AdminUserRole[]
   roles           Role[]
+  white_label     Boolean         @default(false)
   created_at      DateTime        @default(now())
   updated_at      DateTime        @updatedAt
 
@@ -259,6 +262,7 @@ model BookVariant {
   book_id           String
   book              Book      @relation(fields: [book_id], references: [id], onDelete: Cascade)
   format            String    // hardcover, paperback, ebook, audiobook, etc.
+  size              String?   // A5, A4, A6 (for physical books only)
   isbn13            String?   @unique
   language          String    @default("en")
   list_price        Float
@@ -349,6 +353,10 @@ model HeroSlide {
   image       String
   buttonText  String
   buttonRoute String
+
+  tenant_id   String?   // Null means Global
+  tenant      Tenant?   @relation(fields: [tenant_id], references: [id])
+
   created_at  DateTime  @default(now())
   updated_at  DateTime  @updatedAt
   deleted_at  DateTime?
@@ -360,6 +368,10 @@ model Banner {
   id         String    @id @default(uuid())
   image      String
   isShow     Boolean   @default(true)
+
+  tenant_id   String?   // Null means it's a "Global" banner
+  tenant      Tenant?   @relation(fields: [tenant_id], references: [id])
+
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
   deleted_at DateTime?
@@ -493,4 +505,14 @@ model AdminUserRole {
 
   @@unique([admin_user_id, role_name, publisher_id, tenant_id])
   @@map("admin_user_roles")
+}
+
+model SystemSettings {
+  id                    String   @id @default(uuid())
+  key                  String   @unique
+  value                Json
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
+
+  @@map("system_settings")
 }

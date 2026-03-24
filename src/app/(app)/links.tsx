@@ -1,7 +1,7 @@
 import { LuLayoutDashboard, LuUsers, LuUserPlus, LuSettings, LuShoppingBag, LuFileText, LuLayers, LuStar } from "react-icons/lu";
 import { FaBookOpen } from "react-icons/fa";
 import { MdDashboardCustomize } from "react-icons/md";
-import { UserPlusIcon, Image as ImageIcon, Sliders as SliderIcon } from "lucide-react";
+import { UserPlusIcon, Image as ImageIcon, Sliders as SliderIcon, Gauge } from "lucide-react";
 
 /**
  * Navigation Links Configuration
@@ -75,6 +75,12 @@ export const links = [
     requiredPermission: "super-admin, tenant-admin, publisher, author, customer",
   },
 
+  {
+    name: "System Settings",
+    url: "/app/admin/settings",
+    icon: <Gauge className="size-5 mr-2" />,
+    requiredPermission: "super-admin",
+  },
   {
     name: "Global Featured",
     url: "/app/admin/featured",

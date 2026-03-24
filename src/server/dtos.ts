@@ -70,9 +70,10 @@ export const updatePublisherSchema = z.object({
   bio: z.string().nullable().optional(),
   custom_domain: z.string().optional(),
   profile_picture: z.string().optional(),
-  tenant_id: z.string(),
-  tenant_name: z.string(),
+  tenant_id: z.string().optional(),
+  tenant_name: z.string().optional(),
   slug: z.string().nullable().optional(),
+  white_label: z.boolean().optional(),
 });
 
 export const getPublisherByOrgSchema = z.object({
@@ -108,6 +109,7 @@ export const signUpAuthorSchema = z.object({
 export const bookVariantSchema = z.object({
   id: z.string().optional(),
   format: z.enum(["hardcover", "paperback", "ebook", "audiobook"]),
+  size: z.enum(["A5", "A4", "A6"]).optional(), // Size for physical books only
   isbn13: z.string().optional(),
   language: z.string().default("en"),
   list_price: z.number().positive("List price must be positive"),
@@ -139,7 +141,6 @@ export const createBookSchema = z.object({
   publication_date: z.date().optional(),
   default_language: z.string().default("en"),
   
-  // FIXED: Changed to optional/nullable to prevent global validation triggers
   page_count: z.number().int().optional().nullable(),
   
   reading_age_min: z.number().int().positive().optional(),
@@ -155,7 +156,6 @@ export const createBookSchema = z.object({
   
   price: z.number().optional(), 
 
-  // FIXED: Changed to optional/nullable to prevent global validation triggers
   paperback_price: z.number().optional().nullable(),
   hardcover_price: z.number().optional().nullable(),
   ebook_price: z.number().optional().nullable(),
@@ -171,6 +171,14 @@ export const createBookSchema = z.object({
   text_url: z.string().url("Text URL must be valid").nullable().optional(),
   docx_url: z.string().url("DOCX URL must be valid").nullable().optional(),
   reader_url: z.string().url("Reader URL must be valid").nullable().optional(),
+
+  size: z.enum(["A6", "A5", "A4"]).optional().default("A5"),
+ 
+  // Author/publisher markup on top of the platform base cost.
+  // "percentage" = % of print cost added on top.
+  // "flat"       = fixed NGN amount added on top.
+  author_markup_type: z.enum(["percentage", "flat"]).optional().default("percentage"),
+  author_markup_value: z.number().min(0).optional().default(0),
   
   publisher_id: z.string().optional(),
   author_id: z.string().optional(),
@@ -355,6 +363,17 @@ export const deletePublisherSchema = z.object({ id: z.string() });
 export const deleteUserSchema = z.object({ id: z.string() });
 export type TCreateUserSchema = z.infer<typeof createUserSchema>;
 export type TAssignRoleSchema = z.infer<typeof assignRoleSchema>;
+
+// System Settings schemas
+export const getSystemSettingsSchema = z.object({});
+
+export const updateSystemSettingsSchema = z.object({
+  key: z.string(),
+  value: z.record(z.any()),
+});
+
+export type TGetSystemSettings = z.infer<typeof getSystemSettingsSchema>;
+export type TUpdateSystemSettings = z.infer<typeof updateSystemSettingsSchema>;
 
 // AdminUser schemas
 export const createAdminUserSchema = z.object({
@@ -563,3 +582,4 @@ export const updateCustomerSchema = z.object({
 });
 
 export type TUpdateCustomerSchema = z.infer<typeof updateCustomerSchema>;
+

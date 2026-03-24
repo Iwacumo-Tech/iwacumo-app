@@ -18,6 +18,21 @@ import { put } from "@vercel/blob";
  * - Complex procedures (getPurchasedBooksByCustomer, getBookByAuthor, etc.)
  */
 
+// Weight in grams, using admin-configured constants
+function computeWeightGrams(
+  format: string,
+  size: string | undefined,
+  pageCount: number,
+  bookWeights: any
+): number | null {
+  if (format === "ebook" || format === "audiobook") return null;
+  const fmtKey = format === "hardcover" ? "hardcover" : "paperback";
+  const sizeKey = size || "A5";
+  const cfg = bookWeights?.[fmtKey]?.[sizeKey];
+  if (!cfg) return null;
+  return Math.round(cfg.cover + pageCount * cfg.page);
+}
+
 export const createBook = publicProcedure.input(createBookSchema).mutation(async (opts) => {
   const session = await auth();
 
@@ -74,6 +89,12 @@ export const createBook = publicProcedure.input(createBookSchema).mutation(async
   if (!authorExists) {
     throw new TRPCError({ code: "NOT_FOUND", message: "Author not found" });
   }
+
+  // After resolving publisherId/authorId, before prisma.$transaction
+  const settingsRaw = await prisma.systemSettings.findMany();
+  const settingsMap: Record<string, any> = {};
+  settingsRaw.forEach(s => { settingsMap[s.key] = s.value; });
+  const bookWeights = settingsMap.book_weights ?? null;
 
   // --- VALIDATION ---
   const covers = [
@@ -217,7 +238,8 @@ export const createBook = publicProcedure.input(createBookSchema).mutation(async
           stock_quantity: variant.stock_quantity ?? 0,
           sku: variant.sku ?? null,
           digital_asset_url: variant.digital_asset_url ?? null,
-          weight_grams: variant.weight_grams ?? null,
+          weight_grams: variant.weight_grams 
+            ?? computeWeightGrams(variant.format, variant.size, opts.input.page_count ?? 0, bookWeights),
           dimensions: variant.dimensions ?? null,
           status: variant.status ?? "active",
         })),
@@ -239,6 +261,8 @@ export const createBook = publicProcedure.input(createBookSchema).mutation(async
           data: legacyVariants.map((v) => ({
             book_id: createdBook.id,
             format: v.format,
+            size: opts.input.size ?? null,
+            weight_grams: computeWeightGrams(v.format, opts.input.size, opts.input.page_count ?? 0, bookWeights),
             language: opts.input.default_language ?? "en",
             list_price: v.price,
             currency: "USD",
