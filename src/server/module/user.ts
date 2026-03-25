@@ -6,94 +6,115 @@ import { assignRoleSchema, createRoleSchema, createUserSchema, deleteUserSchema,
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
+import { createVerificationToken } from "@/lib/tokens";
+import { sendVerificationEmail } from "@/lib/email";
+
+
+
 export const createUser = publicProcedure
   .input(createUserSchema)
   .mutation(async (opts) => {
-    const { roleName, username, email, password, first_name, last_name, name, publisher_id, tenant_slug } = opts.input;
-
-    // const masterSlug = username.toLowerCase().trim().replace(/[^a-z0-9-]/g, "");
-
-    return await prisma.$transaction(async (tx) => {
-      // 1. GLOBAL IDENTITY CHECKS
+    const {
+      roleName,
+      username,
+      email,
+      password,
+      first_name,
+      last_name,
+      name,
+      publisher_id,
+      tenant_slug,
+    } = opts.input;
+ 
+    const user = await prisma.$transaction(async (tx) => {
+      // 1. Global identity checks
       const existing = await tx.user.findFirst({
-        where: { OR: [{ username }, { email }] }
+        where: { OR: [{ username }, { email }] },
       });
-
+ 
       if (existing) {
         throw new TRPCError({
           code: "CONFLICT",
-          message: existing.username === username ? "Username is taken." : "Email is taken."
+          message:
+            existing.username === username ? "Username is taken." : "Email is taken.",
         });
       }
-
-      // 2. CREATE THE BASE USER (The Identity)
+ 
+      // 2. Create the base user
       const user = await tx.user.create({
         data: {
-          username: username as string, 
-          email: email as string,      
+          username: username as string,
+          email: email as string,
           password: bcrypt.hashSync(password as string, 10),
           first_name: first_name as string,
           last_name: last_name as string,
-          // active: true,
-        }
+          // email_verified_at intentionally null
+        },
       });
-
+ 
       let resolvedTenantSlug: string | null = null;
-
-      // 3. ROLE-BASED PROMOTION
+ 
+      // 3. Role-based promotion
       if (roleName === "Publisher") {
-        // Publishers create a Brand (Tenant) immediately
         const tenant = await tx.tenant.create({
           data: {
-            name: name, 
-            slug: (tenant_slug?.toLowerCase()) || (username?.toLowerCase() || ""),
+            name: name,
+            slug: tenant_slug?.toLowerCase() || username?.toLowerCase() || "",
             contact_email: email,
-          }
+          },
         });
         resolvedTenantSlug = tenant.slug;
-
+ 
         await tx.publisher.create({
           data: {
             user_id: user.id,
             tenant_id: tenant.id,
             slug: resolvedTenantSlug,
-          }
+          },
         });
-      } 
-      else if (roleName === "Author") {
-        // 1. Resolve the Default Publisher (Booka)
+      } else if (roleName === "Author") {
         const defaultPublisher = await tx.publisher.findUnique({
-          where: { slug: "booka" } 
+          where: { slug: "booka" },
         });
-
-        // 2. Link Author to the platform publisher if no specific publisher_id was provided
+ 
         await tx.author.create({
           data: {
             name: name || `${first_name} ${last_name}`,
             user_id: user.id,
-            // slug: masterSlug,
-            publisher_id: publisher_id || defaultPublisher?.id || null, // Auto-attach to Booka
-          }
+            publisher_id: publisher_id || defaultPublisher?.id || null,
+          },
         });
       }
-      // NOTE: "Customer/Reader" role does NOT create a record in the Customer table here.
-      // They are just a User until they buy a book.
-
-      // 4. ASSIGN THE PERMISSION CLAIM
+ 
+      // 4. Assign permission claim
       await tx.claim.create({
         data: {
           user_id: user.id,
           role_name: roleName!.toLowerCase(),
           type: "ROLE",
           active: true,
-          tenant_slug: resolvedTenantSlug, // NULL for Readers and Authors
+          tenant_slug: resolvedTenantSlug,
         },
       });
-
+ 
       return user;
     });
+ 
+    // ── Send verification email (outside transaction — non-fatal) ──
+    try {
+      const token = await createVerificationToken(user.id, "EMAIL_VERIFY");
+      await sendVerificationEmail({
+        to: user.email as string,
+        firstName: user.first_name as string,
+        token,
+      });
+    } catch (emailErr) {
+      console.error("[createUser] Failed to send verification email:", emailErr);
+    }
+ 
+    return user;
   });
-
+ 
 // --- PLACE AVAILABILITY CHECKS BELOW ---
 
 export const checkUsernameAvailability = publicProcedure
@@ -267,24 +288,22 @@ export const updateUserProfile = publicProcedure
 export const signUpCustomer = publicProcedure
   .input(signUpSchema)
   .mutation(async ({ input }) => {
-    // 1. Check if user already exists
     const existingUser = await prisma.user.findFirst({
       where: {
-        OR: [{ email: input.email }, { username: input.username }]
-      }
+        OR: [{ email: input.email }, { username: input.username }],
+      },
     });
-
+ 
     if (existingUser) {
       throw new TRPCError({
         code: "CONFLICT",
         message: "User with this email or username already exists",
       });
     }
-
-    // 2. Hash password and create User + Customer
+ 
     const hashedPassword = await hash(input.password, 12);
-
-    return await prisma.$transaction(async (tx) => {
+ 
+    const { user } = await prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: {
           email: input.email,
@@ -293,16 +312,32 @@ export const signUpCustomer = publicProcedure
           first_name: input.first_name,
           last_name: input.last_name,
           active: true,
+          // email_verified_at intentionally left null — pending verification
         },
       });
-
-      const customer = await tx.customer.create({
+ 
+      await tx.customer.create({
         data: {
           user_id: user.id,
           name: `${input.first_name} ${input.last_name}`,
         },
       });
-
-      return { success: true, userId: user.id };
+ 
+      return { user };
     });
+ 
+    // ── Send verification email (outside transaction — non-fatal) ──
+    try {
+      const token = await createVerificationToken(user.id, "EMAIL_VERIFY");
+      await sendVerificationEmail({
+        to: user.email,
+        firstName: user.first_name,
+        token,
+      });
+    } catch (emailErr) {
+      // Log but don't fail the signup — user can resend from verify page
+      console.error("[signup] Failed to send verification email:", emailErr);
+    }
+ 
+    return { success: true, userId: user.id };
   });

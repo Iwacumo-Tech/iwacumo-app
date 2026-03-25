@@ -9,6 +9,8 @@ import axios from "axios"
 import { watermarkPdf } from "@/lib/watermark";
 import { put } from "@vercel/blob";
 
+import { sendBookApprovedEmail } from "@/lib/email";
+
 /**
  * Refactored Book Module
  * * FIX: Uses 'publisher: { connect: { id } }' instead of 'publisher_id' scalar to resolve Prisma validation errors.
@@ -507,12 +509,12 @@ export const getAllBooks = publicProcedure.query(async ({ ctx }) => {
 });
 
 
-export const getBookById = publicProcedure.input(findBookByIdSchema).query(async (opts) => {
-  return await prisma.book.findUnique({
-    where: { id: opts.input.id, deleted_at: null },
-    include: { author: true, chapters: true, variants: true, publisher: true, categories: true }
-  });
-});
+// export const getBookById = publicProcedure.input(findBookByIdSchema).query(async (opts) => {
+//   return await prisma.book.findUnique({
+//     where: { id: opts.input.id, deleted_at: null },
+//     include: { author: true, chapters: true, variants: true, publisher: true, categories: true }
+//   });
+// });
 
 export const getCategories = publicProcedure.query(async () => {
   try {
@@ -528,6 +530,91 @@ export const getCategories = publicProcedure.query(async () => {
     });
   }
 });
+
+
+export const getBookById = publicProcedure
+  .input(findBookByIdSchema)
+  .query(async (opts) => {
+    return await prisma.book.findUnique({
+      where: { id: opts.input.id, deleted_at: null },
+      include: {
+        author: {
+          include: {
+            user: {               // ← needed for author email on approval
+              select: {
+                first_name: true,
+                last_name: true,
+                email: true,
+              },
+            },
+          },
+        },
+        chapters: true,
+        variants: true,
+        publisher: true,
+        categories: true,
+      },
+    });
+  });
+ 
+// ─── Add approveBook anywhere alongside the other book mutations ──────────────
+ 
+export const approveBook = publicProcedure
+  .input(z.object({ id: z.string() }))
+  .mutation(async ({ input }) => {
+    // 1. Fetch the book with enough context to send the email
+    const book = await prisma.book.findUnique({
+      where: { id: input.id, deleted_at: null },
+      include: {
+        author: {
+          include: {
+            user: {
+              select: { first_name: true, email: true },
+            },
+          },
+        },
+      },
+    });
+ 
+    if (!book) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "Book not found" });
+    }
+ 
+    if (book.published) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Book is already published",
+      });
+    }
+ 
+    // 2. Approve — flip both flags atomically
+    const approved = await prisma.book.update({
+      where: { id: input.id },
+      data: {
+        published: true,
+        status: "published",
+        published_at: new Date(),
+      },
+    });
+ 
+    // 3. Fire approval email — non-blocking, failure won't roll back the approval
+    const authorEmail = book.author?.user?.email;
+    const authorFirstName = book.author?.user?.first_name ?? "Author";
+ 
+    if (authorEmail) {
+      sendBookApprovedEmail({
+        to: authorEmail,
+        firstName: authorFirstName,
+        bookTitle: book.title,
+        bookId: book.id,
+      }).catch((err) => {
+        // Log but don't throw — email failure should never break approval
+        console.error("[approveBook] Failed to send approval email:", err);
+      });
+    }
+ 
+    return approved;
+  });
 
 export const getBookByAuthor = publicProcedure.input(findBookByIdSchema).query(async (opts) => {
   const user = await prisma.user.findUnique({

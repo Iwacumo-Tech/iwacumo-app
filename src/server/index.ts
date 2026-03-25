@@ -16,7 +16,7 @@ import { publicProcedure, router } from "./trpc";
 import { createPublisher, deletePublisher, getAllPublisher, updatePublisher, getPublisherByOrganization, getPublisherDashboardStats } from "./module/publisher";
 import { createAuthor, updateAuthor, deleteAuthor, getAllAuthors, signUpAuthor, getAuthorsByUser, getAuthorBySlug, getAuthorDashboardStats } from "./module/author";
 import { createCustomer, deleteCustomer, updateCustomer, getAllCustomers, getCustomersByUser, registerGuestAndTransferCart, getCustomerDashboardStats } from "./module/customer";
-import { createBook, deleteBook, updateBook, getAllBooks, getBookById, getCategories, getBookByAuthor, toggleBookFeatured,getAllFeaturedBooks, getNewArrivalBooks, getPurchasedBooksByCustomer, generateWatermarkedEbook, searchEverything } from "./module/book";
+import { createBook, deleteBook, updateBook, getAllBooks, getBookById, getCategories, getBookByAuthor, toggleBookFeatured,getAllFeaturedBooks, getNewArrivalBooks, getPurchasedBooksByCustomer, generateWatermarkedEbook, searchEverything, approveBook } from "./module/book";
 import { createChapter, updateChapter, deleteChapter, getAllChapters, viewChapterById, getAllChapterByBookId } from "./module/chapter";
 import {  updateTenant, getAllTenant, deleteTenant, createTenant, getTenantBySlug, getStoreBySlug } from "./module/tenant";
 import { imageUpload, createImageUpload } from "./module/uploads";
@@ -62,10 +62,22 @@ import {
 // import { generateWatermarkedEbook } from "./module/watermark";
 import { getChapterContent } from "./module/reader";
 
+import {
+  forgotPassword,
+  resetPassword,
+  changePassword,
+  resendVerificationEmail,
+} from "./module/auth";
+
+
 export const appRouter = router({
   createUser,
   updateUser,
   getAllUsers,
+  forgotPassword,
+  resetPassword,
+  changePassword,
+  resendVerificationEmail,
   updateUserProfile,
   signUpCustomer,
   deleteUser,
@@ -113,6 +125,7 @@ export const appRouter = router({
   toggleBookFeatured,
   getAllFeaturedBooks,
   getNewArrivalBooks,
+  approveBook,
   searchEverything,
   updateTenant,
   getTenantBySlug,

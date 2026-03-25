@@ -16,21 +16,37 @@ export const { handlers, auth } = NextAuth({
       async authorize({ username, password }) {
         try {
           if (!password) return null;
-
-          // 1. Check standard User table
-          // 🔥 FIXED: Included 'customers' (plural) instead of 'customer'
+      
+          // ── 1. Check standard User table ──────────────────────────
           const user = await prisma.user.findFirst({
             where: {
               OR: [
                 { email: username as string },
-                { username: username as string }
-              ]
+                { username: username as string },
+              ],
             },
-            include: { customers: true } 
+            include: {
+              customers: true,
+              claims: { where: { type: "ROLE", active: true } },
+            },
           });
-
+      
           if (user && user.active) {
             if (await compare(password as string, user.password)) {
+              // ── Email verification gate ──────────────────────────
+              // Only hard-block Publishers and Authors.
+              // Customers are allowed through (soft banner handled in UI).
+              if (!user.email_verified_at) {
+                const roleName = user.claims[0]?.role_name?.toLowerCase() ?? "";
+                const isProtectedRole =
+                  roleName === "publisher" || roleName === "author";
+      
+                if (isProtectedRole) {
+                  // Throwing inside authorize passes the message to res.error
+                  throw new Error("EMAIL_NOT_VERIFIED");
+                }
+              }
+      
               return {
                 id: user.id,
                 email: user.email,
@@ -39,14 +55,23 @@ export const { handlers, auth } = NextAuth({
               };
             }
           }
-
-          // 2. Check AdminUser table
+      
+          // ── 2. Check AdminUser table ───────────────────────────────
           const adminUser = await prisma.adminUser.findFirst({
-            where: { email: username as string }
+            where: { email: username as string },
           });
-
-          if (adminUser && adminUser.status === "active" && adminUser.password_hash) {
+      
+          if (
+            adminUser &&
+            adminUser.status === "active" &&
+            adminUser.password_hash
+          ) {
             if (await compare(password as string, adminUser.password_hash)) {
+              // AdminUsers also require email verification
+              if (!adminUser.email_verified_at) {
+                throw new Error("EMAIL_NOT_VERIFIED");
+              }
+      
               return {
                 id: adminUser.id,
                 email: adminUser.email,
@@ -55,9 +80,12 @@ export const { handlers, auth } = NextAuth({
               };
             }
           }
-
+      
           return null;
-        } catch (error) {
+        } catch (error: any) {
+          // Re-throw EMAIL_NOT_VERIFIED so NextAuth passes it to the client
+          if (error.message === "EMAIL_NOT_VERIFIED") throw error;
+      
           console.error("Auth Error:", error);
           return null;
         }
@@ -83,7 +111,7 @@ export const { handlers, auth } = NextAuth({
       const [userProfile, adminProfile] = await Promise.all([
         prisma.user.findUnique({
           where: { id: token.sub },
-          // 🔥 FIXED: Changed 'customer' to 'customers'
+         
           include: { author: true, publisher: true, customers: true } 
         }),
         prisma.adminUser.findUnique({
@@ -108,7 +136,7 @@ export const { handlers, auth } = NextAuth({
       // AUGMENTATION
       const finalizedRoles = [...claims.roles];
       
-      // 🔥 FIXED: Logic check for the array length instead of object existence
+      
       const hasCustomerProfiles = (userProfile?.customers?.length || 0) > 0;
 
       if (hasCustomerProfiles && !finalizedRoles.some(r => r.name.toLowerCase() === "customer")) {
