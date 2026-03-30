@@ -1,6 +1,8 @@
+"use client";
+
 import { ColumnDef } from "@tanstack/react-table";
 import { DataTableColumnHeader } from "@/components/table/data-table-column-header";
-import { AdminUser } from "@prisma/client";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -9,65 +11,93 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Button } from "@/components/ui/button";
 import { MoreHorizontal } from "lucide-react";
 import AssignRoleForm from "./assign-role-form";
 import RemoveRoleModal from "./remove-role-modal";
+import { type AdminUserRow } from "./admin-columns";
 
-interface ActionProps {
-  adminUser: AdminUser & { 
-    tenant?: { id: string; name: string | null };
-    roles?: Array<{
-      role_name: string;
-      publisher_id: string | null;
-      publisher?: { slug: string | null };
-      role: { name: string; description: string | null };
-    }>;
-  };
-}
+// ── Role label map — friendly names for the preset roles ─────
+const ROLE_LABELS: Record<string, string> = {
+  "staff-basic":     "Basic",
+  "staff-content":   "Content",
+  "staff-publisher": "Publisher Mgr",
+  "staff-finance":   "Finance",
+  "super-admin":     "Super Admin",
+};
 
-function Action({ adminUser }: ActionProps) {
+function RoleBadge({
+  roleName,
+  publisherSlug,
+}: {
+  roleName: string;
+  publisherSlug?: string | null;
+}) {
+  const isSuperAdmin = roleName === "super-admin";
   return (
-    <>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" className="h-8 w-8 p-0" data-cy="admin-role-action">
-            <span className="sr-only">Open menu</span>
-            <MoreHorizontal className="h-4 w-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuLabel>Role Actions</DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem asChild>
-            <AssignRoleForm adminUser={adminUser} />
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </>
+    <span
+      className={`inline-flex items-center gap-1 border px-2 py-0.5 text-[10px] font-black uppercase tracking-wide
+        ${isSuperAdmin
+          ? "bg-black text-white border-black"
+          : "bg-white text-black border-black"
+        }`}
+    >
+      {ROLE_LABELS[roleName] ?? roleName}
+      {publisherSlug && (
+        <span className="opacity-50 font-normal normal-case">
+          · {publisherSlug}
+        </span>
+      )}
+    </span>
   );
 }
 
-export const adminRoleColumns: ColumnDef<AdminUser & { 
-  tenant?: { id: string; name: string | null };
-  roles?: Array<{
-    role_name: string;
-    publisher_id: string | null;
-    publisher?: { slug: string | null };
-    role: { name: string; description: string | null };
-  }>;
-}>[] = [
+// ── Actions cell ──────────────────────────────────────────────
+function Action({ adminUser }: { adminUser: AdminUserRow }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          className="h-8 w-8 p-0 hover:bg-accent border border-transparent hover:border-black"
+          data-cy="admin-role-action"
+        >
+          <span className="sr-only">Open menu</span>
+          <MoreHorizontal className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="border-2 border-black rounded-none min-w-[160px]">
+        <DropdownMenuLabel className="font-black uppercase text-[10px] tracking-widest">
+          Role Actions
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator className="bg-black/10" />
+        <DropdownMenuItem asChild className="focus:bg-accent p-0">
+          <AssignRoleForm adminUser={adminUser} />
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+// ── Column definition ─────────────────────────────────────────
+export const adminRoleColumns: ColumnDef<AdminUserRow>[] = [
   {
     id: "name",
     accessorKey: "first_name",
     header: ({ column }) => (
       <DataTableColumnHeader column={column} title="Staff Member" />
     ),
-    cell: ({ row }) => (
-      <div className="py-0.5 text-sm font-medium select-none text-nowrap">
-        {row.original.first_name} {row.original.last_name}
-      </div>
-    ),
+    cell: ({ row }) => {
+      const name = [row.original.first_name, row.original.last_name]
+        .filter(Boolean)
+        .join(" ");
+      return (
+        <div className="py-0.5">
+          <p className="text-sm font-black text-nowrap">
+            {name || <span className="opacity-40 italic font-normal">Not set</span>}
+          </p>
+        </div>
+      );
+    },
   },
   {
     id: "email",
@@ -76,48 +106,42 @@ export const adminRoleColumns: ColumnDef<AdminUser & {
       <DataTableColumnHeader column={column} title="Email" />
     ),
     cell: ({ row }) => (
-      <div className="py-0.5 text-sm font-medium select-none text-nowrap">
-        {row.getValue("email")}
-      </div>
+      <p className="text-sm font-medium text-nowrap">{row.getValue("email")}</p>
     ),
   },
   {
     id: "roles",
     accessorKey: "roles",
     header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="Roles" />
+      <DataTableColumnHeader column={column} title="Assigned Roles" />
     ),
     cell: ({ row }) => {
-      const roles = row.original.roles || [];
+      const roles = row.original.roles ?? [];
+
       if (roles.length === 0) {
         return (
-          <div className="py-0.5 text-sm text-gray-500 italic">
+          <span className="text-[10px] font-bold uppercase tracking-widest opacity-30">
             No roles assigned
-          </div>
+          </span>
         );
       }
+
       return (
-        <div className="py-0.5 text-sm font-medium select-none">
-          <div className="flex flex-wrap gap-1">
-            {roles.map((adminUserRole, idx) => (
-              <div key={idx} className="flex items-center gap-1">
-                <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">
-                  {adminUserRole.role.name}
-                  {adminUserRole.publisher_id && adminUserRole.publisher && (
-                    <span className="ml-1 text-blue-600">
-                      ({adminUserRole.publisher.slug || "Publisher"})
-                    </span>
-                  )}
-                </span>
-                <RemoveRoleModal
-                  adminUserId={row.original.id}
-                  roleName={adminUserRole.role_name}
-                  tenantId={row.original.tenant_id}
-                  publisherId={adminUserRole.publisher_id || undefined}
-                />
-              </div>
-            ))}
-          </div>
+        <div className="flex flex-wrap gap-1.5 py-0.5">
+          {roles.map((r, idx) => (
+            <div key={idx} className="flex items-center gap-1">
+              <RoleBadge
+                roleName={r.role_name}
+                publisherSlug={r.publisher?.slug}
+              />
+              <RemoveRoleModal
+                adminUserId={row.original.id}
+                roleName={r.role_name}
+                tenantId={row.original.tenant_id}
+                publisherId={r.publisher_id ?? undefined}
+              />
+            </div>
+          ))}
         </div>
       );
     },
@@ -125,10 +149,7 @@ export const adminRoleColumns: ColumnDef<AdminUser & {
   {
     id: "actions",
     enableHiding: false,
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="Actions" />
-    ),
+    header: () => null,
     cell: ({ row }) => <Action adminUser={row.original} />,
   },
 ];
-

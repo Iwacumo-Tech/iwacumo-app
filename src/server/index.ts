@@ -37,7 +37,10 @@ import {
   getGlobalPlatformStats,
   toggleFeatured,
   getSystemSettings,
-  updateSystemSettings
+  updateSystemSettings,
+  inviteStaff,
+  setupStaffAccount,
+  resendStaffInvite,
 } from "./module/admin";
 import {
   createOrderFromCart,
@@ -68,6 +71,25 @@ import {
   changePassword,
   resendVerificationEmail,
 } from "./module/auth";
+
+import {
+  getPublisherStoreSettings,
+  updatePublisherStoreSettings,
+} from "./module/store-settings";
+
+import {
+  getPublisherSplits,
+  setPublisherAuthorSplit,
+  setBookSplitOverride,
+  deleteBookSplitOverride,
+} from "./module/splits";
+
+import {
+  listBanks,
+  verifyBankAccount,
+  saveBankAccount,
+  getMyPaymentAccount,
+} from "./module/payment-accounts";
 
 
 export const appRouter = router({
@@ -181,6 +203,23 @@ export const appRouter = router({
   getGlobalPlatformStats,
   getSystemSettings,
   updateSystemSettings,
+
+  inviteStaff,
+  setupStaffAccount,
+  resendStaffInvite,
+
+  updatePublisherStoreSettings,
+  getPublisherStoreSettings,
+
+  getPublisherSplits,
+  setPublisherAuthorSplit,
+  setBookSplitOverride,
+  deleteBookSplitOverride,
+
+  listBanks,
+  verifyBankAccount,
+  saveBankAccount,
+  getMyPaymentAccount,
   
   healthCheck: publicProcedure.query(() => {
     return { message: "API up and running..." };

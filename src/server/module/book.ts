@@ -607,7 +607,7 @@ export const approveBook = publicProcedure
         firstName: authorFirstName,
         bookTitle: book.title,
         bookId: book.id,
-      }).catch((err) => {
+      }).catch((err: any) => {
         // Log but don't throw — email failure should never break approval
         console.error("[approveBook] Failed to send approval email:", err);
       });

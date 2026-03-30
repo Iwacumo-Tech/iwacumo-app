@@ -34,6 +34,8 @@ model User {
   Review        Review[]
   Cart          Cart[]
 
+  payment_account  PaymentAccount?
+
   email_verified_at  DateTime?
   verification_tokens VerificationToken[]
 
@@ -121,6 +123,11 @@ model Tenant {
   banners     Banner[]
   hero_slides HeroSlide[]
 
+  tagline          String?
+  font_family      String?   // "inter" | "playfair" | "space-grotesk" | "lora"
+  store_settings   Json?     // { heroLayout, showCategories, showFeatured, showNewArrivals, accentStyle }
+
+
   @@map("tenants")
 }
 
@@ -140,6 +147,7 @@ model Publisher {
   authors         Author[]
   books           Book[]
   orders          Order[]
+  author_splits   PublisherAuthorSplit[]
   admin_user_roles AdminUserRole[]
   roles           Role[]
   white_label     Boolean         @default(false)
@@ -148,6 +156,22 @@ model Publisher {
 
   @@map("publishers")
 }
+
+model PublisherAuthorSplit {
+  id                      String    @id @default(uuid())
+  publisher_id            String
+  publisher               Publisher @relation(fields: [publisher_id], references: [id], onDelete: Cascade)
+  author_id               String
+  author                  Author    @relation(fields: [author_id], references: [id], onDelete: Cascade)
+  publisher_split_percent Float     // 0–100 — publisher's % of post-fee remainder
+  notes                   String?   // optional memo (e.g. "per contract dated Jan 2026")
+  created_at              DateTime  @default(now())
+  updated_at              DateTime  @updatedAt
+
+  @@unique([publisher_id, author_id])
+  @@map("publisher_author_splits")
+}
+
 
 model Author {
   id              String     @id @default(uuid())
@@ -160,6 +184,7 @@ model Author {
   publisher_id    String?
   slug            String?    @unique
   publisher       Publisher? @relation(fields: [publisher_id], references: [id])
+  publisher_splits PublisherAuthorSplit[]
   books           Book[]
   primary_books   Book[]     @relation("PrimaryAuthor")
   customers       Customer[]
@@ -237,6 +262,9 @@ model Book {
   author            Author?        @relation(fields: [author_id], references: [id])
   purchased_by      Customer[]    @relation("PurchasedBooks")
   reviews           Review[]
+
+  split_override  BookSplitOverride?
+
   created_at        DateTime      @default(now())
   updated_at        DateTime      @updatedAt
   published_at      DateTime?
@@ -283,6 +311,40 @@ model BookVariant {
 
   @@map("book_variants")
 }
+
+model BookSplitOverride {
+  id                      String   @id @default(uuid())
+  book_id                 String   @unique
+  book                    Book     @relation(fields: [book_id], references: [id], onDelete: Cascade)
+  publisher_split_percent Float    // 0–100 — publisher's % of post-fee remainder
+  notes                   String?
+  created_at              DateTime @default(now())
+  updated_at              DateTime @updatedAt
+
+  @@map("book_split_overrides")
+}
+
+model PaymentAccount {
+  id                       String    @id @default(uuid())
+  user_id                  String    @unique
+  user                     User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  bank_name                String
+  bank_code                String    // Paystack bank code, e.g. "058"
+  account_number           String
+  account_name             String    // resolved by Paystack /bank/resolve
+
+  // Paystack identifiers — set after successful subaccount/recipient creation
+  paystack_subaccount_code String?   @unique  // e.g. "ACCT_xxxxxxxxxx" — for split payments
+  paystack_recipient_code  String?   @unique  // e.g. "RCP_xxxxxxxxxx"  — for manual transfers
+
+  is_verified              Boolean   @default(false)
+  created_at               DateTime  @default(now())
+  updated_at               DateTime  @updatedAt
+
+  @@map("payment_accounts")
+}
+
 
 model Cart {
   id         String    @id @default(uuid())
@@ -491,6 +553,8 @@ model AdminUser {
   
   email_verified_at  DateTime?
 
+  verification_tokens VerificationToken[]
+
   @@map("admin_users")
 }
 
@@ -524,14 +588,16 @@ model SystemSettings {
 
 
 model VerificationToken {
-  id         String    @id @default(uuid())
-  token      String    @unique
-  user_id    String
-  user       User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  type       String    // "EMAIL_VERIFY" | "PASSWORD_RESET"
-  expires_at DateTime
-  used_at    DateTime?
-  created_at DateTime  @default(now())
+  id             String     @id @default(uuid())
+  token          String     @unique
+  user_id        String?                              // nullable — for User tokens
+  user           User?      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  admin_user_id  String?                              // nullable — for AdminUser tokens
+  admin_user     AdminUser? @relation(fields: [admin_user_id], references: [id], onDelete: Cascade)
+  type           String
+  expires_at     DateTime
+  used_at        DateTime?
+  created_at     DateTime   @default(now())
 
   @@map("verification_tokens")
 }

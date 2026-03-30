@@ -583,3 +583,74 @@ export const updateCustomerSchema = z.object({
 
 export type TUpdateCustomerSchema = z.infer<typeof updateCustomerSchema>;
 
+
+// Staff invite — super admin sends email + role only.
+// No name, no password. Staff sets those themselves on setup page.
+export const inviteStaffSchema = z.object({
+  email:     z.string().email("Valid email required"),
+  role_name: z.string().min(1, "Role is required"),
+  // tenant_id resolved server-side from the inviting AdminUser's record
+});
+ 
+export type TInviteStaffSchema = z.infer<typeof inviteStaffSchema>;
+ 
+// Staff account setup — called when staff clicks the invite link.
+// They provide their name and choose a password.
+export const staffAccountSetupSchema = z.object({
+  token:      z.string().min(1),
+  first_name: z.string().min(1, "First name is required"),
+  last_name:  z.string().min(1, "Last name is required"),
+  password:   z.string()
+    .min(8,  "Password must be at least 8 characters")
+    .regex(/[A-Z]/, "Must contain at least one uppercase letter")
+    .regex(/[0-9]/,  "Must contain at least one number"),
+});
+ 
+export type TStaffAccountSetupSchema = z.infer<typeof staffAccountSetupSchema>;
+
+export const setPublisherAuthorSplitSchema = z.object({
+  author_id:               z.string(),
+  publisher_split_percent: z
+    .number()
+    .min(0,  "Publisher split cannot be negative")
+    .max(95, "Publisher split cannot exceed 95% — author must receive at least 5%"),
+  notes:        z.string().max(300).optional(),
+  publisher_id: z.string().optional(), // super-admin only
+});
+ 
+export const setBookSplitOverrideSchema = z.object({
+  book_id:                 z.string(),
+  publisher_split_percent: z
+    .number()
+    .min(0,  "Publisher split cannot be negative")
+    .max(95, "Publisher split cannot exceed 95%"),
+  notes: z.string().max(300).optional(),
+});
+ 
+export const deleteBookSplitOverrideSchema = z.object({
+  book_id: z.string(),
+});
+ 
+export const getPublisherSplitsSchema = z.object({
+  publisher_id: z.string().optional(),
+});
+ 
+export type TSetPublisherAuthorSplitSchema = z.infer<typeof setPublisherAuthorSplitSchema>;
+export type TSetBookSplitOverrideSchema    = z.infer<typeof setBookSplitOverrideSchema>;
+export type TDeleteBookSplitOverrideSchema = z.infer<typeof deleteBookSplitOverrideSchema>;
+export type TGetPublisherSplitsSchema      = z.infer<typeof getPublisherSplitsSchema>;
+ 
+export const verifyBankAccountSchema = z.object({
+  bank_code:      z.string().min(1, "Bank code is required"),
+  account_number: z.string().length(10, "Account number must be 10 digits"),
+});
+ 
+export const saveBankAccountSchema = z.object({
+  bank_code:      z.string().min(1),
+  bank_name:      z.string().min(1),
+  account_number: z.string().length(10),
+  account_name:   z.string().min(1),
+});
+ 
+export type TVerifyBankAccountSchema = z.infer<typeof verifyBankAccountSchema>;
+export type TSaveBankAccountSchema   = z.infer<typeof saveBankAccountSchema>;
