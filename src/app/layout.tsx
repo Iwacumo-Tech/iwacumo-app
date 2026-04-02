@@ -9,7 +9,7 @@ import CartDrawer from "@/components/shared/CartDrawer";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Booka",
+  title: "Iwacumo",
   description: "",
 };
 

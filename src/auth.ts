@@ -16,8 +16,8 @@ export const { handlers, auth } = NextAuth({
       async authorize({ username, password }) {
         try {
           if (!password) return null;
-      
-          // ── 1. Check standard User table ──────────────────────────
+
+          // ── 1. Check standard User table ──────────────────────────────────
           const user = await prisma.user.findFirst({
             where: {
               OR: [
@@ -28,64 +28,78 @@ export const { handlers, auth } = NextAuth({
             include: {
               customers: true,
               claims: { where: { type: "ROLE", active: true } },
+              // Include author with publisher so we can check white_label
+              author: {
+                include: {
+                  publisher: { select: { white_label: true } },
+                },
+              },
             },
           });
-      
+
           if (user && user.active) {
             if (await compare(password as string, user.password)) {
-              // ── Email verification gate ──────────────────────────
-              // Only hard-block Publishers and Authors.
-              // Customers are allowed through (soft banner handled in UI).
+
+              // ── Email verification gate ──────────────────────────────────
               if (!user.email_verified_at) {
                 const roleName = user.claims[0]?.role_name?.toLowerCase() ?? "";
-                const isProtectedRole =
-                  roleName === "publisher" || roleName === "author";
-      
+                const isProtectedRole = roleName === "publisher" || roleName === "author";
                 if (isProtectedRole) {
-                  // Throwing inside authorize passes the message to res.error
                   throw new Error("EMAIL_NOT_VERIFIED");
                 }
               }
-      
+
+              // ── White-label author gate ──────────────────────────────────
+              // Authors under non-white-label publishers are "credited authors"
+              // only — they exist for attribution and split purposes but cannot
+              // log in and manage their own dashboard.
+              if (user.author && user.author.publisher_id) {
+                const isWhiteLabel = user.author.publisher?.white_label ?? false;
+                if (!isWhiteLabel) {
+                  throw new Error("AUTHOR_NOT_PERMITTED");
+                }
+              }
+
               return {
-                id: user.id,
-                email: user.email,
+                id:         user.id,
+                email:      user.email,
                 first_name: user.first_name,
-                last_name: user.last_name || "",
+                last_name:  user.last_name || "",
               };
             }
           }
-      
-          // ── 2. Check AdminUser table ───────────────────────────────
+
+          // ── 2. Check AdminUser table ───────────────────────────────────────
           const adminUser = await prisma.adminUser.findFirst({
             where: { email: username as string },
           });
-      
+
           if (
             adminUser &&
             adminUser.status === "active" &&
             adminUser.password_hash
           ) {
             if (await compare(password as string, adminUser.password_hash)) {
-              // AdminUsers also require email verification
               if (!adminUser.email_verified_at) {
                 throw new Error("EMAIL_NOT_VERIFIED");
               }
-      
               return {
-                id: adminUser.id,
-                email: adminUser.email,
+                id:         adminUser.id,
+                email:      adminUser.email,
                 first_name: adminUser.first_name || "",
-                last_name: adminUser.last_name || "",
+                last_name:  adminUser.last_name  || "",
               };
             }
           }
-      
+
           return null;
         } catch (error: any) {
-          // Re-throw EMAIL_NOT_VERIFIED so NextAuth passes it to the client
-          if (error.message === "EMAIL_NOT_VERIFIED") throw error;
-      
+          if (
+            error.message === "EMAIL_NOT_VERIFIED" ||
+            error.message === "AUTHOR_NOT_PERMITTED"
+          ) {
+            throw error;
+          }
           console.error("Auth Error:", error);
           return null;
         }
@@ -95,10 +109,10 @@ export const { handlers, auth } = NextAuth({
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        token.sub = user.id;
-        token.name = (user as any).first_name;
-        token.email = user.email;
-        token.last_name = (user as any).last_name || "";
+        token.sub        = user.id;
+        token.name       = (user as any).first_name;
+        token.email      = user.email;
+        token.last_name  = (user as any).last_name || "";
       }
       return token;
     },
@@ -107,38 +121,33 @@ export const { handlers, auth } = NextAuth({
 
       const claims = await getUserClaims(token.sub);
 
-      // Fetch IDs for dashboard queries
       const [userProfile, adminProfile] = await Promise.all([
         prisma.user.findUnique({
-          where: { id: token.sub },
-         
-          include: { author: true, publisher: true, customers: true } 
+          where:   { id: token.sub },
+          include: { author: true, publisher: true, customers: true },
         }),
         prisma.adminUser.findUnique({
-          where: { id: token.sub },
+          where:   { id: token.sub },
           include: {
-            roles: true,
-            tenant: { include: { publishers: true } }
-          }
-        })
+            roles:  true,
+            tenant: { include: { publishers: true } },
+          },
+        }),
       ]);
 
-      const author_id = userProfile?.author?.id || null;
-      let publisher_id = userProfile?.publisher?.id || null;
+      const author_id    = userProfile?.author?.id    || null;
+      let publisher_id   = userProfile?.publisher?.id || null;
 
       if (adminProfile) {
-        publisher_id = publisher_id ||
-          adminProfile.roles.find(r => r.publisher_id)?.publisher_id ||
-          adminProfile.tenant?.publishers?.id ||
-          null;
+        publisher_id = publisher_id
+          || adminProfile.roles.find(r => r.publisher_id)?.publisher_id
+          || adminProfile.tenant?.publishers?.id
+          || null;
       }
 
-      // AUGMENTATION
       const finalizedRoles = [...claims.roles];
-      
-      
-      const hasCustomerProfiles = (userProfile?.customers?.length || 0) > 0;
 
+      const hasCustomerProfiles = (userProfile?.customers?.length || 0) > 0;
       if (hasCustomerProfiles && !finalizedRoles.some(r => r.name.toLowerCase() === "customer")) {
         const customerRole = await prisma.role.findUnique({ where: { name: "customer" } });
         if (customerRole) {
@@ -155,14 +164,13 @@ export const { handlers, auth } = NextAuth({
       return {
         ...session,
         user: {
-          id: token.sub,
-          first_name: (token.name as string) || "",
-          last_name: (token.last_name as string) || "",
-          email: (token.email as string) || "",
+          id:         token.sub,
+          first_name: (token.name as string)      || "",
+          last_name:  (token.last_name as string)  || "",
+          email:      (token.email as string)      || "",
           author_id,
           publisher_id,
-          
-          isCustomer: hasCustomerProfiles, 
+          isCustomer: hasCustomerProfiles,
         },
         ...claims,
         roles: finalizedRoles,
@@ -173,15 +181,15 @@ export const { handlers, auth } = NextAuth({
 
 async function getUserClaims(userId: string): Promise<{
   permissions: Permission[];
-  roles: Role[];
-  tenantSlug: string | null;
+  roles:       Role[];
+  tenantSlug:  string | null;
 }> {
   const permissionsMap = new Map<string, Permission>();
-  const rolesMap = new Map<string, Role>();
+  const rolesMap       = new Map<string, Role>();
   let tenantSlug: string | null = null;
 
   const claims = await prisma.claim.findMany({
-    where: { user_id: userId, active: true },
+    where:   { user_id: userId, active: true },
     include: { permission: true, role: true },
   });
 
@@ -204,7 +212,7 @@ async function getUserClaims(userId: string): Promise<{
   }
 
   const adminUser = await prisma.adminUser.findUnique({
-    where: { id: userId },
+    where:   { id: userId },
     include: {
       tenant: true,
       roles: {
@@ -212,14 +220,14 @@ async function getUserClaims(userId: string): Promise<{
           role: {
             include: {
               permissions: {
-                where: { active: true },
-                include: { permission: true }
-              }
-            }
-          }
-        }
-      }
-    }
+                where:   { active: true },
+                include: { permission: true },
+              },
+            },
+          },
+        },
+      },
+    },
   });
 
   if (adminUser) {
@@ -238,8 +246,8 @@ async function getUserClaims(userId: string): Promise<{
   if (roleNames.length > 0) {
     const rolePermissions = await prisma.permissionRole.findMany({
       where: {
-        active: true,
-        role_name: { in: roleNames },
+        active:        true,
+        role_name:     { in: roleNames },
         permission_id: { notIn: Array.from(permissionsMap.keys()) },
       },
       include: { permission: true },
@@ -249,7 +257,7 @@ async function getUserClaims(userId: string): Promise<{
 
   return {
     permissions: Array.from(permissionsMap.values()),
-    roles: Array.from(rolesMap.values()),
+    roles:       Array.from(rolesMap.values()),
     tenantSlug,
   };
 }

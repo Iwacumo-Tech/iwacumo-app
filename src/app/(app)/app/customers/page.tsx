@@ -2,17 +2,22 @@
 
 import { trpc } from "@/app/_providers/trpc-provider";
 import { customerColumns } from "@/components/customers/columns";
-import CustomerForm from "@/components/customers/customer-form";
 import { DataTable } from "@/components/table/data-table";
 import { useSession } from "next-auth/react";
-import { Users, UserPlus, Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Users, Loader2 } from "lucide-react";
 
 export default function CustomersPage() {
-  const session = useSession();
-  const userId = session.data?.user.id as string;
+  const { data: session } = useSession();
+  const userId    = session?.user?.id as string;
+  const userRoles = session?.roles ?? [];
 
-  // Fetching logic
+  const isSuperAdmin = userRoles.some(r => r.name === "super-admin");
+
+  // getCustomersByUser already handles super-admin god-mode server-side
+  // (returns all customers with full includes when the user has super-admin claim).
+  // It also includes user: true on every path — which the columns require.
+  // getAllCustomers was missing the include, causing blank rows for super-admin.
+  // Simplest correct fix: use getCustomersByUser for all roles.
   const { data: customers, isLoading } = trpc.getCustomersByUser.useQuery(
     { id: userId },
     { enabled: !!userId }
@@ -28,25 +33,16 @@ export default function CustomersPage() {
 
   return (
     <div className="space-y-10">
-      {/* Neo-brutalist Header */}
       <div className="flex flex-col md:flex-row justify-between items-end gap-6 border-b-4 border-black pb-8">
         <div>
           <h1 className="text-4xl md:text-6xl font-black uppercase italic tracking-tighter">
             Customer Directory<span className="text-accent">.</span>
           </h1>
           <p className="font-bold text-xs uppercase opacity-40 tracking-widest mt-2 flex items-center gap-2">
-            <Users size={14} /> Total Lifetime Value — {customers?.length || 0} Profiles
+            <Users size={14} />
+            {isSuperAdmin ? "All Customers — Platform Wide" : "Your Customers"} — {customers?.length || 0} Profiles
           </p>
         </div>
-
-        {/* <CustomerForm 
-          action="Add" 
-          trigger={
-            <Button className="booka-button-primary h-14 px-8 text-sm">
-              <UserPlus size={18} className="mr-2 stroke-[3px]" /> New Customer
-            </Button>
-          } 
-        /> */}
       </div>
 
       <div className="bg-white border-4 border-black gumroad-shadow">
@@ -54,7 +50,7 @@ export default function CustomersPage() {
           data={customers ?? []}
           columns={customerColumns}
           filterInputPlaceholder="Search by email or name..."
-          filterColumnId="email" // FIX: Corrected from empty string
+          filterColumnId="email"
         />
       </div>
     </div>

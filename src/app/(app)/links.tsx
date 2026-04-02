@@ -1,93 +1,108 @@
 import {
   LuLayoutDashboard, LuUsers, LuUserPlus, LuSettings,
-  LuShoppingBag, LuLayers, LuStar,
+  LuShoppingBag, LuStar,
 } from "react-icons/lu";
 import { FaBookOpen } from "react-icons/fa";
 import { MdDashboardCustomize } from "react-icons/md";
 import {
-  UserPlusIcon, Image as ImageIcon, Sliders as SliderIcon, Gauge, Store, Percent, Banknote,
+  UserPlusIcon, Image as ImageIcon, Sliders as SliderIcon,
+  Gauge, Store, Percent, Banknote, DollarSign, LayoutList,
 } from "lucide-react";
 
-/**
- * requiredPermission: comma-separated role names allowed to see this link.
- * The AppLayout filters links server-side using session.roles.
- */
 export const links = [
   {
     name: "Dashboard",
-    url: "/app",
+    url:  "/app",
     icon: <LuLayoutDashboard className="size-5 mr-2" />,
     requiredPermission: "super-admin, staff-basic, staff-content, staff-publisher, staff-finance, tenant-admin, publisher, author, customer",
   },
   {
     name: "Staff",
-    url: "/app/users",
+    url:  "/app/users",
     icon: <LuUsers className="size-5 mr-2" />,
     requiredPermission: "super-admin",
   },
   {
     name: "Publishers",
-    url: "/app/publishers",
+    url:  "/app/publishers",
     icon: <LuUserPlus className="size-5 mr-2" />,
     requiredPermission: "super-admin, staff-publisher, tenant-admin",
   },
   {
     name: "Authors",
-    url: "/app/authors",
+    url:  "/app/authors",
     icon: <UserPlusIcon className="size-5 mr-2" />,
     requiredPermission: "super-admin, staff-content, staff-publisher, tenant-admin, publisher",
   },
   {
     name: "Books",
-    url: "/app/books",
+    url:  "/app/books",
     icon: <FaBookOpen className="size-5 mr-2" />,
     requiredPermission: "super-admin, staff-basic, staff-content, staff-publisher, staff-finance, tenant-admin, publisher, author, customer",
   },
   {
+    name: "Categories",
+    url: "/app/categories",
+    icon: <LayoutList className="size-5 mr-2" />,
+    requiredPermission: "super-admin, staff-content, staff-publisher",
+  },
+  {
     name: "Orders",
-    url: "/app/orders",
+    url:  "/app/orders",
     icon: <LuShoppingBag className="size-5 mr-2" />,
     requiredPermission: "super-admin, staff-basic, staff-content, staff-publisher, staff-finance, tenant-admin, publisher, author",
   },
   {
     name: "Customers",
-    url: "/app/customers",
+    url:  "/app/customers",
     icon: <MdDashboardCustomize className="size-5 mr-2" />,
     requiredPermission: "super-admin, staff-basic, staff-content, staff-publisher, staff-finance, tenant-admin, publisher, author",
   },
   {
+    name: "Earnings",
+    url:  "/app/payments",
+    icon: <DollarSign className="size-5 mr-2" />,
+    requiredPermission: "publisher, author",
+  },
+  {
+    name: "Platform Ledger",
+    url:  "/app/admin/payments",
+    icon: <Banknote className="size-5 mr-2" />,
+    requiredPermission: "super-admin, staff-finance",
+  },
+  {
     name: "Hero Slider",
-    url: "/app/heroslider",
+    url:  "/app/heroslider",
     icon: <SliderIcon className="size-5 mr-2" />,
     requiredPermission: "super-admin",
   },
   {
     name: "Banner",
-    url: "/app/banner",
+    url:  "/app/banner",
     icon: <ImageIcon className="size-5 mr-2" />,
     requiredPermission: "super-admin",
   },
   {
     name: "Profile",
-    url: "/app/profile",
+    url:  "/app/profile",
     icon: <LuSettings className="size-5 mr-2" />,
     requiredPermission: "super-admin, staff-basic, staff-content, staff-publisher, staff-finance, tenant-admin, publisher, author, customer",
   },
   {
     name: "System Settings",
-    url: "/app/admin/settings",
+    url:  "/app/admin/settings",
     icon: <Gauge className="size-5 mr-2" />,
     requiredPermission: "super-admin, staff-finance",
   },
   {
     name: "Global Featured",
-    url: "/app/admin/featured",
+    url:  "/app/admin/featured",
     icon: <LuStar className="size-5 mr-2" />,
     requiredPermission: "super-admin, staff-publisher",
   },
   {
     name: "Store Settings",
-    url: "/app/settings/store",
+    url:  "/app/settings/store",
     icon: <Store className="size-5 mr-2" />,
     requiredPermission: "publisher",
   },
@@ -100,9 +115,9 @@ export const links = [
   {
     name: "Payout Settings",
     url:  "/app/settings/payment",
-    icon: <Banknote className="size-5 mr-2" />, 
+    icon: <Banknote className="size-5 mr-2" />,
     requiredPermission: "publisher, author",
-},
+  },
 ];
 
 export type Links = (typeof links)[number];

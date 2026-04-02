@@ -34,8 +34,10 @@ export default function AppPage() {
     ...(customerStats?.recentOrders?.map(o => ({ description: `Purchased "${o.line_items[0]?.book_variant?.book?.title || 'a book'}"`, timestamp: o.created_at })) || [])
   ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
+  // Only change from original: removed hover:-translate-y-1 and transition-transform.
+  // Added cursor-default so mobile/desktop never implies the card is pressable.
   const StatBox = ({ title, value, icon: Icon, color = "bg-white" }: any) => (
-    <div className={cn("border-4 border-primary p-6 gumroad-shadow transition-transform hover:-translate-y-1", color)}>
+    <div className={cn("border-4 border-primary p-6 gumroad-shadow cursor-default", color)}>
       <div className="flex justify-between items-start mb-4">
         <Icon className="w-8 h-8 text-primary" />
         <span className="text-[10px] font-black uppercase tracking-widest opacity-40">{title}</span>

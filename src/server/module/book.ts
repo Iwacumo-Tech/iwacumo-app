@@ -684,9 +684,9 @@ export const getPurchasedBooksByCustomer = publicProcedure.input(findBookByIdSch
   const customer = await prisma.customer.findFirst({
     where: { user_id: opts.input.id },
   });
-
+ 
   if (!customer) return [];
-
+ 
   const paidOrders = await prisma.order.findMany({
     where: {
       customer_id: customer.id,
@@ -706,20 +706,59 @@ export const getPurchasedBooksByCustomer = publicProcedure.input(findBookByIdSch
       },
     },
   });
-
-  const bookMap = new Map<string, any>();
+ 
+  // Return one entry per purchased variant, NOT deduplicated by book.
+  // This way the reader sees: "Anansi Boys — E-Book", "Anansi Boys — Paperback" as two rows,
+  // each with the correct action (read vs delivery info).
+  const entries: any[] = [];
+ 
   paidOrders.forEach((order) => {
-    order.line_items.forEach((lineItem) => {
-      const book = lineItem.book_variant.book;
-      if (book && !book.deleted_at && !bookMap.has(book.id)) {
-        bookMap.set(book.id, book);
+    // Parse the delivery address stored as JSON in order.notes
+    let deliveryAddress: any = null;
+    let shippingZone: string | null = null;
+    if (order.notes) {
+      try {
+        const parsed = JSON.parse(order.notes);
+        if (parsed?.delivery_address) {
+          deliveryAddress = parsed.delivery_address;
+          shippingZone = parsed.shipping_zone ?? null;
+        }
+      } catch {
+        // notes is a plain string — no delivery data
       }
+    }
+ 
+    order.line_items.forEach((lineItem) => {
+      const book = lineItem.book_variant?.book;
+      if (!book || book.deleted_at) return;
+ 
+      const format: string = lineItem.book_variant.format; // "ebook" | "paperback" | "hardcover"
+      const isPhysical = format === "paperback" || format === "hardcover";
+ 
+      entries.push({
+        // Core book fields
+        ...book,
+ 
+        // Purchase context — prefixed to avoid clashing with book fields
+        _purchaseId:       lineItem.id,          // OrderLineItem id — unique per row
+        _format:           format,
+        _variantSize:      lineItem.book_variant.size ?? null,
+        _isPhysical:       isPhysical,
+        _fulfillmentStatus: lineItem.fulfillment_status, // unfulfilled | in_progress | shipped | delivered
+ 
+        // Delivery context (only meaningful for physical)
+        _deliveryAddress:  isPhysical ? deliveryAddress : null,
+        _shippingZone:     isPhysical ? shippingZone : null,
+        _shippingAmount:   isPhysical ? order.shipping_amount : null,
+        _orderNumber:      order.order_number,
+        _orderId:          order.id,
+        _orderedAt:        order.created_at,
+      });
     });
   });
-
-  return Array.from(bookMap.values());
+ 
+  return entries;
 });
-
 
 export const generateWatermarkedEbook = publicProcedure
   .input(

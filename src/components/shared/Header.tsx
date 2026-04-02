@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, BaseSyntheticEvent, Suspense } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { 
   Menu, 
@@ -62,11 +63,18 @@ function HeaderContent() {
       <div className="max-w-[95%] lg:max-w-[90%] mx-auto px-4 h-20 flex items-center justify-between gap-4 relative">
         
         {/* --- 1. LOGO --- */}
-        <Link href="/" className="text-3xl font-black uppercase italic tracking-tighter shrink-0 hover:opacity-80 transition-opacity">
-          Booka<span className="text-accent">.</span>
+        <Link href="/" className="shrink-0 hover:opacity-80 transition-opacity">
+          <Image 
+            src="/black-logo.png" 
+            alt="Iwacu Logo" 
+            width={140} 
+            height={40} 
+            priority
+            className="h-8 md:h-10 w-auto brightness-0" 
+          />
         </Link>
 
-        {/* --- 2. UNIFIED SEARCH BAR (Desktop + Mobile) --- */}
+        {/* --- 2. UNIFIED SEARCH BAR --- */}
         <div ref={searchRef} className="flex flex-1 max-w-xl relative group">
           <div className="relative w-full">
             <Input
@@ -169,7 +177,13 @@ function HeaderContent() {
             </SheetTrigger>
             <SheetContent side="right" className="w-full sm:w-[400px] border-l-[1.5px] border-black p-0 bg-background flex flex-col">
               <div className="p-8 border-b-[1.5px] border-black bg-white">
-                 <p className="text-3xl font-black uppercase italic tracking-tighter">Menu<span className="text-accent">.</span></p>
+                 <Image 
+                    src="/black-logo.png" 
+                    alt="Iwacu Logo" 
+                    width={120} 
+                    height={32} 
+                    className="h-8 w-auto brightness-0" 
+                  />
               </div>
               
               <div className="flex-1 p-8 space-y-10 overflow-y-auto">

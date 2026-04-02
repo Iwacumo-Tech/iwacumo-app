@@ -6,6 +6,7 @@ import bcrypt from "bcryptjs";
 import { PERMISSIONS } from "@/lib/constants";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { resolveUserContext } from "@/lib/is-super-admin";
 
 /**
  * Author Module
@@ -151,46 +152,78 @@ export const getAllAuthors = publicProcedure.query(async () => {
   return await prisma.author.findMany({ where: { deleted_at: null }, include: { user: true } });
 });
 
+// export const getAuthorsByUser = publicProcedure
+//   .input(z.object({ id: z.string() }))
+//   .query(async (opts) => {
+//     // 1. Fetch user with their full context including claims
+//     const user = await prisma.user.findUnique({ 
+//       where: { id: opts.input.id }, 
+//       include: { author: true, publisher: true, claims: true } 
+//     });
+
+//     if (!user) return [];
+
+//     // 2. CHECK FOR SUPER-ADMIN ROLE
+//     const isSuperAdmin = user.claims.some(c => c.role_name === "super-admin" && c.active);
+
+//     if (isSuperAdmin) {
+//       // God-mode: All authors, all books
+//       return await prisma.author.findMany({
+//         where: { deleted_at: null },
+//         include: { books: { where: { deleted_at: null } }, user: true }
+//       });
+//     }
+
+//     // --- STANDARD ROLE-BASED FILTERS ---
+//     if (user.publisher) {
+//       return await prisma.author.findMany({ 
+//         where: { publisher_id: user.publisher.id, deleted_at: null }, 
+//         include: { books: true, user: true } 
+//       });
+//     }
+
+//     if (user.author) {
+//       return await prisma.author.findMany({ 
+//         where: { id: user.author.id, deleted_at: null }, 
+//         include: { books: true, user: true } 
+//       });
+//     }
+
+//     return [];
+//   });
+
+
 export const getAuthorsByUser = publicProcedure
   .input(z.object({ id: z.string() }))
   .query(async (opts) => {
-    // 1. Fetch user with their full context including claims
-    const user = await prisma.user.findUnique({ 
-      where: { id: opts.input.id }, 
-      include: { author: true, publisher: true, claims: true } 
-    });
-
-    if (!user) return [];
-
-    // 2. CHECK FOR SUPER-ADMIN ROLE
-    const isSuperAdmin = user.claims.some(c => c.role_name === "super-admin" && c.active);
-
-    if (isSuperAdmin) {
-      // God-mode: All authors, all books
+    const ctx = await resolveUserContext(opts.input.id);
+    if (!ctx.isUser && !ctx.isAdminUser) return [];
+ 
+    if (ctx.isSuperAdmin) {
       return await prisma.author.findMany({
-        where: { deleted_at: null },
-        include: { books: { where: { deleted_at: null } }, user: true }
+        where:   { deleted_at: null },
+        include: { books: { where: { deleted_at: null } }, user: true },
+        orderBy: { created_at: "desc" },
       });
     }
-
-    // --- STANDARD ROLE-BASED FILTERS ---
-    if (user.publisher) {
-      return await prisma.author.findMany({ 
-        where: { publisher_id: user.publisher.id, deleted_at: null }, 
-        include: { books: true, user: true } 
+ 
+    if (ctx.publisher_id) {
+      return await prisma.author.findMany({
+        where:   { publisher_id: ctx.publisher_id, deleted_at: null },
+        include: { books: true, user: true },
+        orderBy: { created_at: "desc" },
       });
     }
-
-    if (user.author) {
-      return await prisma.author.findMany({ 
-        where: { id: user.author.id, deleted_at: null }, 
-        include: { books: true, user: true } 
+ 
+    if (ctx.author_id) {
+      return await prisma.author.findMany({
+        where:   { id: ctx.author_id, deleted_at: null },
+        include: { books: true, user: true },
       });
     }
-
+ 
     return [];
   });
-
   
 export const getAuthorBySlug = publicProcedure.input(findBookByIdSchema).query(async (opts) => {
   return await prisma.author.findUnique({ where: { slug: opts.input.id }, include: { user: true, publisher: true, books: true } });

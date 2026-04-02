@@ -162,7 +162,7 @@ export function InviteStaffForm() {
                           <SelectValue placeholder="Select access level..." />
                         </SelectTrigger>
                       </FormControl>
-                      <SelectContent className="border-2 border-black">
+                      <SelectContent style={{backgroundColor: "white"}} className="border-2 border-black">
                         {ROLE_PRESETS.map((role) => (
                           <SelectItem key={role.name} value={role.name} className="py-3">
                             <div>

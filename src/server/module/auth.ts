@@ -151,3 +151,41 @@ export const resendVerificationEmail = publicProcedure
  
     return { ok: true };
   });
+
+export const getAuthorPricingContext = publicProcedure.query(async ({ ctx }) => {
+  if (!ctx.session?.user?.id) return null;
+ 
+  const userId = ctx.session.user.id;
+ 
+  const user = await prisma.user.findUnique({
+    where:   { id: userId },
+    include: {
+      author: {
+        include: {
+          publisher: {
+            select: { id: true, white_label: true },
+          },
+          publisher_splits: {
+            // The split configured for this author by their publisher
+            take: 1,
+            orderBy: { created_at: "desc" },
+          },
+        },
+      },
+    },
+  });
+ 
+  if (!user?.author) return null;
+ 
+  const author         = user.author;
+  const publisher      = author.publisher;
+  const isWhiteLabel   = publisher?.white_label ?? false;
+  const publisherSplit = author.publisher_splits[0]?.publisher_split_percent ?? 30;
+ 
+  return {
+    is_white_label:          isWhiteLabel,
+    publisher_split_percent: publisherSplit,
+    // author_split_percent = what the author actually keeps of the post-fee remainder
+    author_split_percent:    100 - publisherSplit,
+  };
+});

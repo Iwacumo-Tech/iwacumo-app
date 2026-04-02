@@ -4,6 +4,7 @@ import { publicProcedure } from "@/server/trpc";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { resolveUserContext } from "@/lib/is-super-admin";
 
 export const createCustomer = publicProcedure
   .input(createCustomerSchema)
@@ -124,7 +125,16 @@ export const deleteCustomer = publicProcedure.input(deleteCustomerSchema).mutati
 });
 
 export const getAllCustomers = publicProcedure.query(async () => {
-  return await prisma.customer.findMany({ where: { deleted_at: null } });
+  return await prisma.customer.findMany({
+    where:   { deleted_at: null },
+    include: {
+      user:            true,
+      purchased_books: true,
+      author:          true,
+      publisher:       true,
+    },
+    orderBy: { created_at: "desc" },
+  });
 });
 
 // Register guest customer and transfer cart from localStorage
@@ -195,62 +205,58 @@ export const registerGuestAndTransferCart = publicProcedure
   });
 
 export const getCustomersByUser = publicProcedure
-  .input(z.object({ id: z.string() })) // Simplified input
+  .input(z.object({ id: z.string() }))
   .query(async (opts) => {
-    const user = await prisma.user.findUnique({
-      where: { id: opts.input.id },
-      include: { author: true, publisher: true, customers: true, claims: true }
-    });
-
-    if (!user) return [];
-
-    // 1. CHECK FOR SUPER-ADMIN ROLE
-    const isSuperAdmin = user.claims.some(c => c.role_name === "super-admin" && c.active);
-
-    if (isSuperAdmin) {
-      // God-mode: All customers across all publishers
+    const ctx = await resolveUserContext(opts.input.id);
+ 
+    // ID not found in either users or admin_users table
+    if (!ctx.isUser && !ctx.isAdminUser) return [];
+ 
+    if (ctx.isSuperAdmin) {
       return await prisma.customer.findMany({
-        where: { deleted_at: null },
-        include: { 
-          user: true, 
-          purchased_books: true, 
-          author: true, 
-          publisher: true 
+        where:   { deleted_at: null },
+        include: { user: true, purchased_books: true, author: true, publisher: true },
+        orderBy: { created_at: "desc" },
+      });
+    }
+ 
+    if (ctx.publisher_id) {
+      return await prisma.customer.findMany({
+        where:   { publisher_id: ctx.publisher_id, deleted_at: null },
+        include: { user: true, purchased_books: true, author: true },
+        orderBy: { created_at: "desc" },
+      });
+    }
+ 
+    if (ctx.author_id) {
+      return await prisma.customer.findMany({
+        where:   { author_id: ctx.author_id, deleted_at: null },
+        include: { user: true, author: true, purchased_books: true, publisher: true },
+        orderBy: { created_at: "desc" },
+      });
+    }
+ 
+    // Fallback: regular customer/reader — show customers of their publisher
+    if (ctx.isUser) {
+      const user = await prisma.user.findUnique({
+        where:   { id: opts.input.id },
+        include: { customers: true },
+      });
+      if (user?.customers?.length) {
+        const primaryPublisherId = user.customers[0].publisher_id;
+        if (primaryPublisherId) {
+          return await prisma.customer.findMany({
+            where:   { publisher_id: primaryPublisherId, deleted_at: null },
+            include: { user: true, purchased_books: true, author: true, publisher: true },
+            orderBy: { created_at: "desc" },
+          });
         }
-      });
-    }
-
-    // --- LOGIC FOR PUBLISHERS ---
-    if (user.publisher) {
-      return await prisma.customer.findMany({
-        where: { publisher_id: user.publisher.id, deleted_at: null },
-        include: { user: true, purchased_books: true, author: true }
-      });
-    }
-
-    // --- LOGIC FOR AUTHORS ---
-    if (user.author) {
-      return await prisma.customer.findMany({
-        where: { author_id: user.author.id, deleted_at: null },
-        include: { user: true, author: true, purchased_books: true, publisher: true }
-      });
-    }
-
-    // --- LOGIC FOR CUSTOMERS/READERS ---
-    if (user.customers && user.customers.length > 0) {
-      const primaryPublisherId = user.customers[0].publisher_id;
-      if (primaryPublisherId) {
-        return await prisma.customer.findMany({
-          where: { publisher_id: primaryPublisherId, deleted_at: null },
-          include: { user: true, purchased_books: true, author: true, publisher: true }
-        });
       }
     }
-
+ 
     return [];
   });
 
-  
 /**
  * Customer Dashboard Analytics
  * Provides high-level metrics for the Reader/Customer view.

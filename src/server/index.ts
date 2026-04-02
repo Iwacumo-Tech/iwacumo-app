@@ -70,6 +70,7 @@ import {
   resetPassword,
   changePassword,
   resendVerificationEmail,
+  getAuthorPricingContext,
 } from "./module/auth";
 
 import {
@@ -91,6 +92,15 @@ import {
   getMyPaymentAccount,
 } from "./module/payment-accounts";
 
+import { getPaymentHistory } from "./module/payment-history";
+
+import {
+  getAllCategories,
+  getCategoryById,
+  createCategory,
+  updateCategory,
+  deleteCategory,
+} from "./module/category";
 
 export const appRouter = router({
   createUser,
@@ -220,6 +230,15 @@ export const appRouter = router({
   verifyBankAccount,
   saveBankAccount,
   getMyPaymentAccount,
+  getPaymentHistory,
+
+  getAllCategories,
+  getCategoryById,
+  createCategory,
+  updateCategory,
+  deleteCategory,
+
+  getAuthorPricingContext,
   
   healthCheck: publicProcedure.query(() => {
     return { message: "API up and running..." };

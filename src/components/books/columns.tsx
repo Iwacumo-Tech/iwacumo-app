@@ -3,17 +3,17 @@
 import React from "react";
 import { ColumnDef } from "@tanstack/react-table";
 import {
-  MoreHorizontal,
-  Trash2,
-  Edit3,
-  Star,
-  BookOpen,
-  Eye,
-  LayoutDashboard,
-  CheckCircle2,
-  Clock,
-  ExternalLink,
+  Truck, Download, Package, MapPin, Clock, CheckCircle2,
+  BookOpen, MoreHorizontal, Trash2, Edit3, Star, Eye,
+  LayoutDashboard, ExternalLink,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -42,8 +42,180 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
+
+
+
 const menuButtonStyle =
   "w-full text-left px-3 py-2.5 text-xs font-black uppercase italic hover:bg-accent cursor-pointer flex items-center gap-2 transition-colors rounded-none outline-none";
+
+
+
+// Delivery status badge — maps OrderLineItem.fulfillment_status to a label + colour
+function FulfillmentBadge({ status }: { status: string }) {
+  const map: Record<string, { label: string; className: string }> = {
+    unfulfilled:  { label: "Processing",   className: "bg-amber-100  text-amber-700  border-amber-300" },
+    in_progress:  { label: "In Progress",  className: "bg-blue-100   text-blue-700   border-blue-300"  },
+    shipped:      { label: "Shipped",      className: "bg-purple-100 text-purple-700 border-purple-300"},
+    delivered:    { label: "Delivered",    className: "bg-emerald-100 text-emerald-700 border-emerald-300" },
+    cancelled:    { label: "Cancelled",    className: "bg-red-100    text-red-700    border-red-300"   },
+  };
+  const cfg = map[status] ?? map.unfulfilled;
+  return (
+    <span className={cn("inline-flex items-center gap-1 text-[9px] font-black uppercase border px-2 py-0.5", cfg.className)}>
+      {cfg.label}
+    </span>
+  );
+}
+
+
+
+function DeliveryInfoDialog({ book, open, onClose }: { book: any; open: boolean; onClose: () => void }) {
+  const addr = book._deliveryAddress;
+  const isDelivered = book._fulfillmentStatus === "delivered";
+ 
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-lg border-4 border-black rounded-none gumroad-shadow p-0 overflow-hidden">
+        {/* Header */}
+        <DialogHeader className="p-6 border-b-2 border-black bg-black text-white">
+          <div className="flex items-center gap-3">
+            <div className="relative w-10 h-14 border border-white/30 shrink-0 overflow-hidden">
+              <Image
+                src={book.book_cover || "/bookcover.png"}
+                alt="Cover"
+                fill
+                className="object-cover"
+              />
+            </div>
+            <div>
+              <DialogTitle className="text-lg font-black uppercase italic tracking-tighter text-white leading-tight">
+                {book.title}
+              </DialogTitle>
+              <p className="text-[10px] font-bold uppercase opacity-50 mt-0.5">
+                {book._format === "hardcover" ? "Hardcover" : "Paperback"}
+                {book._variantSize ? ` · ${book._variantSize}` : ""}
+              </p>
+            </div>
+          </div>
+        </DialogHeader>
+ 
+        <div className="p-6 space-y-6 bg-white">
+ 
+          {/* Fulfillment status */}
+          <div className="flex items-center justify-between border-b-2 border-black pb-4">
+            <span className="text-[10px] font-black uppercase tracking-widest opacity-50">Order Status</span>
+            <FulfillmentBadge status={book._fulfillmentStatus} />
+          </div>
+ 
+          {/* Order reference */}
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-black uppercase tracking-widest opacity-50">Order Ref</span>
+            <span className="font-black text-sm italic">#{book._orderNumber}</span>
+          </div>
+ 
+          {/* Delivery address */}
+          {addr ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <MapPin size={12} className="text-accent" />
+                <span className="text-[10px] font-black uppercase tracking-widest opacity-50">Ship To</span>
+              </div>
+              <div className="bg-[#FCFAEE] border-2 border-black p-4 space-y-1">
+                {addr.full_name && (
+                  <p className="font-black uppercase italic text-sm">{addr.full_name}</p>
+                )}
+                {addr.address && (
+                  <p className="text-xs font-bold opacity-70">{addr.address}</p>
+                )}
+                {(addr.city || addr.state) && (
+                  <p className="text-xs font-bold opacity-70">
+                    {[addr.city, addr.state].filter(Boolean).join(", ")}
+                  </p>
+                )}
+                {addr.phone && (
+                  <p className="text-xs font-bold opacity-50">{addr.phone}</p>
+                )}
+                {addr.email && (
+                  <p className="text-xs font-bold opacity-50">{addr.email}</p>
+                )}
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs font-bold opacity-40 italic">Delivery address not recorded.</p>
+          )}
+ 
+          {/* Shipping cost */}
+          {book._shippingAmount != null && book._shippingAmount > 0 && (
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-widest opacity-50">
+                Shipping Paid
+                {book._shippingZone && (
+                  <span className="ml-2 bg-black text-accent text-[8px] font-black px-1.5 py-0.5 tracking-widest">
+                    {book._shippingZone}
+                  </span>
+                )}
+              </span>
+              <span className="font-black italic">₦{book._shippingAmount.toLocaleString()}</span>
+            </div>
+          )}
+ 
+          {/* Message to reader */}
+          {!isDelivered ? (
+            <div className="bg-accent/10 border-2 border-accent p-4 space-y-1">
+              <div className="flex items-center gap-2">
+                <Truck size={14} className="text-accent" />
+                <p className="text-[10px] font-black uppercase tracking-widest">On Its Way</p>
+              </div>
+              <p className="text-xs font-bold opacity-70 leading-relaxed">
+                Your physical copy is being prepared. Delivery typically takes
+                <strong> 2–5 business days</strong> depending on your location.
+                All updates will be sent to your email and phone number on file.
+              </p>
+            </div>
+          ) : (
+            <div className="bg-emerald-50 border-2 border-emerald-500 p-4 flex items-center gap-3">
+              <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+              <p className="text-xs font-black uppercase tracking-wide text-emerald-700">
+                Delivered — enjoy your copy!
+              </p>
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+ 
+function ReaderBookAction({ book }: { book: any }) {
+  const [dialogOpen, setDialogOpen] = React.useState(false);
+ 
+  if (book._isPhysical) {
+    return (
+      <>
+        <Button
+          onClick={() => setDialogOpen(true)}
+          className="h-12 px-8 text-xs italic tracking-widest border-4 border-black bg-white text-black hover:bg-accent gumroad-shadow font-black uppercase"
+        >
+          <Truck size={16} className="mr-2" /> Delivery Info
+        </Button>
+        <DeliveryInfoDialog
+          book={book}
+          open={dialogOpen}
+          onClose={() => setDialogOpen(false)}
+        />
+      </>
+    );
+  }
+ 
+  return (
+  <Link href={`/app/books/view/${book.id}`}>
+    <Button className="booka-button-primary h-12 px-8 text-xs italic tracking-widest">
+      <BookOpen size={16} className="mr-2" /> Read Now
+    </Button>
+  </Link>
+  );
+}
+ 
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Staff action menu
@@ -321,35 +493,58 @@ export const staffBookColumns: ColumnDef<any>[] = [
     ),
   },
   {
-    accessorKey: "sales",
+    accessorKey: "salesCount",
     header: "Sales",
     cell: ({ row }) => {
-      const variants = row.original.variants || [];
-      const totalSales = variants.reduce(
-        (acc: number, v: any) => acc + (v._count?.order_lineitems || 0),
-        0
-      );
-      return <span className="font-black italic underline text-sm">{totalSales}</span>;
+      // getAllBooks computes salesCount server-side (captured orders only).
+      // getBookByAuthor also includes _count.order_lineitems per variant —
+      // we use salesCount if available, otherwise fall back to summing variants.
+      const book = row.original;
+ 
+      const count: number =
+        typeof book.salesCount === "number"
+          ? book.salesCount
+          : (book.variants ?? []).reduce(
+              (acc: number, v: any) => acc + (v._count?.order_lineitems || 0),
+              0
+            );
+ 
+      return <span className="font-black italic underline text-sm">{count}</span>;
     },
   },
-  {
-    accessorKey: "revenue",
-    header: "Revenue",
-    cell: ({ row }) => {
-      const variants = row.original.variants || [];
-      const totalRevenue = variants.reduce((acc: number, v: any) => {
-        const variantTotal =
-          v.order_lineitems?.reduce(
-            (sum: number, item: any) => sum + (item.total_price || 0),
-            0
-          ) || 0;
-        return acc + variantTotal;
-      }, 0);
-      return (
-        <span className="font-black text-sm">₦{totalRevenue.toLocaleString()}</span>
-      );
-    },
-  },
+  // {
+  //   accessorKey: "revenue",
+  //   header: "Revenue",
+  //   cell: ({ row }) => {
+  //     const book = row.original;
+ 
+  //     // Revenue = sum of order_lineitems.total_price across all variants.
+  //     // getBookByAuthor includes order_lineitems filtered to captured orders
+  //     // via the query (payment_status: "captured").
+  //     // getAllBooks does NOT include order_lineitems, so revenue will show
+  //     // ₦0 for super-admin view — that's acceptable since super-admin has
+  //     // the full orders page for revenue analysis.
+  //     const totalRevenue: number = (book.variants ?? []).reduce(
+  //       (acc: number, v: any) => {
+  //         const lineItemsTotal =
+  //           (v.order_lineitems ?? []).reduce(
+  //             (sum: number, item: any) => sum + (item.total_price || 0),
+  //             0
+  //           );
+  //         return acc + lineItemsTotal;
+  //       },
+  //       0
+  //     );
+ 
+  //     return (
+  //       <span className="font-black text-sm">
+  //         {totalRevenue > 0 ? `₦${totalRevenue.toLocaleString()}` : (
+  //           <span className="opacity-30 font-bold text-xs">—</span>
+  //         )}
+  //       </span>
+  //     );
+  //   },
+  // },
   {
     accessorKey: "price",
     header: "Base Price",
@@ -371,35 +566,50 @@ export const readerBookColumns: ColumnDef<any>[] = [
   {
     accessorKey: "title",
     header: "My Bookshelf",
-    cell: ({ row }) => (
-      <div className="flex items-center gap-4 py-3">
-        <div className="relative w-14 h-20 border-2 border-black bg-white shadow-[4px_4px_0px_rgba(0,0,0,1)]">
-          <Image
-            src={row.original.book_cover || "/bookcover.png"}
-            alt="Cover"
-            fill
-            className="object-cover"
-          />
+    cell: ({ row }) => {
+      const book = row.original;
+      const isPhysical = book._isPhysical;
+      return (
+        <div className="flex items-center gap-4 py-3">
+          <div className="relative w-14 h-20 border-2 border-black bg-white shadow-[4px_4px_0px_rgba(0,0,0,1)] shrink-0">
+            <Image
+              src={book.book_cover || "/bookcover.png"}
+              alt="Cover"
+              fill
+              className="object-cover"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <p className="font-black uppercase italic text-base tracking-tighter leading-none">
+              {book.title}
+            </p>
+            {/* Format badge */}
+            <div className="flex items-center gap-1.5">
+              {isPhysical
+                ? <Truck size={10} className="text-accent" />
+                : <Download size={10} className="text-accent" />
+              }
+              <span className="text-[10px] font-black uppercase tracking-widest opacity-50">
+                {book._format === "hardcover"
+                  ? "Hardcover"
+                  : book._format === "paperback"
+                  ? "Paperback"
+                  : "E-Book"
+                }
+                {book._variantSize ? ` · ${book._variantSize}` : ""}
+              </span>
+            </div>
+            {/* Fulfillment status — only for physical */}
+            {isPhysical && (
+              <FulfillmentBadge status={book._fulfillmentStatus} />
+            )}
+          </div>
         </div>
-        <div>
-          <p className="font-black uppercase italic text-base tracking-tighter leading-none">
-            {row.original.title}
-          </p>
-          <p className="text-[10px] font-bold opacity-40 uppercase mt-2">
-            Personal Library
-          </p>
-        </div>
-      </div>
-    ),
+      );
+    },
   },
   {
     id: "action",
-    cell: ({ row }) => (
-      <Link href={`/app/books/view/${row.original.id}`}>
-        <Button className="booka-button-primary h-12 px-8 text-xs italic tracking-widest">
-          <BookOpen size={16} className="mr-2" /> Open Library
-        </Button>
-      </Link>
-    ),
+    cell: ({ row }) => <ReaderBookAction book={row.original} />,
   },
 ];
