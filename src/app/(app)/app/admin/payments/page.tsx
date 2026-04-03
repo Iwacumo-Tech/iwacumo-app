@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { keepPreviousData } from "@tanstack/react-query";
 
 // ─── Sub-components (module level) ───────────────────────────────────────────
 
@@ -139,7 +140,7 @@ export default function AdminPaymentsPage() {
 
   const { data, isLoading } = trpc.getPaymentHistory.useQuery(
     { page, per_page: 20 },
-    { enabled: !!session?.user?.id && isSuperAdmin, keepPreviousData: true }
+    { enabled: !!session?.user?.id && isSuperAdmin, placeholderData: keepPreviousData }
   );
 
   if (!isSuperAdmin) {

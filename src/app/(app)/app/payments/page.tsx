@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { keepPreviousData } from "@tanstack/react-query";
+
 
 // ─── Sub-components (module level — hard rule #4) ─────────────────────────────
 
@@ -154,7 +156,7 @@ export default function PaymentsPage() {
 
   const { data, isLoading } = trpc.getPaymentHistory.useQuery(
     { page, per_page: 20 },
-    { enabled: !!session?.user?.id, keepPreviousData: true }
+    { enabled: !!session?.user?.id, placeholderData: keepPreviousData }
   );
 
   // Check if this user has a bank account set up
