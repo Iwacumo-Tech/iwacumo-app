@@ -4,11 +4,12 @@ import React, { BaseSyntheticEvent, ReactNode, useState } from "react";
 import { usePathname } from "next/navigation";
 import { FaBars } from "react-icons/fa";
 import { signOut } from "next-auth/react";
-import { Sidebar } from "./sidebar"; 
-import { SidebarMobile } from "./sidebar-mobile"; 
-import { ShoppingBag } from "lucide-react";
-import { useCartStore } from "@/store/use-cart-store";
-import { Button } from "@/components/ui/button";
+import { Sidebar }       from "./sidebar";
+import { SidebarMobile } from "./sidebar-mobile";
+import { ShoppingBag }   from "lucide-react";
+import { useCartStore }  from "@/store/use-cart-store";
+import { Button }        from "@/components/ui/button";
+import { KycGate }       from "@/components/kyc/kyc-gate";
 
 export interface Link {
   name: string;
@@ -17,15 +18,19 @@ export interface Link {
   requiredPermission: string;
 }
 
-// Simple Title Mapping by Path
 const PATH_TITLES: Record<string, string> = {
-  "/app": "Overview",
-  "/app/books": "Library",
-  "/app/books/featured": "Store Curation",
-  "/app/admin/featured": "Global Featured",
-  "/app/orders": "Sales & Orders",
-  "/app/customers": "Your Tribe",
-  "/app/payouts": "Earnings",
+  "/app":                  "Overview",
+  "/app/books":            "Library",
+  "/app/books/featured":   "Store Curation",
+  "/app/admin/featured":   "Global Featured",
+  "/app/orders":           "Sales & Orders",
+  "/app/customers":        "Your Tribe",
+  "/app/payouts":          "Earnings",
+  "/app/kyc":              "Publisher Verification",
+  "/app/kyc/pending":      "Verification Pending",
+  "/app/kyc-reviews":      "KYC Reviews",
+  "/app/users":            "Staff",
+  "/app/categories":       "Categories",
 };
 
 export default function DashboardShell({
@@ -36,10 +41,9 @@ export default function DashboardShell({
   children: React.ReactNode;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const pathname = usePathname();
-  const toggleCart = useCartStore((state) => state.toggleCart);
+  const pathname    = usePathname();
+  const toggleCart  = useCartStore((state) => state.toggleCart);
 
-  // Derive title from pathname or fallback
   const currentTitle = PATH_TITLES[pathname] || "Dashboard";
 
   const logout = async (e?: BaseSyntheticEvent) => {
@@ -73,25 +77,30 @@ export default function DashboardShell({
             >
               <FaBars className="w-5 h-5 text-black" />
             </Button>
-            
+
             <h1 className="text-xl md:text-2xl font-black uppercase italic tracking-tighter truncate text-black">
               {currentTitle}<span className="text-accent">.</span>
             </h1>
           </div>
 
           <div className="flex items-center gap-4">
-            <Button 
+            <Button
               onClick={toggleCart}
               className="bg-accent text-black border-2 border-black h-12 px-4 flex items-center gap-3 gumroad-shadow-sm hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-none transition-all"
             >
               <ShoppingBag className="w-5 h-5" />
-              <span className="hidden sm:inline font-black uppercase text-[10px] tracking-widest">Bag</span>
+              <span className="hidden sm:inline font-black uppercase text-[10px] tracking-widest">
+                Bag
+              </span>
             </Button>
           </div>
         </header>
 
+        {/* ── KycGate wraps all page content ───────────────────── */}
+        {/* Non-publishers pass straight through with zero overhead. */}
+        {/* Publishers are checked once and redirected if not approved. */}
         <main className="p-4 md:p-10 max-w-[1600px] w-full mx-auto">
-          {children}
+          <KycGate>{children}</KycGate>
         </main>
       </div>
     </div>

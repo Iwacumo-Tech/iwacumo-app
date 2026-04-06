@@ -34,20 +34,22 @@ export default function AppPage() {
     ...(customerStats?.recentOrders?.map(o => ({ description: `Purchased "${o.line_items[0]?.book_variant?.book?.title || 'a book'}"`, timestamp: o.created_at })) || [])
   ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-  // Only change from original: removed hover:-translate-y-1 and transition-transform.
-  // Added cursor-default so mobile/desktop never implies the card is pressable.
+  // Stat card — no hover lift, no shadow, no pointer. Thick left stripe signals "data display".
   const StatBox = ({ title, value, icon: Icon, color = "bg-white" }: any) => (
-    <div className={cn("border-4 border-primary p-6 gumroad-shadow cursor-default", color)}>
-      <div className="flex justify-between items-start mb-4">
-        <Icon className="w-8 h-8 text-primary" />
-        <span className="text-[10px] font-black uppercase tracking-widest opacity-40">{title}</span>
-      </div>
-      <div className="text-3xl font-black italic tracking-tighter text-primary truncate">{value}</div>
+    <div className={cn(
+      "relative border-2 border-black p-6 border-l-[6px] border-l-accent",
+      color === "bg-accent" ? "border-l-black bg-accent" : "bg-white",
+    )}>
+      {/* Ghost icon — decorative only */}
+      <Icon className="absolute top-4 right-4 w-5 h-5 opacity-10" />
+      <p className="text-[9px] font-black uppercase tracking-[0.2em] opacity-40 mb-3">{title}</p>
+      <p className="text-3xl font-black italic tracking-tighter leading-none truncate">{value}</p>
     </div>
   );
 
   return (
     <div className="space-y-12">
+
       {/* 1. Dynamic Header */}
       <div className="flex flex-col md:flex-row justify-between items-end gap-6 border-b-4 border-primary pb-8">
         <div>
@@ -63,8 +65,17 @@ export default function AppPage() {
         </Link>
       </div>
 
-      {/* 2. Intelligent Metric Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+      {/* Overview label */}
+      {(isSuperAdmin || isPublisher || isAuthor || isCustomer) && (
+        <div className="flex items-center gap-3">
+          <span className="text-[9px] font-black uppercase tracking-[0.2em] opacity-30">Overview</span>
+          <div className="flex-1 h-px bg-black/10" />
+        </div>
+      )}
+
+      {/* 2. Metric Grid */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+
         {/* SUPER ADMIN VIEW */}
         {isSuperAdmin && (
           <>
@@ -75,7 +86,7 @@ export default function AppPage() {
           </>
         )}
 
-        {/* PUBLISHER VIEW (Only if not Super Admin, to avoid clutter) */}
+        {/* PUBLISHER VIEW */}
         {isPublisher && !isSuperAdmin && (
           <>
             <StatBox title="Authors" value={publisherStats?.totalAuthors || 0} icon={Users} color="bg-accent" />
@@ -95,7 +106,7 @@ export default function AppPage() {
           </>
         )}
 
-        {/* CUSTOMER VIEW (The converted reader) */}
+        {/* CUSTOMER VIEW */}
         {isCustomer ? (
           <>
             <StatBox title="Library" value={customerStats?.booksOwned || 0} icon={Library} color="bg-accent" />
@@ -104,7 +115,7 @@ export default function AppPage() {
             <StatBox title="Recent" value={customerStats?.recentOrders?.length || 0} icon={Package} />
           </>
         ) : (!isAuthor && !isPublisher && !isSuperAdmin) && (
-          /* GUEST READER VIEW (Onboarding State) */
+          /* GUEST READER VIEW */
           <div className="col-span-full bg-accent border-4 border-primary p-10 gumroad-shadow flex flex-col md:flex-row items-center justify-between gap-8">
             <div className="space-y-4 text-center md:text-left">
               <div className="inline-flex items-center gap-2 bg-white px-3 py-1 border-2 border-primary font-black uppercase text-[10px]">
@@ -122,60 +133,56 @@ export default function AppPage() {
 
       {/* 3. Activity & Next Steps */}
       <div className="grid lg:grid-cols-3 gap-12">
-        <div className="lg:col-span-2 space-y-6">
-          <h3 className="text-xl font-black uppercase italic flex items-center gap-3">
-            <Zap className="text-accent fill-accent" /> Pulse Feed
-          </h3>
+        <div className="lg:col-span-2 space-y-4">
+          <div className="flex items-center gap-3">
+            <Zap size={16} className="text-accent fill-accent" />
+            <h3 className="text-sm font-black uppercase tracking-widest">Pulse Feed</h3>
+          </div>
           <div className="space-y-4">
             {unifiedActivity.length > 0 ? (
-              <div className="border-4 border-primary bg-white gumroad-shadow">
+              <div className="border-2 border-primary bg-white divide-y-2 divide-black/10">
                 {unifiedActivity.slice(0, 5).map((item: any, i: number) => (
-                   <div key={i} className="p-6 border-b-2 border-primary last:border-0 flex justify-between items-center hover:bg-accent/5 transition-colors group cursor-default">
-                      <div className="flex gap-4 items-center">
-                        <div className="w-2 h-2 rounded-full bg-accent" />
-                        <div>
-                          <p className="font-black uppercase text-sm italic">{item.description}</p>
-                          <p className="text-[10px] font-bold opacity-40 uppercase">
-                            {new Date(item.timestamp).toLocaleDateString()} — {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </p>
-                        </div>
+                  <div key={i} className="px-6 py-4 flex justify-between items-center cursor-default">
+                    <div className="flex gap-4 items-center">
+                      <div className="w-1.5 h-1.5 bg-accent shrink-0" />
+                      <div>
+                        <p className="font-black uppercase text-xs italic leading-snug">{item.description}</p>
+                        <p className="text-[9px] font-bold opacity-30 uppercase mt-0.5">
+                          {new Date(item.timestamp).toLocaleDateString()} · {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </p>
                       </div>
-                   </div>
+                    </div>
+                  </div>
                 ))}
               </div>
             ) : (
               <div className="border-4 border-dashed border-primary/20 p-20 text-center">
-                 <p className="font-black uppercase italic opacity-20 text-2xl">Awaiting Activity...</p>
+                <p className="font-black uppercase italic opacity-20 text-2xl">Awaiting Activity...</p>
               </div>
             )}
           </div>
         </div>
 
-        <aside className="space-y-6">
-           <h3 className="text-xl font-black uppercase italic">Actions</h3>
-           <div className="bg-primary text-white p-8 gumroad-shadow space-y-6">
-              <ul className="space-y-4">
-                 {(isPublisher || isAuthor) && (
-                  <li>
-                    <Link href="/app/books" className="text-sm font-bold uppercase italic hover:text-accent transition-colors flex items-center gap-2">
-                      <ArrowRight size={12} /> Manage My Catalog
-                    </Link>
-                  </li>
-                 )}
-                 {isCustomer && (
-                   <li>
-                    <Link href="/app/books" className="text-sm font-bold uppercase italic hover:text-accent transition-colors flex items-center gap-2">
-                      <ArrowRight size={12} /> Open My Library
-                    </Link>
-                  </li>
-                 )}
-                 <li>
-                    <Link href="/app/profile" className="text-sm font-bold uppercase italic hover:text-accent transition-colors flex items-center gap-2">
-                      <ArrowRight size={12} /> Update Identity
-                    </Link>
-                 </li>
-              </ul>
-           </div>
+        <aside className="space-y-4">
+          <h3 className="text-sm font-black uppercase tracking-widest">Actions</h3>
+          <div className="border-2 border-black bg-primary text-white divide-y divide-white/10">
+            {(isPublisher || isAuthor) && (
+              <Link href="/app/books" className="flex items-center justify-between px-6 py-4 hover:bg-white/5 transition-colors group">
+                <span className="text-xs font-bold uppercase italic">Manage My Catalog</span>
+                <ArrowRight size={14} className="opacity-40 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
+              </Link>
+            )}
+            {isCustomer && (
+              <Link href="/app/books" className="flex items-center justify-between px-6 py-4 hover:bg-white/5 transition-colors group">
+                <span className="text-xs font-bold uppercase italic">Open My Library</span>
+                <ArrowRight size={14} className="opacity-40 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
+              </Link>
+            )}
+            <Link href="/app/profile" className="flex items-center justify-between px-6 py-4 hover:bg-white/5 transition-colors group">
+              <span className="text-xs font-bold uppercase italic">Update Identity</span>
+              <ArrowRight size={14} className="opacity-40 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
+            </Link>
+          </div>
         </aside>
       </div>
     </div>

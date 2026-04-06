@@ -7,6 +7,8 @@ import {
   StaffInviteTemplate,
   OrderConfirmationTemplate,
   BankAccountConnectedTemplate,
+  KycApprovedTemplate,
+  KycRejectedTemplate,
 } from "@/emails";
 
 if (!process.env.RESEND_API_KEY) {
@@ -133,4 +135,14 @@ export async function sendBankAccountConnectedEmail({
     subject: "Payout account connected — iwacumo",
     react: BankAccountConnectedTemplate({ firstName, bankName, accountName, accountNumber }),
   });
+}
+
+// ── KYC approved ─────────────────────────────────────────────
+export async function sendKycApprovedEmail({ to, firstName, orgName }: { to: string; firstName: string; orgName: string }) {
+  return resend.emails.send({ from: FROM, to, subject: "🎉 KYC Approved — your publisher account is live!", react: KycApprovedTemplate({ firstName, orgName }) });
+}
+ 
+// ── KYC rejected ─────────────────────────────────────────────
+export async function sendKycRejectedEmail({ to, firstName, orgName, reviewerNotes }: { to: string; firstName: string; orgName: string; reviewerNotes: string | null }) {
+  return resend.emails.send({ from: FROM, to, subject: "Action required: KYC submission needs attention", react: KycRejectedTemplate({ firstName, orgName, reviewerNotes }) });
 }

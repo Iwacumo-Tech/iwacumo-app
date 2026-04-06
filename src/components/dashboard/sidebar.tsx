@@ -1,38 +1,39 @@
 "use client";
 
+import Image from "next/image";
 import { IoLogOutOutline } from "react-icons/io5";
 import { SidebarItem } from "./sidebar-item";
 import { type Link } from "./dashboard-shell";
-import { ExternalLink, Book, Store } from "lucide-react";
+import { ExternalLink, Store } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export function Sidebar({ logout, links, storeSlug, setIsOpen }: {
-  links: any[];
-  logout: () => void;
+  links:      any[];
+  logout:     () => void;
   storeSlug?: string | null;
   setIsOpen?: (val: boolean) => void;
 }) {
-
   const handleItemClick = () => {
     if (setIsOpen) setIsOpen(false);
   };
 
   return (
     <div className="flex h-full flex-col bg-white">
-      {/* Header */}
-      <div className="px-6 py-8 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-black flex items-center justify-center rotate-3 border-2 border-accent">
-            <Book className="text-white w-6 h-6" />
-          </div>
-          <span className="text-2xl font-black uppercase italic tracking-tighter">
-            Booka<span className="text-accent">.</span>
-          </span>
-        </div>
+
+      {/* ── Header / Logo ─────────────────────────────────────────────── */}
+      <div className="px-6 py-6 shrink-0 border-b-4 border-black bg-black">
+        <Image
+          src="/yellow-logo.png"
+          alt="iwacumò"
+          width={160}
+          height={48}
+          priority
+          className="object-contain"
+        />
       </div>
 
-      {/* Main Navigation */}
-      <nav className="flex-1 overflow-y-auto px-4 space-y-2 no-scrollbar">
+      {/* ── Main Navigation ───────────────────────────────────────────── */}
+      <nav className="flex-1 overflow-y-auto px-4 py-4 space-y-1 no-scrollbar">
         {links.map((item, i) => (
           <SidebarItem
             key={i}
@@ -45,9 +46,8 @@ export function Sidebar({ logout, links, storeSlug, setIsOpen }: {
         ))}
       </nav>
 
-      {/* Footer */}
+      {/* ── Footer ────────────────────────────────────────────────────── */}
       <div className="p-4 space-y-2 border-t-4 border-black shrink-0 bg-white">
-        {/* Publisher store shortcut — only shown when a slug is available */}
         {storeSlug && (
           <SidebarItem
             name="View My Store"

@@ -102,6 +102,15 @@ import {
   deleteCategory,
 } from "./module/category";
 
+import {
+  submitKyc,
+  getMyKyc,
+  getAllKycSubmissions,
+  reviewKyc,
+  getKycRequirements,
+  updateKycRequirements,
+} from "./module/kyc";
+
 export const appRouter = router({
   createUser,
   updateUser,
@@ -237,6 +246,13 @@ export const appRouter = router({
   createCategory,
   updateCategory,
   deleteCategory,
+
+  submitKyc,
+  getMyKyc,
+  getAllKycSubmissions,
+  reviewKyc,
+  getKycRequirements,
+  updateKycRequirements,
 
   getAuthorPricingContext,
   

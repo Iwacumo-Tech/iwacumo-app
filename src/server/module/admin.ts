@@ -486,6 +486,11 @@ export const getSystemSettings = publicProcedure.query(async () => {
     isbn_cost: normalisePrimitive(settingsMap.isbn_cost, 0),
     shipping_rates: settingsMap.shipping_rates ?? { Z1: { constant: 1500, variable: 200 }, Z2: { constant: 2000, variable: 250 }, Z3: { constant: 1200, variable: 180 }, Z4: { constant: 1000, variable: 150 } },
     book_weights: settingsMap.book_weights ?? { paperback: { A6: { cover: 50, page: 3 }, A5: { cover: 70, page: 4 }, A4: { cover: 90, page: 6 } }, hardcover: { A6: { cover: 120, page: 3 }, A5: { cover: 160, page: 4 }, A4: { cover: 200, page: 6 } } },
+    kyc_requirements: settingsMap.kyc_requirements ?? {
+      require_id:               true,
+      require_business_reg:     true,
+      require_proof_of_address: true,
+    },
   };
 });
  

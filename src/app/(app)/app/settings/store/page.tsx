@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { trpc } from "@/app/_providers/trpc-provider";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
-import { Loader2, ExternalLink, Copy, Check, Lock, Upload, Palette, Globe, Type, LayoutTemplate, Share2, Eye } from "lucide-react";
+import { Loader2, ExternalLink, Copy, Check, Lock, Upload, Palette, Globe, Type, LayoutTemplate, Share2, Eye, AlertCircle } from "lucide-react";
 
 import { Button }   from "@/components/ui/button";
 import { Input }    from "@/components/ui/input";
@@ -29,6 +29,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+
+import { uploadImage } from "@/lib/server";
 
 // ─── Form schema (mirrors server schema) ─────────────────────────────────────
 
@@ -147,18 +149,32 @@ function LogoUploadField({
   value: string | null | undefined;
   onChange: (url: string | null) => void;
 }) {
-  const upload = trpc.imageUpload.useMutation();
   const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
 
+  // You can choose to use trpc or the uploadImage utility here.
+  // Using the uploadImage utility for consistency with your KYC form:
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // 1. File Size Check (e.g., 2MB for logos)
+    if (file.size > 2 * 1024 * 1024) {
+      setUploadError("Logo too large. Max 2MB.");
+      return;
+    }
+
     setUploading(true);
+    setUploadError("");
+
     try {
-      const result = await upload.mutateAsync({ file });
-      onChange((result as any).url ?? null);
-    } catch {
-      toast.error("Upload failed");
+      // 2. Upload using the utility
+      const url = await uploadImage(file);
+      onChange(url);
+    } catch (err) {
+      setUploadError("Upload failed. Please try again.");
+      console.error("[logo upload]", err);
     } finally {
       setUploading(false);
     }
@@ -166,39 +182,78 @@ function LogoUploadField({
 
   return (
     <div className="space-y-3">
-      {value && (
-        <div className="flex items-center gap-3">
-          <img
-            src={value}
-            alt="Logo preview"
-            className="h-14 w-14 object-contain border-[1.5px] border-black p-1 bg-white"
-          />
-          <button
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/svg+xml"
+        className="hidden"
+        onChange={handleFile}
+        disabled={uploading}
+      />
+
+      {value ? (
+        <div className="flex items-center gap-4 border-[1.5px] border-black p-3 bg-white gumroad-shadow-sm w-fit">
+          <div className="h-14 w-14 border-[1.5px] border-black/10 flex items-center justify-center bg-gray-50">
+            <img src={value} alt="Logo preview" className="h-12 w-12 object-contain" />
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] font-black uppercase tracking-widest text-green-600">
+              Logo Active
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                onChange(null);
+                if (inputRef.current) inputRef.current.value = "";
+              }}
+              className="text-[9px] font-black uppercase underline hover:text-red-500 text-left"
+            >
+              Remove Logo
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className={uploadError ? "border-red-500" : ""}>
+          <Button
             type="button"
-            onClick={() => onChange(null)}
-            className="text-[10px] font-black uppercase tracking-widest text-red-500 hover:underline"
+            variant="outline"
+            disabled={uploading}
+            onClick={() => inputRef.current?.click()}
+            className="h-14 gap-2 rounded-none border-[1.5px] border-black font-black uppercase text-[10px] tracking-[0.2em] hover:bg-black hover:text-white transition-all gumroad-shadow-sm"
           >
-            Remove
-          </button>
+            {uploading ? (
+              <>
+                <Loader2 size={14} className="animate-spin" />
+                Uploading…
+              </>
+            ) : (
+              <>
+                <Upload size={14} />
+                Upload Store Logo
+              </>
+            )}
+          </Button>
         </div>
       )}
-      <label className="flex items-center gap-3 cursor-pointer w-fit">
-        <div className="flex items-center gap-2 px-4 py-2.5 border-[1.5px] border-black bg-white hover:bg-black hover:text-white transition-colors text-[10px] font-black uppercase tracking-widest gumroad-shadow-sm">
-          {uploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
-          {uploading ? "Uploading…" : "Upload Logo"}
+
+      {uploadError && (
+        <div className="flex items-center gap-1.5 mt-1">
+          <AlertCircle className="size-3 text-red-500" />
+          <p className="text-[10px] text-red-600 font-bold uppercase tracking-tight">
+            {uploadError}
+          </p>
         </div>
-        <input
-          type="file"
-          accept="image/png,image/jpeg,image/webp,image/svg+xml"
-          className="sr-only"
-          onChange={handleFile}
-          disabled={uploading}
-        />
-      </label>
-      <p className="text-[10px] text-gray-400 font-medium">PNG, JPG, SVG or WebP. Max 2 MB.</p>
+      )}
+
+      {!value && !uploadError && (
+        <p className="text-[10px] text-gray-400 font-medium">
+          PNG, JPG, SVG or WebP. Square aspect ratio recommended.
+        </p>
+      )}
     </div>
   );
 }
+
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
@@ -580,8 +635,8 @@ export default function PublisherStoreSettingsPage() {
           </div>
 
           {/* ── Store Layout (white-label only) ── */}
-          <div>
-            <div className="flex items-center gap-3 mb-6 pb-3 border-b-[1.5px] border-black">
+          {/* <div> */}
+            {/* <div className="flex items-center gap-3 mb-6 pb-3 border-b-[1.5px] border-black">
               <div className="w-8 h-8 bg-black flex items-center justify-center">
                 <LayoutTemplate size={14} className="text-accent" />
               </div>
@@ -589,12 +644,12 @@ export default function PublisherStoreSettingsPage() {
                 Layout &amp; Sections
               </span>
               {!isWhiteLabel && <WhiteLabelBadge />}
-            </div>
+            </div> */}
 
-            {isWhiteLabel ? (
-              <div className="space-y-6">
+            {/* {isWhiteLabel ? ( */}
+              {/* // <div className="space-y-6"> */}
                 {/* Hero layout */}
-                <FormField
+                {/* <FormField
                   control={form.control}
                   name="heroLayout"
                   render={({ field }) => (
@@ -624,10 +679,10 @@ export default function PublisherStoreSettingsPage() {
                       <FormMessage />
                     </FormItem>
                   )}
-                />
+                /> */}
 
                 {/* Accent style */}
-                <FormField
+                {/* <FormField
                   control={form.control}
                   name="accentStyle"
                   render={({ field }) => (
@@ -654,10 +709,10 @@ export default function PublisherStoreSettingsPage() {
                       <FormMessage />
                     </FormItem>
                   )}
-                />
+                /> */}
 
                 {/* Section toggles */}
-                <div className="space-y-4 border-[1.5px] border-black/10 p-5">
+                {/* <div className="space-y-4 border-[1.5px] border-black/10 p-5">
                   <p className="text-[10px] font-black uppercase tracking-widest mb-4">
                     Visible Sections
                   </p>
@@ -684,8 +739,8 @@ export default function PublisherStoreSettingsPage() {
                       )}
                     />
                   ))}
-                </div>
-              </div>
+                </div> */}
+              {/* </div>
             ) : (
               <LockedSection>
                 <div className="space-y-4">
@@ -697,10 +752,10 @@ export default function PublisherStoreSettingsPage() {
                 </div>
               </LockedSection>
             )}
-          </div>
+          </div> */}
 
           {/* ── Custom Domain (white-label only) ── */}
-          <div>
+          {/* <div>
             <div className="flex items-center gap-3 mb-6 pb-3 border-b-[1.5px] border-black">
               <div className="w-8 h-8 bg-black flex items-center justify-center">
                 <Globe size={14} className="text-accent" />
@@ -742,7 +797,7 @@ export default function PublisherStoreSettingsPage() {
                 <Input placeholder="books.yourbrand.com" className="input-gumroad font-mono" disabled />
               </LockedSection>
             )}
-          </div>
+          </div> */}
 
           {/* ── Social Links (white-label only) ── */}
           <div>

@@ -26,7 +26,7 @@ export function BankAccountConnectedTemplate({
       <Body style={body}>
         <Container style={container}>
           <Section style={header}>
-            <Heading style={logo}>BOOKA.</Heading>
+            <Heading style={logo}>IWACUMO.</Heading>
           </Section>
           <Section style={content}>
             <Heading style={h1}>Payout Account Connected<span style={{ color: "#FFD700" }}>.</span></Heading>
@@ -55,7 +55,7 @@ export function BankAccountConnectedTemplate({
 
             <Hr style={hr} />
             <Text style={footer}>
-              This notification was sent because a payout account was added or updated on your Booka profile.
+              This notification was sent because a payout account was added or updated on your IWACUMO profile.
             </Text>
           </Section>
         </Container>

@@ -6,7 +6,7 @@ import { FaBookOpen } from "react-icons/fa";
 import { MdDashboardCustomize } from "react-icons/md";
 import {
   UserPlusIcon, Image as ImageIcon, Sliders as SliderIcon,
-  Gauge, Store, Percent, Banknote, DollarSign, LayoutList,
+  Gauge, Store, Percent, Banknote, DollarSign, LayoutList, ClipboardCheck,
 } from "lucide-react";
 
 export const links = [
@@ -101,6 +101,12 @@ export const links = [
     requiredPermission: "super-admin, staff-publisher",
   },
   {
+    name: "KYC Reviews",
+    url: "/app/kyc-reviews",
+    icon: <ClipboardCheck className="size-5 mr-2" />,
+    requiredPermission: "super-admin, staff-publisher",
+  },
+  {
     name: "Store Settings",
     url:  "/app/settings/store",
     icon: <Store className="size-5 mr-2" />,
@@ -118,6 +124,7 @@ export const links = [
     icon: <Banknote className="size-5 mr-2" />,
     requiredPermission: "publisher, author",
   },
+  
 ];
 
 export type Links = (typeof links)[number];

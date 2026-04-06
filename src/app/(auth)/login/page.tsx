@@ -79,10 +79,10 @@ function LoginContent() {
       <div className="w-full max-w-md space-y-8">
 
         {/* Brand */}
-        <div className="text-center">
-          <h1 className="text-5xl font-black uppercase italic tracking-tighter mb-2">
-            Iwacumo<span className="text-accent">.</span>
-          </h1>
+        <div className="flex flex-col items-center text-center mb-8">
+          <div className="bg-black p-5 border-4 border-primary gumroad-shadow mb-4">
+            <img src="/yellow-logo.png" alt="Iwacumo" className="h-12 w-auto object-contain" />
+          </div>
           <p className="text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground">
             Sign in to your library
           </p>

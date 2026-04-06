@@ -49,7 +49,7 @@ export function OrderConfirmationTemplate({
 
           {/* Header */}
           <Section style={header}>
-            <Heading style={logo}>BOOKA.</Heading>
+            <Heading style={logo}>IWACUMO.</Heading>
           </Section>
 
           <Section style={content}>
@@ -156,7 +156,7 @@ export function OrderConfirmationTemplate({
 
             <Text style={footer}>
               Questions? Reply to this email or visit our support page.
-              This confirmation was sent to you because you placed an order on Booka.
+              This confirmation was sent to you because you placed an order on IWACUMO.
             </Text>
           </Section>
 

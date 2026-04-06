@@ -5,3 +5,5 @@ export { BookApprovedTemplate }          from "./book-approved";
 export { StaffInviteTemplate }           from "./staff-invite";
 export { OrderConfirmationTemplate }     from "./order-confirmation";
 export { BankAccountConnectedTemplate }  from "./bank-account-connected";
+export { KycApprovedTemplate }   from "./kyc-approved";
+export { KycRejectedTemplate }   from "./kyc-rejected";

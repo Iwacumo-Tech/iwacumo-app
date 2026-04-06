@@ -4,7 +4,7 @@ import { Metadata } from "next";
 import { Suspense } from "react"; 
 
 export const metadata: Metadata = {
-  title: "Join Booka | Create Your Account",
+  title: "Join Iwacumo | Create Your Account",
   description: "Start your journey as a reader, author, or publisher.",
 };
 
@@ -13,8 +13,8 @@ export default function RegisterPage() {
     <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 md:p-12">
       <div className="w-full max-w-4xl">
         <div className="flex flex-col items-center mb-12">
-          <Link href="/" className="text-4xl font-black uppercase italic tracking-tighter mb-4">
-            Booka<span className="text-accent">.</span>
+          <Link href="/" className="mb-8 block bg-black p-4 border-2 border-black gumroad-shadow-sm">
+            <img src="/yellow-logo.png" alt="Iwacumo" className="h-10 w-auto object-contain" />
           </Link>
           <h1 className="text-2xl font-black uppercase italic text-primary">Create an account</h1>
           <p className="text-sm font-medium text-muted-foreground mt-2">

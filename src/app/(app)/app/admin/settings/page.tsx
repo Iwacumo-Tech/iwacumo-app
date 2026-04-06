@@ -23,6 +23,8 @@ import { CheckCircle2, Loader2 } from "lucide-react";
 import { useEffect } from "react";
 import { useForm, Control } from "react-hook-form";
 
+import { Checkbox } from "@/components/ui/checkbox";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -46,6 +48,11 @@ type SettingsFormValues = {
   book_weights: {
     paperback: { A6: { cover: number; page: number }; A5: { cover: number; page: number }; A4: { cover: number; page: number } };
     hardcover: { A6: { cover: number; page: number }; A5: { cover: number; page: number }; A4: { cover: number; page: number } };
+  };
+  kyc_requirements: {
+    require_id:               boolean;
+    require_business_reg:     boolean;
+    require_proof_of_address: boolean;
   };
 };
 
@@ -87,6 +94,12 @@ const DEFAULTS: SettingsFormValues = {
       A4: { cover: 200, page: 6 },
     },
   },
+  kyc_requirements: {
+    require_id:               true,
+    require_business_reg:     true,
+    require_proof_of_address: true,
+  },
+
 };
 
 // ---------------------------------------------------------------------------
@@ -218,6 +231,7 @@ export default function SystemSettingsPage() {
       printing_costs: settings.printing_costs ?? DEFAULTS.printing_costs,
       shipping_rates: (settings as any).shipping_rates ?? DEFAULTS.shipping_rates,
       book_weights:   (settings as any).book_weights   ?? DEFAULTS.book_weights,
+      kyc_requirements: (settings as any).kyc_requirements ?? DEFAULTS.kyc_requirements,
     });
   }, [settings, form]);
 
@@ -231,6 +245,7 @@ export default function SystemSettingsPage() {
     updateSettings({ key: "printing_costs", value: data.printing_costs });
     updateSettings({ key: "shipping_rates", value: data.shipping_rates });
     updateSettings({ key: "book_weights",   value: data.book_weights });
+    updateSettings({ key: "kyc_requirements", value: data.kyc_requirements });
   };
 
   return (
@@ -387,6 +402,60 @@ export default function SystemSettingsPage() {
                     </div>
                   ))}
                 </div>
+              </div>
+            </section>
+
+            {/* ── KYC Requirements ─────────────────────────────────────── */}
+            <section className="bg-white border-4 border-black gumroad-shadow p-6 space-y-6">
+              <div>
+                <h2 className="text-2xl font-black uppercase italic">Publisher KYC Requirements</h2>
+                <p className="text-xs opacity-50 font-medium mt-1">
+                  Choose which documents publishers must submit before accessing the platform.
+                  Changes take effect immediately for any publisher who hasn&apos;t been approved yet.
+                </p>
+              </div>
+            
+              <div className="space-y-4">
+                {[
+                  {
+                    field: "kyc_requirements.require_id" as const,
+                    label: "Government ID",
+                    desc:  "Passport, National ID, or Driver's Licence",
+                  },
+                  {
+                    field: "kyc_requirements.require_business_reg" as const,
+                    label: "Business Registration",
+                    desc:  "CAC certificate or equivalent business registration document",
+                  },
+                  {
+                    field: "kyc_requirements.require_proof_of_address" as const,
+                    label: "Proof of Address",
+                    desc:  "Utility bill or bank statement dated within 3 months",
+                  },
+                ].map(({ field, label, desc }) => (
+                  <FormField
+                    key={field}
+                    control={form.control}
+                    name={field}
+                    render={({ field: f }) => (
+                      <FormItem className="flex items-start gap-4 space-y-0 border-2 border-black p-4">
+                        <FormControl>
+                          <Checkbox
+                            checked={f.value as boolean}
+                            onCheckedChange={f.onChange}
+                            className="mt-0.5 border-2 border-black data-[state=checked]:bg-black data-[state=checked]:text-accent"
+                          />
+                        </FormControl>
+                        <div>
+                          <FormLabel className="font-black uppercase text-[11px] tracking-widest cursor-pointer">
+                            {label}
+                          </FormLabel>
+                          <p className="text-xs opacity-50 mt-0.5">{desc}</p>
+                        </div>
+                      </FormItem>
+                    )}
+                  />
+                ))}
               </div>
             </section>
 

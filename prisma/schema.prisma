@@ -154,6 +154,8 @@ model Publisher {
   created_at      DateTime        @default(now())
   updated_at      DateTime        @updatedAt
 
+  kyc  KycVerification?
+
   @@map("publishers")
 }
 
@@ -554,6 +556,7 @@ model AdminUser {
   email_verified_at  DateTime?
 
   verification_tokens VerificationToken[]
+  kyc_reviews KycVerification[]
 
   @@map("admin_users")
 }
@@ -600,4 +603,40 @@ model VerificationToken {
   created_at     DateTime   @default(now())
 
   @@map("verification_tokens")
+}
+
+
+model KycVerification {
+  id           String    @id @default(uuid())
+  publisher_id String    @unique
+  publisher    Publisher @relation(fields: [publisher_id], references: [id], onDelete: Cascade)
+
+  // Status lifecycle: pending → submitted → approved | rejected
+  status       String    @default("pending")
+
+  // Identity document
+  id_document_url  String?
+  id_document_type String? // "passport" | "national_id" | "drivers_license"
+  legal_name       String?
+  phone_number     String?
+
+  // Business registration
+  business_reg_url  String?
+  business_name     String?
+  business_address  String?
+
+  // Proof of address
+  proof_of_address_url String?
+
+  // Admin review
+  submitted_at   DateTime?
+  reviewed_at    DateTime?
+  reviewer_id    String?
+  reviewer       AdminUser? @relation(fields: [reviewer_id], references: [id])
+  reviewer_notes String?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@map("kyc_verifications")
 }
