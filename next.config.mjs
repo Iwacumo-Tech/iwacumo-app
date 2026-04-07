@@ -10,7 +10,8 @@ const nextConfig = {
       "walrus-assets.s3.amazonaws.com",
       "res.cloudinary.com",
       "ucarecdn.com",
-      "pfirenjlvylwekls.public.blob.vercel-storage.com", 
+      "pfirenjlvylwekls.public.blob.vercel-storage.com",
+      "rg4wfi2dsa5f8bye.public.blob.vercel-storage.com", 
     ],
     remotePatterns: [
       {
@@ -32,6 +33,10 @@ const nextConfig = {
       {
         protocol: "https",
         hostname: "pfirenjlvylwekls.public.blob.vercel-storage.com", 
+      },
+      {
+        protocol: "https",
+        hostname: "rg4wfi2dsa5f8bye.public.blob.vercel-storage.com", 
       },
     ],
   },
