@@ -4,9 +4,9 @@ import type { NextRequest } from "next/server";
 // These path prefixes are never publisher slugs
 const RESERVED_PREFIXES = [
   "api", "trpc", "app", "login", "register", "shop", "cart",
-  "checkout", "settings", "admin", "auth", "store", "book",
-  "author", "sign-up", "verify-email", "forgot-password",
-  "reset-password", "staff-setup", "_next", "static",
+  "checkout", "settings", "admin", "auth", "store", "book", "shop",
+  "author", "sign-up", "verify-email", "forgot-password", "orders",
+  "reset-password", "staff-setup", "_next", "static", "payment", 
 ];
  
 export function middleware(request: NextRequest) {
