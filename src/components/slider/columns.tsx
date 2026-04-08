@@ -1,102 +1,90 @@
+"use client";
+
 import { ColumnDef } from "@tanstack/react-table";
 import { DataTableColumnHeader } from "@/components/table/data-table-column-header";
 import { HeroSlide } from "@prisma/client";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { MoreHorizontal } from "lucide-react";
+import { Trash2, Globe } from "lucide-react";
+import { trpc } from "@/app/_providers/trpc-provider";
+import { useToast } from "@/components/ui/use-toast";
+import Image from "next/image";
 
-// interface ActionProps {
-//   heroSlide: HeroSlide;
-// }
+function DeleteSlideButton({ id }: { id: number }) {
+  const { toast } = useToast();
+  const utils = trpc.useUtils();
 
-function Action () {
+  const deleteSlide = trpc.deleteHeroSlide.useMutation({
+    onSuccess: () => {
+      toast({ title: "Slide Removed" });
+      utils.getAllHeroSlides.invalidate();
+    },
+    onError: (err) => toast({ title: "Error", variant: "destructive", description: err.message }),
+  });
+
   return (
-    <>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            className="h-8 w-8 p-0"
-            data-cy="hero-slide-action"
-          >
-            <span className="sr-only">Open menu</span>
-            <MoreHorizontal className="h-4 w-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuLabel>Hero Slide actions</DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem asChild>edit</DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem asChild>delete</DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </>
+    <Button
+      variant="ghost"
+      size="sm"
+      onClick={() => {
+        if (confirm("Remove this slide?")) deleteSlide.mutate({ id });
+      }}
+      className="h-8 w-8 p-0 border-2 border-transparent hover:border-red-500 hover:text-red-600 rounded-none"
+    >
+      <Trash2 size={14} />
+    </Button>
   );
 }
 
-export const columns: ColumnDef<HeroSlide>[] = [
-  {
-    id: "title",
-    accessorKey: "title",
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="Title" />
-    ),
-    cell: ({ row }) => (
-      <div className="py-0.5 text-sm font-medium select-none text-nowrap">
-        {row.getValue("title")}
-      </div>
-    ),
-  },
-  {
-    id: "subtitle",
-    accessorKey: "subtitle",
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="Subtitle" />
-    ),
-    cell: ({ row }) => (
-      <div className="py-0.5 text-sm font-medium select-none text-nowrap">
-        {row.getValue("subtitle")}
-      </div>
-    ),
-  },
-  {
-    id: "description",
-    accessorKey: "description",
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="Description" />
-    ),
-    cell: ({ row }) => (
-      <div className="py-0.5 text-sm font-medium select-none text-nowrap">
-        {row.getValue("description")}
-      </div>
-    ),
-  },
+export const columns: ColumnDef<HeroSlide & { tenant?: { name: string | null; slug: string | null } | null }>[] = [
   {
     id: "image",
     accessorKey: "image",
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="Image URL" />
-    ),
+    header: ({ column }) => <DataTableColumnHeader column={column} title="Preview" />,
     cell: ({ row }) => (
-      <div className="py-0.5 text-sm font-medium select-none text-nowrap">
-        {row.getValue("image")}
+      <div className="relative w-20 h-12 border-2 border-black overflow-hidden bg-black/5 shrink-0">
+        {row.original.image
+          ? <Image src={row.original.image} alt={row.original.title} fill className="object-cover" />
+          : <div className="w-full h-full flex items-center justify-center text-[8px] font-black opacity-20 uppercase">No img</div>
+        }
       </div>
     ),
+  },
+  {
+    id: "title",
+    accessorKey: "title",
+    header: ({ column }) => <DataTableColumnHeader column={column} title="Title" />,
+    cell: ({ row }) => (
+      <div>
+        <p className="font-black uppercase italic text-sm tracking-tight">{row.original.title}</p>
+        <p className="text-[10px] font-bold opacity-40 mt-0.5">{row.original.subtitle}</p>
+      </div>
+    ),
+  },
+  {
+    id: "route",
+    accessorKey: "buttonRoute",
+    header: ({ column }) => <DataTableColumnHeader column={column} title="Button" />,
+    cell: ({ row }) => (
+      <div>
+        <p className="font-bold text-xs">{row.original.buttonText}</p>
+        <p className="text-[10px] font-bold opacity-40 font-mono">{row.original.buttonRoute}</p>
+      </div>
+    ),
+  },
+  {
+    id: "scope",
+    header: ({ column }) => <DataTableColumnHeader column={column} title="Scope" />,
+    cell: ({ row }) => {
+      const tenant = (row.original as any).tenant;
+      return tenant
+        ? <span className="text-[9px] font-black uppercase border border-black px-2 py-0.5">{tenant.name ?? tenant.slug}</span>
+        : <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase bg-accent border border-black px-2 py-0.5"><Globe size={9} /> Global</span>;
+    },
   },
   {
     id: "actions",
     enableHiding: false,
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="Actions" />
-    ),
-    cell: () => <Action />,
+    header: () => null,
+    cell: ({ row }) => <DeleteSlideButton id={row.original.id} />,
   },
 ];

@@ -463,7 +463,7 @@ export const getAllBooks = publicProcedure.query(async ({ ctx }) => {
     where: { 
       deleted_at: null,
       // Optional: hide unpublished books from public if not an admin
-      // ...(isSuperAdmin ? {} : { published: true }) 
+      ...(isSuperAdmin ? {} : { published: true }) 
     },
     include: {
       chapters: true,
@@ -680,85 +680,95 @@ export const getNewArrivalBooks = publicProcedure.query(async () => {
   });
 });
 
-export const getPurchasedBooksByCustomer = publicProcedure.input(findBookByIdSchema).query(async (opts) => {
-  const customer = await prisma.customer.findFirst({
-    where: { user_id: opts.input.id },
-  });
+export const getPurchasedBooksByCustomer = publicProcedure
+  .input(findBookByIdSchema)
+  .query(async (opts) => {
+    const customer = await prisma.customer.findFirst({
+      where: { user_id: opts.input.id },
+    });
  
-  if (!customer) return [];
+    if (!customer) return [];
  
-  const paidOrders = await prisma.order.findMany({
-    where: {
-      customer_id: customer.id,
-      payment_status: "captured",
-    },
-    include: {
-      line_items: {
-        include: {
-          book_variant: {
-            include: {
-              book: {
-                include: { author: true, chapters: true, variants: true },
+    const paidOrders = await prisma.order.findMany({
+      where: {
+        customer_id:    customer.id,
+        payment_status: "captured",
+      },
+      include: {
+        line_items: {
+          include: {
+            book_variant: {
+              include: {
+                book: {
+                  include: { author: true, chapters: true, variants: true },
+                },
               },
             },
           },
         },
       },
-    },
-  });
+    });
  
-  // Return one entry per purchased variant, NOT deduplicated by book.
-  // This way the reader sees: "Anansi Boys — E-Book", "Anansi Boys — Paperback" as two rows,
-  // each with the correct action (read vs delivery info).
-  const entries: any[] = [];
+    const entries: any[] = [];
  
-  paidOrders.forEach((order) => {
-    // Parse the delivery address stored as JSON in order.notes
-    let deliveryAddress: any = null;
-    let shippingZone: string | null = null;
-    if (order.notes) {
-      try {
-        const parsed = JSON.parse(order.notes);
-        if (parsed?.delivery_address) {
-          deliveryAddress = parsed.delivery_address;
-          shippingZone = parsed.shipping_zone ?? null;
+    paidOrders.forEach((order) => {
+      // Parse delivery address from order.notes
+      let deliveryAddress: any = null;
+      let shippingZone: string | null = null;
+      if (order.notes) {
+        try {
+          const parsed = JSON.parse(order.notes);
+          if (parsed?.delivery_address) {
+            deliveryAddress = parsed.delivery_address;
+            shippingZone    = parsed.shipping_zone ?? null;
+          }
+        } catch {
+          // plain string notes — no delivery data
         }
-      } catch {
-        // notes is a plain string — no delivery data
       }
-    }
  
-    order.line_items.forEach((lineItem) => {
-      const book = lineItem.book_variant?.book;
-      if (!book || book.deleted_at) return;
+      order.line_items.forEach((lineItem) => {
+        const book = lineItem.book_variant?.book;
+        if (!book || book.deleted_at) return;
  
-      const format: string = lineItem.book_variant.format; // "ebook" | "paperback" | "hardcover"
-      const isPhysical = format === "paperback" || format === "hardcover";
+        const format:     string  = lineItem.book_variant.format;
+        const isPhysical: boolean = format === "paperback" || format === "hardcover";
+        const quantity:   number  = lineItem.quantity ?? 1;
  
-      entries.push({
-        // Core book fields
-        ...book,
+        // Push one entry per unit so the reader sees the correct total count.
+        // e.g. quantity=2 → two rows, each representing one owned copy.
+        // _quantity is attached to every entry so the UI can display "Qty 2"
+        // in a single row if the DataTable is later updated to group by lineItem.
+        for (let unit = 0; unit < quantity; unit++) {
+          entries.push({
+            // Core book fields spread first
+            ...book,
  
-        // Purchase context — prefixed to avoid clashing with book fields
-        _purchaseId:       lineItem.id,          // OrderLineItem id — unique per row
-        _format:           format,
-        _variantSize:      lineItem.book_variant.size ?? null,
-        _isPhysical:       isPhysical,
-        _fulfillmentStatus: lineItem.fulfillment_status, // unfulfilled | in_progress | shipped | delivered
+            // Purchase context — prefixed to avoid clashing with book fields
+            _purchaseId:        `${lineItem.id}-${unit}`, // unique per row
+            _lineItemId:        lineItem.id,
+            _format:            format,
+            _variantSize:       lineItem.book_variant.size ?? null,
+            _isPhysical:        isPhysical,
+            _fulfillmentStatus: lineItem.fulfillment_status,
+            _quantity:          quantity,   // total qty on this line item
+            _unitIndex:         unit + 1,   // which unit this row represents (1-based)
  
-        // Delivery context (only meaningful for physical)
-        _deliveryAddress:  isPhysical ? deliveryAddress : null,
-        _shippingZone:     isPhysical ? shippingZone : null,
-        _shippingAmount:   isPhysical ? order.shipping_amount : null,
-        _orderNumber:      order.order_number,
-        _orderId:          order.id,
-        _orderedAt:        order.created_at,
+            // Delivery context (only meaningful for physical)
+            _deliveryAddress:   isPhysical ? deliveryAddress : null,
+            _shippingZone:      isPhysical ? shippingZone    : null,
+            _shippingAmount:    isPhysical ? order.shipping_amount : null,
+            _orderNumber:       order.order_number,
+            _orderId:           order.id,
+            _orderedAt:         order.created_at,
+          });
+        }
       });
     });
-  });
  
-  return entries;
-});
+    return entries;
+  });
+
 
 export const generateWatermarkedEbook = publicProcedure
   .input(
@@ -827,7 +837,7 @@ export const searchEverything = publicProcedure
     const books = await prisma.book.findMany({
       where: {
         deleted_at: null,
-        // published: true, // Only show books that are actually live
+        published: true, // Only show books that are actually live
         OR: [
           { title: { contains: query, mode: "insensitive" } },
           { 

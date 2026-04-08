@@ -514,6 +514,64 @@ export const getOrdersNeedingShipping = publicProcedure
       return !hasActive || order.deliveries.length === 0;
     });
   });
+
+
+  export const updateLineItemFulfillment = publicProcedure
+  .input(
+    z.object({
+      line_item_id:       z.string(),
+      fulfillment_status: z.enum([
+        "unfulfilled",
+        "in_progress",
+        "shipped",
+        "delivered",
+        "cancelled",
+      ]),
+    })
+  )
+  .mutation(async ({ input }) => {
+    const lineItem = await prisma.orderLineItem.findUnique({
+      where: { id: input.line_item_id },
+    });
+ 
+    if (!lineItem) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "Order line item not found.",
+      });
+    }
+ 
+    const updated = await prisma.orderLineItem.update({
+      where: { id: input.line_item_id },
+      data:  { fulfillment_status: input.fulfillment_status },
+    });
+ 
+    // If all physical line items on the order are now delivered,
+    // auto-promote the order status to "fulfilled"
+    const allLineItems = await prisma.orderLineItem.findMany({
+      where: { order_id: lineItem.order_id },
+      include: {
+        book_variant: { select: { format: true } },
+      },
+    });
+ 
+    const physicalItems = allLineItems.filter((li) =>
+      ["paperback", "hardcover"].includes(li.book_variant?.format?.toLowerCase() ?? "")
+    );
+ 
+    const allDelivered =
+      physicalItems.length > 0 &&
+      physicalItems.every((li) => li.fulfillment_status === "delivered");
+ 
+    if (allDelivered) {
+      await prisma.order.update({
+        where: { id: lineItem.order_id },
+        data:  { status: "fulfilled" },
+      });
+    }
+ 
+    return updated;
+  });
  
 
 // ─── getEarningsReport ────────────────────────────────────────────────────────

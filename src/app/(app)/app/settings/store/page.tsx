@@ -314,7 +314,7 @@ export default function PublisherStoreSettingsPage() {
       tagline:         (t as any)?.tagline ?? "",
       brand_color:     t?.brand_color     ?? "#FFD700",
       secondary_color: t?.secondary_color ?? "#000000",
-      font_family:     ((t as any)?.font_family as FormValues["font_family"]) ?? "inter",
+      font_family:     ((t as any)?.font_family as FormValues["font_family"]) || "inter",
       custom_domain:   data.publisher.custom_domain ?? "",
       twitter:         social.twitter   ?? "",
       instagram:       social.instagram ?? "",
@@ -599,13 +599,15 @@ export default function PublisherStoreSettingsPage() {
                       <FormLabel className="text-[10px] font-black uppercase tracking-widest">
                         Typography
                       </FormLabel>
+                      {/* <pre className="text-[10px] text-red-500">Current Value: "{field.value}"</pre> */}
                       <Select
+                        key={field.value}
                         value={field.value ?? "inter"}
                         onValueChange={field.onChange}
                       >
                         <FormControl>
                           <SelectTrigger className="input-gumroad">
-                            <SelectValue />
+                            <SelectValue placeholder="Select a font family" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent className="bg-white text-black border-[1.5px] border-black rounded-none">
@@ -635,8 +637,8 @@ export default function PublisherStoreSettingsPage() {
           </div>
 
           {/* ── Store Layout (white-label only) ── */}
-          {/* <div> */}
-            {/* <div className="flex items-center gap-3 mb-6 pb-3 border-b-[1.5px] border-black">
+          <div>
+            <div className="flex items-center gap-3 mb-6 pb-3 border-b-[1.5px] border-black">
               <div className="w-8 h-8 bg-black flex items-center justify-center">
                 <LayoutTemplate size={14} className="text-accent" />
               </div>
@@ -644,12 +646,12 @@ export default function PublisherStoreSettingsPage() {
                 Layout &amp; Sections
               </span>
               {!isWhiteLabel && <WhiteLabelBadge />}
-            </div> */}
+            </div>
 
-            {/* {isWhiteLabel ? ( */}
-              {/* // <div className="space-y-6"> */}
+            {isWhiteLabel ? (
+              <div className="space-y-6">
                 {/* Hero layout */}
-                {/* <FormField
+                <FormField
                   control={form.control}
                   name="heroLayout"
                   render={({ field }) => (
@@ -679,10 +681,10 @@ export default function PublisherStoreSettingsPage() {
                       <FormMessage />
                     </FormItem>
                   )}
-                /> */}
+                />
 
                 {/* Accent style */}
-                {/* <FormField
+                <FormField
                   control={form.control}
                   name="accentStyle"
                   render={({ field }) => (
@@ -709,10 +711,10 @@ export default function PublisherStoreSettingsPage() {
                       <FormMessage />
                     </FormItem>
                   )}
-                /> */}
+                />
 
                 {/* Section toggles */}
-                {/* <div className="space-y-4 border-[1.5px] border-black/10 p-5">
+                <div className="space-y-4 border-[1.5px] border-black/10 p-5">
                   <p className="text-[10px] font-black uppercase tracking-widest mb-4">
                     Visible Sections
                   </p>
@@ -739,8 +741,8 @@ export default function PublisherStoreSettingsPage() {
                       )}
                     />
                   ))}
-                </div> */}
-              {/* </div>
+                </div>
+              </div>
             ) : (
               <LockedSection>
                 <div className="space-y-4">
@@ -752,7 +754,7 @@ export default function PublisherStoreSettingsPage() {
                 </div>
               </LockedSection>
             )}
-          </div> */}
+          </div>
 
           {/* ── Custom Domain (white-label only) ── */}
           {/* <div>

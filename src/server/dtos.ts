@@ -654,3 +654,11 @@ export const saveBankAccountSchema = z.object({
  
 export type TVerifyBankAccountSchema = z.infer<typeof verifyBankAccountSchema>;
 export type TSaveBankAccountSchema   = z.infer<typeof saveBankAccountSchema>;
+
+
+export const updateProfileImageSchema = z.object({
+  id: z.string(),
+  profilePicture: z.string().url("Invalid image URL"),
+});
+
+export type TUpdateProfileImageSchema = z.infer<typeof updateProfileImageSchema>;

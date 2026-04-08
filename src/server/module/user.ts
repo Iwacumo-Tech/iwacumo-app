@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import { hash } from "bcryptjs";
 import prisma from "@/lib/prisma";
 import { publicProcedure } from "@/server/trpc";
-import { assignRoleSchema, createRoleSchema, createUserSchema, deleteUserSchema, editProfileSchema, signUpSchema } from "@/server/dtos";
+import { assignRoleSchema, createRoleSchema, createUserSchema, deleteUserSchema, editProfileSchema, signUpSchema, updateProfileImageSchema } from "@/server/dtos";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
@@ -231,7 +231,7 @@ export const getUserById = publicProcedure.input(deleteUserSchema).query(async (
 export const updateUserProfile = publicProcedure
   .input(editProfileSchema)
   .mutation(async ({ input }) => {
-    const { id, first_name, last_name, username, bio, organization_name, phone_number } = input;
+    const { id, first_name, last_name, username, bio, organization_name, phone_number, profilePicture } = input;
     
     // Identity Casing preserved for Username
     const rawUsername = username.trim();
@@ -254,7 +254,7 @@ export const updateUserProfile = publicProcedure
       if (user?.publisher) {
         await tx.publisher.update({
           where: { id: user.publisher.id },
-          data: { bio, slug: cleanSlug }
+          data: { bio, slug: cleanSlug, profile_picture: profilePicture }
         });
 
         if (user.publisher.tenant_id) {
@@ -262,7 +262,7 @@ export const updateUserProfile = publicProcedure
             where: { id: user.publisher.tenant_id },
             data: { 
               name: organization_name, 
-              slug: cleanSlug 
+              slug: cleanSlug,
             }
           });
           
@@ -277,11 +277,47 @@ export const updateUserProfile = publicProcedure
       if (user?.author) {
         await tx.author.update({
           where: { id: user.author.id },
-          data: { bio, slug: cleanSlug, name: `${first_name} ${last_name}` }
+          data: { bio, slug: cleanSlug, name: `${first_name} ${last_name}`, profile_picture: profilePicture }
         });
       }
 
       return updatedUser;
+    });
+  });
+
+
+export const updateProfileImage = publicProcedure
+  .input(updateProfileImageSchema)
+  .mutation(async ({ input }) => {
+    const { id, profilePicture } = input;
+
+    const user = await prisma.user.findUnique({
+      where: { id },
+      include: { publisher: true, author: true }
+    });
+
+    if (!user) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
+    }
+
+    return await prisma.$transaction(async (tx) => {
+      // Update Publisher if exists
+      if (user.publisher) {
+        await tx.publisher.update({
+          where: { id: user.publisher.id },
+          data: { profile_picture: profilePicture }
+        });
+      }
+
+      // Update Author if exists
+      if (user.author) {
+        await tx.author.update({
+          where: { id: user.author.id },
+          data: { profile_picture: profilePicture }
+        });
+      }
+
+      return { success: true };
     });
   });
 

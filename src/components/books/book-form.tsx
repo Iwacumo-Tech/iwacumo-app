@@ -139,6 +139,43 @@ interface UploadFieldProps {
   accept: string;
 }
 
+async function getPdfPageCount(file: File): Promise<number | null> {
+  try {
+    const buffer = await file.arrayBuffer();
+    const bytes  = new Uint8Array(buffer);
+    const text   = new TextDecoder("latin1").decode(bytes);
+
+    // Strategy: find /Type /Pages node that is the document root.
+    // The root Pages dict always has /Type /Pages and /Count N
+    // as siblings in the same dictionary block.
+    // We look for the pattern: /Type /Pages ... /Count N
+    // within a reasonable proximity (same dict object).
+
+    // Split on "obj" boundaries to isolate individual PDF objects
+    const objPattern = /\d+\s+\d+\s+obj([\s\S]*?)endobj/g;
+    const candidates: number[] = [];
+
+    let match: RegExpExecArray | null;
+    while ((match = objPattern.exec(text)) !== null) {
+      const body = match[1];
+      // Only look in objects that declare themselves as /Type /Pages
+      if (!/\/Type\s*\/Pages/.test(body)) continue;
+      // Extract /Count from this specific object
+      const countMatch = body.match(/\/Count\s+(\d+)/);
+      if (countMatch) {
+        candidates.push(parseInt(countMatch[1], 10));
+      }
+    }
+
+    if (!candidates.length) return null;
+
+    // The root Pages node has the highest count (sum of all children)
+    return Math.max(...candidates);
+  } catch {
+    return null;
+  }
+}
+
 function UploadField({ label, type, uploads, onUpload, accept }: UploadFieldProps) {
   const data = uploads[type];
   return (
@@ -278,6 +315,15 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
 
   const { data: categories } = trpc.getCategories.useQuery();
   const { data: systemSettings } = trpc.getSystemSettings.useQuery();
+
+  // Tracks which ebook file type was uploaded so the other is disabled
+  const [ebookUploadedType, setEbookUploadedType] = useState<"pdf" | "docx" | null>(
+    // Pre-fill in edit mode
+    book?.pdf_url ? "pdf" : book?.text_url ? "docx" : null
+  );
+ 
+  // Tracks whether page count was auto-detected from PDF
+  const [pageCountAutoDetected, setPageCountAutoDetected] = useState(false);
 
   // ── Initial prices from existing variants (edit mode) ──────────────────────
   const initialPrices = useMemo(() => {
@@ -461,7 +507,7 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
       page_count:  (values.paper_back || values.hard_cover) ? (values.page_count  || 0)   : undefined,
       paperback_price: values.paper_back  ? values.paperback_price  : undefined,
       hardcover_price: values.hard_cover  ? values.hardcover_price  : undefined,
-      pdf_url:     values.e_copy ? (uploads.pdf.url  || null) : null,
+      pdf_url: uploads.pdf.url || null,
       text_url:    values.e_copy ? (uploads.docx.url || null) : null,
       ebook_price: values.e_copy ? values.ebook_price           : undefined,
       paper_back:  !!values.paper_back,
@@ -921,8 +967,10 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                 <span className="h-8 w-8 bg-black text-white flex items-center justify-center font-bold">3</span>
                 <h3 className="font-bold uppercase tracking-tight">Content &amp; Media</h3>
               </div>
-
+ 
               <div className="bg-white border-2 border-black p-6 space-y-8">
+ 
+                {/* Front cover — always shown */}
                 <UploadField
                   label="Main Front Cover (Mandatory) *"
                   type="front"
@@ -930,21 +978,286 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                   onUpload={handleInstantUpload}
                   accept="image/*"
                 />
-
+ 
+                {/* Physical book covers */}
                 {(watched.paper_back || watched.hard_cover) && (
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 border-t-2 border-black pt-8 animate-in fade-in">
-                    <UploadField label="Back Cover"        type="back"   uploads={uploads} onUpload={handleInstantUpload} accept="image/*" />
-                    <UploadField label="Spine"             type="spine"  uploads={uploads} onUpload={handleInstantUpload} accept="image/*" />
-                    <UploadField label="Full Cover Spread" type="spread" uploads={uploads} onUpload={handleInstantUpload} accept="image/*" />
+                  <div className="space-y-6 border-t-2 border-black pt-6 animate-in fade-in">
+ 
+                    {/* Optional cover images */}
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                      <UploadField label="Back Cover"        type="back"   uploads={uploads} onUpload={handleInstantUpload} accept="image/*" />
+                      <UploadField label="Spine"             type="spine"  uploads={uploads} onUpload={handleInstantUpload} accept="image/*" />
+                      <UploadField label="Full Cover Spread" type="spread" uploads={uploads} onUpload={handleInstantUpload} accept="image/*" />
+                    </div>
+ 
+                    {/* Physical book PDF — for print-ready file + page count detection */}
+                    <div className="space-y-2">
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black uppercase text-gray-500">
+                          Print-Ready PDF (Optional)
+                        </label>
+                        <p className="text-[9px] text-gray-400 leading-relaxed">
+                          Upload your print-ready PDF and we&apos;ll automatically detect the page count
+                          to calculate your printing cost accurately.
+                        </p>
+                      </div>
+ 
+                      <div
+                        className={cn(
+                          "border-2 border-dashed border-black h-16 flex flex-col items-center justify-center cursor-pointer bg-secondary/10 transition-colors hover:bg-white",
+                          uploads["pdf"]?.url && "border-green-600 bg-green-50"
+                        )}
+                        onClick={() => document.getElementById("upload-pdf")?.click()}
+                      >
+                        <input
+                          id="upload-pdf"
+                          type="file"
+                          accept=".pdf"
+                          className="hidden"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+ 
+                            // Start upload
+                            handleInstantUpload(file, "pdf");
+ 
+                            // Simultaneously scan for page count
+                            const detected = await getPdfPageCount(file);
+                            if (detected && detected > 0) {
+                              form.setValue("page_count", detected, { shouldValidate: true });
+                              setPageCountAutoDetected(true);
+                              toast({
+                                title: `${detected} pages detected`,
+                                description: "Page count updated automatically from your PDF.",
+                              });
+                            }
+                          }}
+                        />
+                        {uploads["pdf"]?.loading ? (
+                          <div className="w-full px-4">
+                            <div className="h-1 bg-gray-200 w-full rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-black transition-all duration-300"
+                                style={{ width: `${uploads["pdf"].progress}%` }}
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-[10px] font-black uppercase italic text-center px-2">
+                            {uploads["pdf"]?.url ? (
+                              <span className="text-green-700 flex items-center gap-1">
+                                <CheckCircle2 size={12} />
+                                Uploaded
+                                {pageCountAutoDetected && (
+                                  <span className="ml-2 text-black opacity-50 not-italic normal-case font-bold">
+                                    · page count auto-filled
+                                  </span>
+                                )}
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-1 opacity-50">
+                                <UploadCloud size={12} /> Upload Print PDF
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+ 
+                      {/* Allow clearing / re-uploading */}
+                      {uploads["pdf"]?.url && (
+                        <button
+                          type="button"
+                          className="text-[9px] font-black uppercase underline opacity-40 hover:opacity-100"
+                          onClick={() => {
+                            setUploads(prev => ({ ...prev, pdf: { progress: 0, url: "", loading: false } }));
+                            setPageCountAutoDetected(false);
+                          }}
+                        >
+                          Remove PDF
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
-
+ 
+                {/* Ebook uploads — mutually exclusive PDF / DOCX */}
                 {watched.e_copy && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t-2 border-black pt-8 animate-in fade-in">
-                    <UploadField label="PDF Document *"      type="pdf"  uploads={uploads} onUpload={handleInstantUpload} accept=".pdf"  />
-                    <UploadField label="Web Reader (DOCX) *" type="docx" uploads={uploads} onUpload={handleInstantUpload} accept=".docx" />
+                  <div className="space-y-4 border-t-2 border-black pt-6 animate-in fade-in">
+ 
+                    {/* PDF option */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[9px] font-black uppercase text-gray-500">
+                          PDF File
+                          {ebookUploadedType === "docx" && (
+                            <span className="ml-2 text-amber-600 normal-case not-italic font-bold">
+                              — disabled (DOCX already uploaded)
+                            </span>
+                          )}
+                        </label>
+                        {ebookUploadedType === "pdf" && (
+                          <button
+                            type="button"
+                            className="text-[9px] font-black uppercase underline opacity-40 hover:opacity-100 hover:text-red-600"
+                            onClick={() => {
+                              setUploads(prev => ({ ...prev, pdf: { progress: 0, url: "", loading: false } }));
+                              setEbookUploadedType(null);
+                            }}
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+ 
+                      <div
+                        className={cn(
+                          "border-2 border-dashed border-black h-16 flex flex-col items-center justify-center transition-colors",
+                          ebookUploadedType === "docx"
+                            ? "opacity-40 cursor-not-allowed bg-gray-50"
+                            : "cursor-pointer bg-secondary/10 hover:bg-white",
+                          uploads.pdf?.url && "border-green-600 bg-green-50"
+                        )}
+                        onClick={() => {
+                          if (ebookUploadedType !== "docx") {
+                            document.getElementById("upload-pdf")?.click();
+                          }
+                        }}
+                      >
+                        <input
+                          id="upload-pdf"
+                          type="file"
+                          accept=".pdf"
+                          className="hidden"
+                          disabled={ebookUploadedType === "docx"}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file || ebookUploadedType === "docx") return;
+                            handleInstantUpload(file, "pdf");
+                            setEbookUploadedType("pdf");
+                          }}
+                        />
+                        <div className="text-[10px] font-black uppercase italic text-center px-2">
+                          {uploads.pdf?.loading ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : uploads.pdf?.url ? (
+                            <span className="text-green-700 flex items-center gap-1">
+                              <CheckCircle2 size={12} /> PDF Uploaded
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1 opacity-50">
+                              <UploadCloud size={12} />
+                              {ebookUploadedType === "docx" ? "Disabled — DOCX in use" : "Upload PDF"}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+ 
+                    {/* Divider */}
+                    <div className="flex items-center gap-3 py-1">
+                      <div className="flex-1 h-px bg-black/10" />
+                      <span className="text-[9px] font-black uppercase opacity-30">or</span>
+                      <div className="flex-1 h-px bg-black/10" />
+                    </div>
+ 
+                    {/* DOCX option */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[9px] font-black uppercase text-gray-500">
+                          DOCX File — Web Reader
+                          {ebookUploadedType === "pdf" && (
+                            <span className="ml-2 text-amber-600 normal-case not-italic font-bold">
+                              — disabled (PDF already uploaded)
+                            </span>
+                          )}
+                        </label>
+                        {ebookUploadedType === "docx" && (
+                          <button
+                            type="button"
+                            className="text-[9px] font-black uppercase underline opacity-40 hover:opacity-100 hover:text-red-600"
+                            onClick={() => {
+                              setUploads(prev => ({ ...prev, docx: { progress: 0, url: "", loading: false } }));
+                              setEbookUploadedType(null);
+                            }}
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+ 
+                      {/* DOCX helper */}
+                      <div className="flex items-start gap-2 bg-[#f9f6f0] border border-black/10 p-3 mb-2">
+                        <Info size={11} className="mt-0.5 shrink-0 opacity-40" />
+                        <p className="text-[9px] leading-relaxed opacity-60">
+                          <strong className="uppercase">Must be a .docx file</strong> (Microsoft Word format).
+                          This powers our in-browser reader — customers read directly on the platform
+                          without downloading. PDFs cannot be used for the web reader.
+                          Export from Word, Google Docs (<em>File → Download → .docx</em>), or Pages.
+                        </p>
+                      </div>
+ 
+                      <div
+                        className={cn(
+                          "border-2 border-dashed border-black h-16 flex flex-col items-center justify-center transition-colors",
+                          ebookUploadedType === "pdf"
+                            ? "opacity-40 cursor-not-allowed bg-gray-50"
+                            : "cursor-pointer bg-secondary/10 hover:bg-white",
+                          uploads.docx?.url && "border-green-600 bg-green-50"
+                        )}
+                        onClick={() => {
+                          if (ebookUploadedType !== "pdf") {
+                            document.getElementById("upload-docx")?.click();
+                          }
+                        }}
+                      >
+                        <input
+                          id="upload-docx"
+                          type="file"
+                          accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                          className="hidden"
+                          disabled={ebookUploadedType === "pdf"}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file || ebookUploadedType === "pdf") return;
+ 
+                            // Enforce .docx — reject anything else even if browser allowed it
+                            const isDOCX =
+                              file.name.toLowerCase().endsWith(".docx") ||
+                              file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+ 
+                            if (!isDOCX) {
+                              toast({
+                                variant: "destructive",
+                                title: "Wrong file type",
+                                description: "Please upload a .docx file. PDFs and other formats are not supported for the web reader.",
+                              });
+                              return;
+                            }
+ 
+                            handleInstantUpload(file, "docx");
+                            setEbookUploadedType("docx");
+                          }}
+                        />
+                        <div className="text-[10px] font-black uppercase italic text-center px-2">
+                          {uploads.docx?.loading ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : uploads.docx?.url ? (
+                            <span className="text-green-700 flex items-center gap-1">
+                              <CheckCircle2 size={12} /> DOCX Uploaded
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1 opacity-50">
+                              <UploadCloud size={12} />
+                              {ebookUploadedType === "pdf" ? "Disabled — PDF in use" : "Upload .docx File"}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+ 
                   </div>
                 )}
+ 
               </div>
             </section>
 

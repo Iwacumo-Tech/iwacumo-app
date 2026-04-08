@@ -11,6 +11,7 @@ import {
   signUpCustomer,
   checkSlugAvailability,
   checkUsernameAvailability,
+  updateProfileImage,
 } from "./module/user";
 import { publicProcedure, router } from "./trpc";
 import { createPublisher, deletePublisher, getAllPublisher, updatePublisher, getPublisherByOrganization, getPublisherDashboardStats } from "./module/publisher";
@@ -20,8 +21,8 @@ import { createBook, deleteBook, updateBook, getAllBooks, getBookById, getCatego
 import { createChapter, updateChapter, deleteChapter, getAllChapters, viewChapterById, getAllChapterByBookId } from "./module/chapter";
 import {  updateTenant, getAllTenant, deleteTenant, createTenant, getTenantBySlug, getStoreBySlug } from "./module/tenant";
 import { imageUpload, createImageUpload } from "./module/uploads";
-import { createHeroSlide, getAllHeroSlides } from "./module/slider";
-import { getAllBanners, createBanner, toggleBannerVisibility } from "./module/banner";
+import { createHeroSlide, getAllHeroSlides, getGlobalHeroSlides, deleteHeroSlide } from "./module/slider";
+import { getAllBanners, createBanner, toggleBannerVisibility, getGlobalBanners, deleteBanner } from "./module/banner";
 import { createReview, getReviewsByBook } from "./module/review";
 import { createCart, getCartsByUser, deleteCartItem} from "./module/cart";
 import {
@@ -55,6 +56,7 @@ import {
   updateOrderStatus,
   cancelOrder,
   getAllOrders,
+  updateLineItemFulfillment,
 } from "./module/order";
 import {
   initializePayment,
@@ -120,6 +122,7 @@ export const appRouter = router({
   changePassword,
   resendVerificationEmail,
   updateUserProfile,
+  updateProfileImage,
   signUpCustomer,
   deleteUser,
   getUserById,
@@ -180,6 +183,10 @@ export const appRouter = router({
   getAllBanners,
   toggleBannerVisibility,
   createBanner,
+  getGlobalHeroSlides,
+  deleteHeroSlide,    
+  getGlobalBanners,   
+  deleteBanner,
   createReview,
   getReviewsByBook,
   createCart,
@@ -199,6 +206,7 @@ export const appRouter = router({
   updateOrderStatus,
   cancelOrder,
   getAllOrders,
+  updateLineItemFulfillment,
   // Payment management
   initializePayment,
   verifyPayment,

@@ -1,268 +1,177 @@
 "use client";
 
-import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useState } from "react";
+import { useSession } from "next-auth/react";
+import { trpc } from "@/app/_providers/trpc-provider";
 import { Button } from "@/components/ui/button";
 import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import { useToast } from "@/components/ui/use-toast";
-import { trpc } from "@/app/_providers/trpc-provider";
-import { AdminUser } from "@prisma/client";
-import { useState } from "react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Form, FormControl, FormField, FormItem, FormLabel, FormMessage,
+} from "@/components/ui/form";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { useToast } from "@/components/ui/use-toast";
+import { Loader2, ShieldPlus } from "lucide-react";
 import {
   TAssignRoleToAdminUserSchema,
   assignRoleToAdminUserSchema,
 } from "@/server/dtos";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { useSession } from "next-auth/react";
+import { type AdminUserRow } from "./admin-columns";
+
+// Role preset descriptions shown in the dropdown
+const ROLE_DESCRIPTIONS: Record<string, string> = {
+  "staff-basic":     "View-only: dashboard, books, orders, customers",
+  "staff-content":   "Add/edit authors, approve & publish books",
+  "staff-publisher": "Manage publishers, whitelabel stores, feature books",
+  "staff-finance":   "Platform stats + system settings",
+  "super-admin":     "Full platform access — all permissions",
+};
 
 interface AssignRoleFormProps {
-  adminUser?: AdminUser & { tenant?: { id: string; name: string | null } };
+  adminUser?: any;
 }
 
 const AssignRoleForm = ({ adminUser }: AssignRoleFormProps) => {
-  const { toast } = useToast();
-  const utils = trpc.useUtils();
-  const session = useSession();
+  const { toast }       = useToast();
+  const utils           = trpc.useUtils();
+  const { data: session } = useSession();
   const [open, setOpen] = useState(false);
 
-  // Get current user to determine tenant
-  const { data: currentUser } = trpc.getUserById.useQuery({
-    id: session.data?.user.id as string,
+  if (!adminUser) return null;
+
+  // Resolve tenantId directly from the target staff member's record.
+  // This is always correct regardless of who the logged-in user is.
+  const tenantId = adminUser.tenant_id;
+
+  const { data: roles } = trpc.getAdminRoles.useQuery(undefined, {
+    enabled: open, // only fetch when dialog is open
   });
-
-  // Get tenant_id from current user's publisher
-  const tenantId = currentUser?.publisher?.tenant_id || adminUser?.tenant_id;
-
-  // Get available roles for dropdown
-  const { data: roles } = trpc.getAdminRoles.useQuery();
-
-  // Get publishers for the tenant (for publisher-scoped roles)
-  const { data: publishers } = trpc.getAllPublisher.useQuery();
-  const tenantPublishers = publishers?.filter(
-    (pub) => pub.tenant_id === tenantId
-  ) || [];
-
-  // Get admin users for dropdown if not provided
-  const { data: adminUsers } = trpc.getAdminUsersByTenant.useQuery(
-    { tenant_id: tenantId || "" },
-    { enabled: !!tenantId && !adminUser }
-  );
 
   const form = useForm<TAssignRoleToAdminUserSchema>({
     resolver: zodResolver(assignRoleToAdminUserSchema),
     defaultValues: {
-      admin_user_id: adminUser?.id || "",
-      tenant_id: tenantId || "",
-      role_name: "",
-      publisher_id: undefined,
+      admin_user_id: adminUser.id,
+      tenant_id:     tenantId,
+      role_name:     "",
+      publisher_id:  undefined,
     },
   });
 
-  const assignRole = trpc.assignRoleToAdminUser.useMutation({
-    onSuccess: async () => {
-      toast({
-        title: "Success",
-        variant: "default",
-        description: "Successfully assigned role to staff member",
-      });
-
-      if (tenantId) {
-        await utils.getAdminUsersByTenant.invalidate({ tenant_id: tenantId });
-        setOpen(false);
-        form.reset();
-      }
+  const mutation = trpc.assignRoleToAdminUser.useMutation({
+    onSuccess: () => {
+      toast({ title: "Role assigned successfully." });
+      utils.getAllAdminUsers.invalidate();
+      setOpen(false);
+      form.reset();
     },
-    onError: async (error) => {
-      console.error(error);
-
-      toast({
-        title: "Error",
-        variant: "destructive",
-        description: error.message || "Error assigning role",
-      });
-    },
+    onError: (err) =>
+      toast({ variant: "destructive", title: "Failed", description: err.message }),
   });
 
   const onSubmit = (values: TAssignRoleToAdminUserSchema) => {
-    assignRole.mutate({
-      ...values,
-      tenant_id: tenantId || values.tenant_id,
-    });
+    mutation.mutate({ ...values, tenant_id: tenantId });
   };
 
+  const staffName = [adminUser.first_name, adminUser.last_name]
+    .filter(Boolean).join(" ") || adminUser.email;
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) form.reset(); }}>
       <DialogTrigger asChild>
-        <Button
-          size="sm"
-          data-cy="assign-role"
-          className={adminUser ? "w-full" : ""}
-        >
-          {adminUser ? "Assign Role" : "Assign Role to Staff"}
-        </Button>
+        <button className="w-full text-left px-3 py-2.5 text-xs font-black uppercase italic hover:bg-accent cursor-pointer flex items-center gap-2 transition-colors">
+          <ShieldPlus className="size-3" />
+          Assign Role
+        </button>
       </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Assign Role to Staff Member</DialogTitle>
+
+      <DialogContent className="max-w-md border-4 border-black rounded-none gumroad-shadow">
+        <DialogHeader className="border-b-2 border-black pb-4">
+          <DialogTitle className="font-black uppercase italic tracking-tighter text-xl">
+            Assign Role
+          </DialogTitle>
+          <p className="text-[11px] font-bold opacity-50 uppercase tracking-widest">
+            {staffName}
+          </p>
         </DialogHeader>
-        <Card>
-          <CardHeader>
-            <CardTitle>Role Assignment</CardTitle>
-            <CardDescription>
-              Assign a role to a staff member. Roles can be scoped to a specific publisher or apply tenant-wide.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)}>
-                <fieldset disabled={form.formState.isSubmitting}>
-                  <div className="grid gap-6">
-                    {!adminUser && (
-                      <div className="space-y-1">
-                        <FormField
-                          control={form.control}
-                          name="admin_user_id"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="text-gray-700">
-                                Staff Member
-                              </FormLabel>
-                              <Select
-                                onValueChange={field.onChange}
-                                defaultValue={field.value}
-                              >
-                                <FormControl>
-                                  <SelectTrigger className="border-gray-300 rounded-md">
-                                    <SelectValue placeholder="Select staff member" />
-                                  </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  {adminUsers?.map((user) => (
-                                    <SelectItem key={user.id} value={user.id}>
-                                      {user.first_name} {user.last_name} ({user.email})
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                    )}
-                    <div className="space-y-1">
-                      <FormField
-                        control={form.control}
-                        name="role_name"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel className="text-gray-700">
-                              Role
-                            </FormLabel>
-                            <Select
-                              onValueChange={field.onChange}
-                              defaultValue={field.value}
-                            >
-                              <FormControl>
-                                <SelectTrigger className="border-gray-300 rounded-md">
-                                  <SelectValue placeholder="Select a role" />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {roles?.map((role) => (
-                                  <SelectItem key={role.name} value={role.name}>
-                                    {role.name}
-                                    {role.description && ` - ${role.description}`}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                    {form.watch("role_name") && tenantPublishers.length > 0 && (
-                      <div className="space-y-1">
-                        <FormField
-                          control={form.control}
-                          name="publisher_id"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="text-gray-700">
-                                Publisher Scope (Optional)
-                              </FormLabel>
-                              <Select
-                                onValueChange={(value) => field.onChange(value === "none" ? undefined : value)}
-                                value={field.value || "none"}
-                              >
-                                <FormControl>
-                                  <SelectTrigger className="border-gray-300 rounded-md">
-                                    <SelectValue placeholder="Select publisher (optional - leave empty for tenant-wide role)" />
-                                  </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  <SelectItem value="none">None (Tenant-wide)</SelectItem>
-                                  {tenantPublishers.map((publisher) => (
-                                    <SelectItem key={publisher.id} value={publisher.id}>
-                                      {publisher.slug || publisher.id}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex justify-end my-5">
-                    <Button
-                      disabled={form.formState.isSubmitting}
-                      className="bg-blue-600 text-white py-2 px-7 rounded-md font-medium text-xs border border-white outline-2 outline-blue-600 active:outline"
-                      type="submit"
-                      data-cy="assign-role-submit"
-                    >
-                      Assign Role
-                    </Button>
-                  </div>
-                </fieldset>
-              </form>
-            </Form>
-          </CardContent>
-        </Card>
+
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 pt-2">
+
+            {/* Role select */}
+            <FormField name="role_name" control={form.control} render={({ field }) => (
+              <FormItem>
+                <FormLabel className="font-black uppercase text-[10px] tracking-widest">
+                  Access Level
+                </FormLabel>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormControl>
+                    <SelectTrigger className="booka-input-minimal h-12">
+                      <SelectValue placeholder="Select a role..." />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent className="bg-white border-2 border-black rounded-none">
+                    {roles
+                      // Only show the 5 preset staff roles — filter out core roles
+                      // like "publisher", "author", "customer" which are for regular users
+                      ?.filter(r => r.name.startsWith("staff-") || r.name === "super-admin")
+                      .map((role) => (
+                        <SelectItem
+                          key={role.name}
+                          value={role.name}
+                          className="py-3"
+                        >
+                          <div>
+                            <p className="font-black uppercase text-[11px] tracking-wide">
+                              {role.name}
+                            </p>
+                            <p className="text-[10px] text-muted-foreground mt-0.5">
+                              {ROLE_DESCRIPTIONS[role.name] ?? role.description ?? ""}
+                            </p>
+                          </div>
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )} />
+
+            {/* Existing roles on this user — helpful context */}
+            {(adminUser.roles ?? []).length > 0 && (
+              <div className="space-y-2">
+                <p className="text-[10px] font-black uppercase tracking-widest opacity-40">
+                  Current Roles
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {(adminUser.roles ?? []).map((r: { role_name: string }, i: number) => (
+                    <span key={i}
+                      className="inline-block border border-black px-2 py-0.5 text-[10px] font-black uppercase bg-white">
+                      {r.role_name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <Button
+              type="submit"
+              disabled={mutation.isPending || !form.watch("role_name")}
+              className="w-full booka-button-primary h-12 flex items-center justify-center gap-2"
+            >
+              {mutation.isPending
+                ? <><Loader2 className="animate-spin size-4" />Assigning...</>
+                : <><ShieldPlus className="size-4" />Assign Role</>}
+            </Button>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );
 };
 
 export default AssignRoleForm;
-
