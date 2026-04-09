@@ -264,72 +264,75 @@ export const getCustomersByUser = publicProcedure
 export const getCustomerDashboardStats = publicProcedure
   .input(z.object({ user_id: z.string() }))
   .query(async ({ input }) => {
-    // 1. Fetch ALL customer profiles with their captured orders and line items
     const customerProfiles = await prisma.customer.findMany({
-      where: { user_id: input.user_id },
+      where:   { user_id: input.user_id },
       include: {
         orders: {
-          where: { payment_status: "captured" },
+          where:   { payment_status: "captured" },
           orderBy: { created_at: "desc" },
-          include: { 
-            line_items: { 
-              include: { 
-                book_variant: { 
-                  select: { book_id: true } // We only need the ID to count unique books
-                } 
-              } 
-            } 
-          }
+          include: {
+            line_items: {
+              include: {
+                book_variant: {
+                  // Need format + book_id — format tells us digital vs physical
+                  select: { book_id: true, format: true },
+                },
+              },
+            },
+          },
         },
         _count: {
-          select: { 
-            orders: { where: { payment_status: "captured" } },
-          }
-        }
-      }
-    });
-
-    if (!customerProfiles.length) return null;
-
-    // 2. Fetch Total Spent (Aggregation)
-    const totalSpentAgg = await prisma.order.aggregate({
-      where: { 
-        customer: { user_id: input.user_id },
-        payment_status: "captured" 
+          select: { orders: { where: { payment_status: "captured" } } },
+        },
       },
-      _sum: { total_amount: true }
     });
-
-    // 3. Extract Unique Books and Aggregate Recent Orders
-    const uniqueBookIds = new Set<string>();
-    let totalPurchases = 0;
+ 
+    if (!customerProfiles.length) return null;
+ 
+    const totalSpentAgg = await prisma.order.aggregate({
+      where: {
+        customer:       { user_id: input.user_id },
+        payment_status: "captured",
+      },
+      _sum: { total_amount: true },
+    });
+ 
+    const uniqueBookIds  = new Set<string>(); // distinct titles ever purchased
+    let   totalUnits     = 0;                 // total copies/units (respects quantity)
+    let   totalPurchases = 0;                 // number of captured orders
     const combinedRecent: any[] = [];
-
+ 
     customerProfiles.forEach(profile => {
       totalPurchases += profile._count.orders;
-      
+ 
       profile.orders.forEach(order => {
         combinedRecent.push(order);
-        
-        // Add every book_id from the line items to the Set
+ 
         order.line_items.forEach(item => {
-          if (item.book_variant?.book_id) {
-            uniqueBookIds.add(item.book_variant.book_id);
-          }
+          const bookId = item.book_variant?.book_id;
+          if (!bookId) return;
+ 
+          // Track unique titles
+          uniqueBookIds.add(bookId);
+ 
+          // Sum actual units purchased — quantity defaults to 1 if not set
+          totalUnits += item.quantity ?? 1;
         });
       });
     });
-
-    // 4. Sort and limit recent orders to the top 5 globally
+ 
     const finalRecentOrders = combinedRecent
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
       .slice(0, 5);
-
+ 
     return {
-      totalPurchases: totalPurchases,
-      booksOwned: uniqueBookIds.size, 
+      totalPurchases,
+      // Total units: counts every copy — 1 ebook + 2 hardcover + 2 paperback = 5
+      booksOwned:   totalUnits,
+      // Unique titles: how many distinct books they've bought at least one of
+      titlesOwned:  uniqueBookIds.size,
       recentOrders: finalRecentOrders,
-      totalSpent: totalSpentAgg._sum.total_amount || 0,
+      totalSpent:   totalSpentAgg._sum.total_amount || 0,
     };
   });
 
