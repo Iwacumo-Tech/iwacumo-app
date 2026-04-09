@@ -4,10 +4,13 @@ import { notFound }   from "next/navigation";
 import { SessionProvider } from "next-auth/react";
 import { Session }    from "next-auth";
 import { links }      from "./links";
+import { redirect } from "next/navigation";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
-  if (!session) notFound();
+  if (!session) {
+    redirect("/login?callbackUrl=/app");
+  }
 
   const userRoles = session.roles?.map(r => r.name.toLowerCase()) || [];
 

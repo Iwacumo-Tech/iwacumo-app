@@ -297,10 +297,10 @@ export const publisherColumns: ColumnDef<any>[] = [
   },
   {
     accessorKey: "custom_domain",
-    header: "Subdomain / Address",
+    header: "URL / Address",
     cell: ({ row }) => {
       const slug          = row.original.slug;
-      const displayDomain = row.original.custom_domain || `${slug}.booka.africa`;
+      const displayDomain = row.original.custom_domain || `www.iwacumo.com/${slug}`;
       return (
         <div className="flex items-center gap-2 text-xs font-bold opacity-60 italic">
           <Globe size={12} className="shrink-0" />
