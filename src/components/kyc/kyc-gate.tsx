@@ -1,103 +1,262 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
-import { useRouter, usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { trpc } from "@/app/_providers/trpc-provider";
-import { Loader2 } from "lucide-react";
- 
+import {
+  Loader2, ShieldCheck, Clock, AlertTriangle, ArrowRight, Mail,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { signOut } from "next-auth/react";
+
 // Roles that bypass KYC entirely
 const STAFF_ROLES = new Set([
   "super-admin", "staff-basic", "staff-content",
   "staff-publisher", "staff-finance", "tenant-admin",
 ]);
- 
-// Paths that are always accessible — never redirect from these
+
+// KYC pages themselves are always accessible without the gate
 const KYC_PATHS = ["/app/kyc", "/app/kyc/pending"];
- 
+
 interface KycGateProps {
   children: React.ReactNode;
 }
- 
+
+// ── Status config ─────────────────────────────────────────────
+type KycStatus = "pending" | "submitted" | "rejected" | "approved" | "none";
+
+interface StatusConfig {
+  icon:       React.ReactNode;
+  title:      string;
+  body:       string;
+  accent:     string;  // bg class for the icon container
+  cta?:       { label: string; action: "go_kyc" | "sign_out" };
+  secondary?: { label: string; action: "sign_out" };
+}
+
+function getStatusConfig(status: KycStatus, orgName?: string): StatusConfig {
+  const org = orgName ?? "your organisation";
+
+  switch (status) {
+    case "none":
+    case "pending":
+      return {
+        icon:    <ShieldCheck className="size-10" />,
+        title:   "Complete Your Verification",
+        body:    `Before you can publish and sell on the platform, ${org} needs to complete KYC verification. It only takes a few minutes.`,
+        accent:  "bg-accent",
+        cta:     { label: "Start Verification", action: "go_kyc" },
+        secondary: { label: "Sign Out", action: "sign_out" },
+      };
+
+    case "rejected":
+      return {
+        icon:    <AlertTriangle className="size-10" />,
+        title:   "Verification Needs Attention",
+        body:    `Your KYC submission for ${org} was not approved. Please review the feedback and resubmit your documents.`,
+        accent:  "bg-red-100",
+        cta:     { label: "Resubmit Documents", action: "go_kyc" },
+        secondary: { label: "Sign Out", action: "sign_out" },
+      };
+
+    case "submitted":
+      return {
+        icon:    <Clock className="size-10" />,
+        title:   "Verification In Review",
+        body:    `Your KYC documents for ${org} have been submitted and are being reviewed by our team. This usually takes 1–2 business days. You'll receive an email once approved.`,
+        accent:  "bg-accent",
+        cta:     undefined, // no action needed — just waiting
+        secondary: { label: "Sign Out", action: "sign_out" },
+      };
+
+    default:
+      return {
+        icon:    <ShieldCheck className="size-10" />,
+        title:   "Verification Required",
+        body:    "Please complete KYC verification to access the platform.",
+        accent:  "bg-accent",
+        cta:     { label: "Start Verification", action: "go_kyc" },
+      };
+  }
+}
+
+// ── Overlay modal ─────────────────────────────────────────────
+function KycOverlay({
+  status,
+  orgName,
+  reviewerNotes,
+}: {
+  status:        KycStatus;
+  orgName?:      string;
+  reviewerNotes?: string | null;
+}) {
+  const router = useRouter();
+  const cfg    = getStatusConfig(status, orgName);
+
+  const handleAction = (action: "go_kyc" | "sign_out") => {
+    if (action === "go_kyc")   router.push("/app/kyc");
+    if (action === "sign_out") signOut({ callbackUrl: "/login" });
+  };
+
+  return (
+    // Full-screen overlay — backdrop-blur keeps dashboard visible but inaccessible
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="w-full max-w-md bg-white border-4 border-black gumroad-shadow space-y-6 p-8 animate-in fade-in slide-in-from-bottom-4">
+
+        {/* Icon */}
+        <div className={`w-20 h-20 ${cfg.accent} border-4 border-black flex items-center justify-center mx-auto`}>
+          {cfg.icon}
+        </div>
+
+        {/* Text */}
+        <div className="text-center space-y-3">
+          <h2 className="text-2xl font-black uppercase italic tracking-tighter">
+            {cfg.title}<span className="text-accent">.</span>
+          </h2>
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            {cfg.body}
+          </p>
+
+          {/* Rejection notes from reviewer */}
+          {status === "rejected" && reviewerNotes && (
+            <div className="border-2 border-black bg-red-50 p-4 text-left space-y-1 mt-2">
+              <p className="text-[10px] font-black uppercase tracking-widest text-red-700">
+                Reviewer Feedback
+              </p>
+              <p className="text-sm text-red-600 font-bold leading-relaxed">
+                {reviewerNotes}
+              </p>
+            </div>
+          )}
+
+          {/* Submitted state — extra reassurance */}
+          {status === "submitted" && (
+            <div className="flex items-center gap-2 justify-center border-2 border-black bg-accent p-3 mt-2">
+              <Mail className="size-4 shrink-0" />
+              <p className="text-[11px] font-black uppercase tracking-widest">
+                Check your inbox for updates
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="flex flex-col gap-3">
+          {cfg.cta && (
+            <Button
+              onClick={() => handleAction(cfg.cta!.action)}
+              className="w-full booka-button-primary h-14 text-base flex items-center justify-center gap-2"
+            >
+              {cfg.cta.label}
+              <ArrowRight className="size-4" />
+            </Button>
+          )}
+          {cfg.secondary && (
+            <Button
+              variant="outline"
+              onClick={() => handleAction(cfg.secondary!.action)}
+              className="w-full booka-button-secondary h-12"
+            >
+              {cfg.secondary.label}
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Gate component ────────────────────────────────────────────
 export function KycGate({ children }: KycGateProps) {
   const { data: session, status: sessionStatus } = useSession();
-  const router   = useRouter();
   const pathname = usePathname();
- 
-  const userRoles  = (session?.roles ?? []).map((r: any) => r.name?.toLowerCase());
-  const isPublisher  = userRoles.includes("publisher");
+
+  const userRoles      = (session?.roles ?? []).map((r: any) => r.name?.toLowerCase());
+  const isPublisher    = userRoles.includes("publisher");
   const isStaffOrAdmin = userRoles.some((r: string) => STAFF_ROLES.has(r));
-  const needsGate  = isPublisher && !isStaffOrAdmin;
-  const publisherId = (session?.user as any)?.publisher_id as string | undefined;
- 
-  // Only fetch KYC if this user actually needs gating
+  const needsGate      = isPublisher && !isStaffOrAdmin;
+  const publisherId    = (session?.user as any)?.publisher_id as string | undefined;
+
+  // Resolve org name for personalised messaging
+  const orgName = (session as any)?.tenantSlug ?? undefined;
+
   const { data: kyc, isLoading: kycLoading } = trpc.getMyKyc.useQuery(
     { publisher_id: publisherId! },
     {
-      enabled: needsGate && !!publisherId && sessionStatus === "authenticated",
-      // Don't refetch on window focus — status doesn't change mid-session
+      enabled:              needsGate && !!publisherId && sessionStatus === "authenticated",
       refetchOnWindowFocus: false,
     }
   );
- 
+
   const { data: requirements, isLoading: reqLoading } =
     trpc.getKycRequirements.useQuery(undefined, {
-      enabled: needsGate && sessionStatus === "authenticated",
+      enabled:              needsGate && sessionStatus === "authenticated",
       refetchOnWindowFocus: false,
     });
- 
-  useEffect(() => {
-    // Don't redirect while session or data is still loading
-    if (sessionStatus !== "authenticated") return;
-    if (!needsGate) return;
-    if (kycLoading || reqLoading) return;
- 
-    // Already on a KYC page — don't redirect
-    const isOnKycPath = KYC_PATHS.some(p => pathname.startsWith(p));
-    if (isOnKycPath) return;
- 
-    const status = kyc?.status;
- 
-    // Check if required docs are uploaded
+
+  // ── Determine KYC status ──────────────────────────────────
+  const isOnKycPath = KYC_PATHS.some(p => pathname.startsWith(p));
+  const isChecking  = needsGate && (kycLoading || reqLoading) && sessionStatus === "authenticated";
+
+  let kycStatus: KycStatus = "none";
+
+  if (needsGate && !kycLoading && !reqLoading && kyc) {
     const req = requirements ?? {
-      require_id: true,
-      require_business_reg: true,
+      require_id:               true,
+      require_business_reg:     true,
       require_proof_of_address: true,
     };
- 
-    const idMet      = !req.require_id               || !!kyc?.id_document_url;
-    const regMet     = !req.require_business_reg     || !!kyc?.business_reg_url;
-    const addressMet = !req.require_proof_of_address || !!kyc?.proof_of_address_url;
+
+    const idMet      = !req.require_id               || !!kyc.id_document_url;
+    const regMet     = !req.require_business_reg     || !!kyc.business_reg_url;
+    const addressMet = !req.require_proof_of_address || !!kyc.proof_of_address_url;
     const docsMet    = idMet && regMet && addressMet;
- 
-    if (!status || status === "pending" || status === "rejected" || !docsMet) {
-      router.replace("/app/kyc");
-      return;
-    }
- 
-    if (status === "submitted") {
-      router.replace("/app/kyc/pending");
-    }
- 
-    // status === "approved" → fall through, render children
-  }, [sessionStatus, needsGate, kycLoading, reqLoading, kyc, requirements, pathname]);
- 
-  // ── Loading state — only shown to publishers while checking ──
-  const isChecking =
-    needsGate &&
-    (sessionStatus === "loading" || kycLoading || reqLoading) &&
-    !KYC_PATHS.some(p => pathname.startsWith(p));
- 
-  if (isChecking) {
-    return (
-      <div className="flex h-[60vh] items-center justify-center gap-3">
-        <Loader2 className="animate-spin size-5 opacity-30" />
-        <span className="text-xs font-black uppercase tracking-widest opacity-30">
-          Verifying access...
-        </span>
-      </div>
-    );
+
+    if (!docsMet || kyc.status === "pending") kycStatus = "pending";
+    else kycStatus = kyc.status as KycStatus;
   }
- 
-  return <>{children}</>;
+
+  const showOverlay =
+    needsGate &&
+    !isOnKycPath &&         // KYC pages themselves are never blocked
+    !isChecking &&          // Don't show overlay while still loading
+    sessionStatus === "authenticated" &&
+    kycStatus !== "approved" &&
+    kycStatus !== "none";   // "none" = no record yet → also show overlay
+
+  // "none" case — show overlay when we know the user has no KYC record
+  const showOverlayNone =
+    needsGate &&
+    !isOnKycPath &&
+    !isChecking &&
+    !kycLoading &&
+    sessionStatus === "authenticated" &&
+    !kyc; // no record at all
+
+  return (
+    <>
+      {/* Always render children so dashboard is visible behind overlay */}
+      {children}
+
+      {/* Loading indicator — subtle, only for publishers */}
+      {isChecking && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 bg-white border-2 border-black px-4 py-2 gumroad-shadow-sm">
+          <Loader2 className="animate-spin size-4" />
+          <span className="text-[10px] font-black uppercase tracking-widest">
+            Checking verification...
+          </span>
+        </div>
+      )}
+
+      {/* KYC overlay — blocks interaction, keeps dashboard blurred behind */}
+      {(showOverlay || showOverlayNone) && (
+        <KycOverlay
+          status={showOverlayNone ? "none" : kycStatus}
+          orgName={orgName}
+          reviewerNotes={kyc?.reviewer_notes}
+        />
+      )}
+    </>
+  );
 }
