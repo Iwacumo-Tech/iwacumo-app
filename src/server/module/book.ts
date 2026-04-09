@@ -11,6 +11,8 @@ import { put } from "@vercel/blob";
 
 import { sendBookApprovedEmail } from "@/lib/email";
 
+import { resolveUserContext } from "@/lib/is-super-admin";
+
 /**
  * Refactored Book Module
  * * FIX: Uses 'publisher: { connect: { id } }' instead of 'publisher_id' scalar to resolve Prisma validation errors.
@@ -445,15 +447,17 @@ export const deleteBook = publicProcedure.input(deleteBookSchema).mutation(async
 });
 
 export const getAllBooks = publicProcedure.query(async ({ ctx }) => {
-  // 1. Resolve User/Claims only if session exists
-  let isSuperAdmin = false;
+  // 1. Use the helper to resolve context (IDs and Roles)
+  const userId = ctx.session?.user?.id;
   
-  if (ctx.session?.user?.id) {
-    const user = await prisma.user.findUnique({
-      where: { id: ctx.session.user.id },
-      include: { claims: true }
-    });
-    isSuperAdmin = user?.claims.some(c => c.role_name === "super-admin" && c.active) || false;
+  // Initialize defaults
+  let isSuperAdmin = false;
+  let publisherId: string | null = null;
+
+  if (userId) {
+    const userCtx = await resolveUserContext(userId);
+    isSuperAdmin = userCtx.isSuperAdmin;
+    publisherId = userCtx.publisher_id;
   }
 
   // 2. Fetch Books

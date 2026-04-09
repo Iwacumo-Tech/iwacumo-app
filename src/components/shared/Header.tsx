@@ -66,7 +66,7 @@ function HeaderContent() {
         <Link href="/" className="shrink-0 hover:opacity-80 transition-opacity">
           <Image 
             src="/black-logo.png" 
-            alt="Iwacu Logo" 
+            alt="Iwacumo Logo" 
             width={140} 
             height={40} 
             priority
@@ -201,7 +201,7 @@ function HeaderContent() {
                         <Button className="w-full booka-button-secondary h-16 text-lg">Login</Button>
                       </Link>
                       <Link href="/register" className="w-full">
-                        <Button className="w-full booka-button-primary h-16 text-lg">Join Booka</Button>
+                        <Button className="w-full booka-button-primary h-16 text-lg">Join Iwacumo</Button>
                       </Link>
                     </div>
                   ) : (
