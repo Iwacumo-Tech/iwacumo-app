@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { staffBookColumns, readerBookColumns } from "@/components/books/columns";
 import { DataTable } from "@/components/table/data-table";
 import { useSession } from "next-auth/react";
-import { Plus, Users, X, ChevronDown } from "lucide-react";
+import { Plus, Users, X, ChevronDown, Loader2, RefreshCcw } from "lucide-react";
 import { useState, useMemo } from "react";
 import {
   DropdownMenu,
@@ -21,13 +21,14 @@ export default function BooksPage() {
   const { data: session } = useSession();
   const userId    = session?.user.id as string;
   const userRoles = session?.roles || [];
+  const activeProfile = session?.activeProfile;
 
   // ── Role flags ────────────────────────────────────────────────
   const isSuperAdmin = userRoles.some(r => r.name === "super-admin");
-  const isPublisher  = userRoles.some(r => r.name === "publisher");
-  const isAuthor     = userRoles.some(r => r.name === "author");
-  const isCustomer   = session?.user.isCustomer;
-  const isStaff      = isSuperAdmin || isPublisher || isAuthor;
+  const isPublisher  = activeProfile === "publisher";
+  const isAuthor     = activeProfile === "author";
+  const isCustomer   = activeProfile === "reader";
+  const isStaff      = activeProfile === "staff" || isPublisher || isAuthor;
 
   // ── Author filter state (publisher + super-admin only) ────────
   const [selectedAuthorId, setSelectedAuthorId] = useState<string | null>(null);
@@ -36,17 +37,22 @@ export default function BooksPage() {
   // ── Data fetching ─────────────────────────────────────────────
   const { data: allBooks } = trpc.getAllBooks.useQuery(
     undefined,
-    { enabled: isSuperAdmin }
+    { enabled: activeProfile === "staff" && isSuperAdmin }
   );
 
   const { data: authorBooks } = trpc.getBookByAuthor.useQuery(
     { id: userId },
-    { enabled: (isAuthor || isPublisher) && !isSuperAdmin }
+    { enabled: isAuthor || isPublisher }
   );
 
-  const { data: purchasedBooks } = trpc.getPurchasedBooksByCustomer.useQuery(
+  const {
+    data: purchasedBooks,
+    isLoading: purchasedBooksLoading,
+    isFetching: purchasedBooksFetching,
+    refetch: refetchPurchasedBooks,
+  } = trpc.getPurchasedBooksByCustomer.useQuery(
     { id: userId },
-    { enabled: !!isCustomer && !isStaff }
+    { enabled: !!isCustomer && !isStaff, refetchOnMount: "always" }
   );
 
   // Fetch authors for the filter dropdown (publisher/admin only)
@@ -56,7 +62,7 @@ export default function BooksPage() {
   );
 
   // ── Resolve base display data ─────────────────────────────────
-  const baseData = isSuperAdmin
+  const baseData = activeProfile === "staff" && isSuperAdmin
     ? (allBooks    ?? [])
     : (isAuthor || isPublisher)
     ? (authorBooks ?? [])
@@ -87,6 +93,9 @@ export default function BooksPage() {
 
   // ── Column selection ──────────────────────────────────────────
   const columns = isStaff ? staffBookColumns : readerBookColumns;
+  const isReaderLibrary = isCustomer && !isStaff;
+  const isLibraryLoading = isReaderLibrary && purchasedBooksLoading;
+  const isLibraryRefreshing = isReaderLibrary && purchasedBooksFetching && !purchasedBooksLoading;
 
   // ── Staff total value ─────────────────────────────────────────
   const staffTotalValue = isStaff
@@ -118,6 +127,22 @@ export default function BooksPage() {
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
+          {isReaderLibrary && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => refetchPurchasedBooks()}
+              disabled={purchasedBooksFetching}
+              className="h-12 px-5 border-[1.5px] rounded-none border-black bg-white text-black font-black uppercase italic text-xs tracking-widest"
+            >
+              {purchasedBooksFetching ? (
+                <Loader2 size={14} className="mr-2 animate-spin" />
+              ) : (
+                <RefreshCcw size={14} className="mr-2" />
+              )}
+              Refresh Library
+            </Button>
+          )}
           {/* ── Author filter dropdown (publisher + super-admin) ── */}
           {canFilterByAuthor && authorOptions.length > 0 && (
             <DropdownMenu>
@@ -216,19 +241,69 @@ export default function BooksPage() {
       </div>
 
       {/* ── Table ──────────────────────────────────────────── */}
-      <div className="bg-white border-4 border-black gumroad-shadow overflow-hidden">
-        <DataTable
-          data={displayData}
-          columns={columns}
-          filterInputPlaceholder={
-            isCustomer && !isStaff
-              ? "Search your library by title..."
-              : "Search books by title..."
-          }
-          filterColumnId="title"
-          meta={{ isSuperAdmin, isPublisher, isAuthor }}
-        />
-      </div>
+      {isReaderLibrary && (
+        <div className="border-2 border-black bg-[#f9f6f0] px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            {isLibraryLoading || isLibraryRefreshing ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <div className="h-2.5 w-2.5 bg-accent border border-black shrink-0" />
+            )}
+            <p className="text-[10px] font-black uppercase tracking-widest text-black/60">
+              {isLibraryLoading
+                ? "Loading your purchased books..."
+                : isLibraryRefreshing
+                ? "Refreshing your library..."
+                : "Your purchased books are shown here after payment is confirmed."}
+            </p>
+          </div>
+
+          {!isLibraryLoading && displayData.length === 0 && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => refetchPurchasedBooks()}
+              disabled={purchasedBooksFetching}
+              className="h-10 px-4 rounded-none border-[1.5px] border-black bg-white text-[10px] font-black uppercase tracking-widest"
+            >
+              {purchasedBooksFetching ? (
+                <Loader2 size={14} className="mr-2 animate-spin" />
+              ) : (
+                <RefreshCcw size={14} className="mr-2" />
+              )}
+              Check Again
+            </Button>
+          )}
+        </div>
+      )}
+
+      {isLibraryLoading ? (
+        <div className="bg-white border-4 border-black gumroad-shadow p-10 sm:p-14">
+          <div className="flex flex-col items-center justify-center gap-4 text-center">
+            <Loader2 size={28} className="animate-spin" />
+            <div>
+              <p className="text-sm font-black uppercase tracking-widest">Loading Library</p>
+              <p className="mt-2 text-xs font-bold text-black/60">
+                Your books should appear here as soon as the purchase records finish loading.
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="bg-white border-4 border-black gumroad-shadow overflow-hidden">
+          <DataTable
+            data={displayData}
+            columns={columns}
+            filterInputPlaceholder={
+              isCustomer && !isStaff
+                ? "Search your library by title..."
+                : "Search books by title..."
+            }
+            filterColumnId="title"
+            meta={{ isSuperAdmin, isPublisher, isAuthor }}
+          />
+        </div>
+      )}
 
       {/* ── Footer — staff only ─────────────────────────────── */}
       {isStaff && displayData.length > 0 && (

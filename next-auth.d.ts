@@ -1,5 +1,6 @@
 import { Permission, Role } from "@prisma/client";
 import { DefaultSession } from "next-auth";
+import { DashboardProfile } from "@/lib/profile-mode";
 
 declare module "next-auth" {
   /**
@@ -10,6 +11,9 @@ declare module "next-auth" {
     email: string;
     first_name: string;
     last_name: string;
+    username?: string | null;
+    avatar_url?: string | null;
+    email_verified?: boolean;
     isCustomer?: boolean;
     author_id?: string | null;
     publisher_id?: string | null;
@@ -23,6 +27,8 @@ declare module "next-auth" {
     permissions: Permission[];
     roles: Role[];
     tenantSlug: string | null;
+    availableProfiles?: DashboardProfile[];
+    activeProfile?: DashboardProfile | null;
   }
 }
 
@@ -35,6 +41,9 @@ declare module "next-auth/jwt" {
     id: string;
     first_name: string;
     last_name: string;
+    username?: string | null;
+    avatar_url?: string | null;
+    email_verified?: boolean;
     permissions: Permission[];
     roles: Role[];
     tenantSlug: string | null;

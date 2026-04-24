@@ -37,6 +37,15 @@ import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import axios from "axios";
 import { Loader2, CheckCircle2, UploadCloud, Edit3, TrendingUp, Info } from "lucide-react";
+import {
+  COMMON_BOOK_LANGUAGES,
+  formatDimensionsInches,
+  normalizeBookLanguageValue,
+  matchSizeBucket,
+  normalizeBookCustomFields,
+  STANDARD_SIZE_DIMENSIONS_IN,
+  type BookCustomFieldDefinition,
+} from "@/lib/book-config";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -46,6 +55,26 @@ interface BookFormProps {
   book?: Book;
   action: "Add" | "Edit";
   trigger?: React.ReactNode;
+}
+
+function getFriendlyBookError(message?: string) {
+  if (!message) return "Please check the form and try again.";
+
+  try {
+    const parsed = JSON.parse(message);
+    if (Array.isArray(parsed)) {
+      const first = parsed[0];
+      if (first?.path?.includes("list_price")) return "Please enter a valid price. Free e-books can be set to 0.";
+      if (typeof first?.message === "string") return first.message;
+    }
+  } catch {
+    // Not a JSON validation payload; fall through to friendly string checks.
+  }
+
+  if (message.includes("list_price")) return "Please enter a valid price. Free e-books can be set to 0.";
+  if (message.includes("ebook_price")) return "Please enter the e-book price. Use 0 if it should be free.";
+
+  return message.length > 180 ? "Please check the form and try again." : message;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -59,17 +88,46 @@ interface SystemSettings {
   };
   platform_fee: { type: "percentage" | "flat"; value: number };
   default_markup: number;
+  book_feature_toggles: {
+    subtitle: boolean;
+    language: boolean;
+    isbn: boolean;
+    publication_date: boolean;
+    paperback: boolean;
+    hardcover: boolean;
+    flap: boolean;
+    physical_printing: boolean;
+  };
+  book_size_ranges: {
+    A6: { width_min: number; width_max: number; height_min: number; height_max: number };
+    A5: { width_min: number; width_max: number; height_min: number; height_max: number };
+    A4: { width_min: number; width_max: number; height_min: number; height_max: number };
+  };
+  book_flap_costs: {
+    single: Record<string, number>;
+    double: Record<string, number>;
+  };
+  book_live_pricing_enabled?: boolean;
+  book_custom_fields: BookCustomFieldDefinition[];
 }
 
 function calcPrintCost(
   settings: SystemSettings,
   format: "paperback" | "hardcover",
   size: string,
-  pageCount: number
+  pageCount: number,
+  flapType: "none" | "single" | "double" = "none",
+  specialAddonFee = 0
 ): number {
   const cfg = settings.printing_costs[format]?.[size];
   if (!cfg) return 0;
-  return cfg.cover + cfg.page * pageCount;
+  const flapCost =
+    flapType === "single"
+      ? settings.book_flap_costs.single?.[size] ?? 0
+      : flapType === "double"
+      ? settings.book_flap_costs.double?.[size] ?? 0
+      : 0;
+  return cfg.cover + cfg.page * pageCount + flapCost + specialAddonFee;
 }
 
 function calcPlatformFee(settings: SystemSettings, printCost: number): number {
@@ -109,9 +167,11 @@ function buildBreakdown(
   size: string,
   pageCount: number,
   markupType: "percentage" | "flat",
-  markupValue: number
+  markupValue: number,
+  flapType: "none" | "single" | "double" = "none",
+  specialAddonFee = 0
 ): PriceBreakdown {
-  const printCost     = calcPrintCost(settings, format, size, pageCount);
+  const printCost     = calcPrintCost(settings, format, size, pageCount, flapType, specialAddonFee);
   const platformFee   = calcPlatformFee(settings, printCost);
   const defaultMarkup = calcDefaultMarkup(settings, printCost);
   const baseCost      = printCost + platformFee + defaultMarkup;
@@ -359,6 +419,10 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
     resolver: zodResolver(createBookSchema),
     defaultValues: {
       title:             book?.title            ?? "",
+      subtitle:          (book as any)?.subtitle ?? "",
+      isbn:              (book as any)?.isbn ?? "",
+      publication_date:  (book as any)?.publication_date ? new Date((book as any).publication_date) : undefined,
+      default_language:  normalizeBookLanguageValue((book as any)?.default_language),
       short_description: book?.short_description ?? "",
       long_description:  book?.long_description  ?? "",
       page_count:        book?.page_count        ?? 0,
@@ -371,13 +435,73 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
       paperback_price:   initialPrices.paperback,
       ebook_price:       initialPrices.ebook,
       hardcover_price:   initialPrices.hardcover,
-      size:              (book as any)?.variants?.[0]?.size || "A5",
+      size:              (book as any)?.variants?.[0]?.size_bucket || (book as any)?.variants?.[0]?.size || "A5",
+      trim_size_mode:    (book as any)?.variants?.[0]?.trim_size_mode || "standard",
+      paper_type:        (book as any)?.variants?.[0]?.paper_type || "cream",
+      lamination_type:   (book as any)?.variants?.[0]?.lamination_type || "matte",
+      flap_type:         (book as any)?.variants?.[0]?.flap_type || "none",
+      custom_width_in:   (book as any)?.variants?.[0]?.custom_width_in ?? null,
+      custom_height_in:  (book as any)?.variants?.[0]?.custom_height_in ?? null,
+      size_bucket:       (book as any)?.variants?.[0]?.size_bucket || (book as any)?.variants?.[0]?.size || "A5",
+      display_width_in:  (book as any)?.variants?.[0]?.display_width_in ?? null,
+      display_height_in: (book as any)?.variants?.[0]?.display_height_in ?? null,
       author_markup_type:  "percentage",
       author_markup_value: 0,
+      special_addon_fee:  (book as any)?.special_addon_fee ?? 0,
+      special_addon_description: (book as any)?.special_addon_description ?? "",
+      custom_fields:      (book as any)?.metadata?.custom_fields ?? {},
+      admin_private_notes: (book as any)?.metadata?.private_creator_notes ?? "",
     },
   });
 
   const watched = useWatch({ control: form.control });
+  const bookFeatureToggles = systemSettings?.book_feature_toggles;
+  const customFieldDefinitions = useMemo(
+    () => normalizeBookCustomFields(systemSettings?.book_custom_fields ?? []),
+    [systemSettings?.book_custom_fields]
+  );
+  const matchedSizeBucket = useMemo(() => {
+    if (!(watched.paper_back || watched.hard_cover)) return null;
+    if (watched.trim_size_mode !== "custom") return (watched.size || "A5") as "A6" | "A5" | "A4";
+    if (!watched.custom_width_in || !watched.custom_height_in || !systemSettings) return null;
+    return matchSizeBucket(
+      Number(watched.custom_width_in),
+      Number(watched.custom_height_in),
+      systemSettings.book_size_ranges
+    );
+  }, [
+    watched.paper_back,
+    watched.hard_cover,
+    watched.trim_size_mode,
+    watched.size,
+    watched.custom_width_in,
+    watched.custom_height_in,
+    systemSettings,
+  ]);
+
+  useEffect(() => {
+    if (!(watched.paper_back || watched.hard_cover)) return;
+    if (watched.trim_size_mode === "custom") {
+      form.setValue("size_bucket", matchedSizeBucket ?? undefined);
+      form.setValue("display_width_in", watched.custom_width_in ?? null);
+      form.setValue("display_height_in", watched.custom_height_in ?? null);
+      return;
+    }
+
+    const standardSize = (watched.size || "A5") as "A6" | "A5" | "A4";
+    form.setValue("size_bucket", standardSize);
+    form.setValue("display_width_in", STANDARD_SIZE_DIMENSIONS_IN[standardSize].width);
+    form.setValue("display_height_in", STANDARD_SIZE_DIMENSIONS_IN[standardSize].height);
+  }, [
+    watched.paper_back,
+    watched.hard_cover,
+    watched.trim_size_mode,
+    watched.size,
+    watched.custom_width_in,
+    watched.custom_height_in,
+    matchedSizeBucket,
+    form,
+  ]);
 
   // ── Upload handler ──────────────────────────────────────────────────────────
   const handleInstantUpload = async (file: File, type: string) => {
@@ -412,28 +536,32 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
     : null;
 
   const pbBreakdown = useMemo<PriceBreakdown | null>(() => {
-    if (!systemSettings || !watched.paper_back || !watched.page_count || watched.page_count <= 0) return null;
+    if (!systemSettings || !watched.paper_back || !watched.page_count || watched.page_count <= 0 || !matchedSizeBucket) return null;
     return buildBreakdown(
       systemSettings as SystemSettings,
       "paperback",
-      watched.size || "A5",
+      matchedSizeBucket,
       watched.page_count,
       (watched.author_markup_type as any) || "percentage",
-      watched.author_markup_value || 0
+      watched.author_markup_value || 0,
+      (watched.flap_type as any) || "none",
+      watched.special_addon_fee || 0
     );
-  }, [systemSettings, watched.paper_back, watched.page_count, watched.size, watched.author_markup_type, watched.author_markup_value]);
+  }, [systemSettings, watched.paper_back, watched.page_count, matchedSizeBucket, watched.author_markup_type, watched.author_markup_value, watched.flap_type, watched.special_addon_fee]);
 
   const hcBreakdown = useMemo<PriceBreakdown | null>(() => {
-    if (!systemSettings || !watched.hard_cover || !watched.page_count || watched.page_count <= 0) return null;
+    if (!systemSettings || !watched.hard_cover || !watched.page_count || watched.page_count <= 0 || !matchedSizeBucket) return null;
     return buildBreakdown(
       systemSettings as SystemSettings,
       "hardcover",
-      watched.size || "A5",
+      matchedSizeBucket,
       watched.page_count,
       (watched.author_markup_type as any) || "percentage",
-      watched.author_markup_value || 0
+      watched.author_markup_value || 0,
+      (watched.flap_type as any) || "none",
+      watched.special_addon_fee || 0
     );
-  }, [systemSettings, watched.hard_cover, watched.page_count, watched.size, watched.author_markup_type, watched.author_markup_value]);
+  }, [systemSettings, watched.hard_cover, watched.page_count, matchedSizeBucket, watched.author_markup_type, watched.author_markup_value, watched.flap_type, watched.special_addon_fee]);
 
   // ── Sync computed prices back into the form fields ──────────────────────────
   useEffect(() => {
@@ -455,14 +583,18 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
 
     if (watched.e_copy) {
       const docUploaded = !!(uploads.pdf.url || uploads.docx.url);
-      if (!docUploaded || !watched.ebook_price || watched.ebook_price <= 0) return false;
+      if (!docUploaded || watched.ebook_price === undefined || watched.ebook_price === null || watched.ebook_price < 0) return false;
     }
     if (watched.paper_back || watched.hard_cover) {
-      if (!watched.page_count || watched.page_count <= 0) return false;
-      if (!watched.size) return false;
+      if (!uploads.pdf.url || !watched.page_count || watched.page_count <= 0) return false;
+      if (watched.trim_size_mode === "custom") {
+        if (!watched.custom_width_in || !watched.custom_height_in || !matchedSizeBucket) return false;
+      } else if (!watched.size) {
+        return false;
+      }
     }
     return true;
-  }, [watched, uploads]);
+  }, [watched, uploads, matchedSizeBucket]);
 
   // ── Mutations ───────────────────────────────────────────────────────────────
   const { mutate: submitBook, isPending } =
@@ -477,7 +609,7 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
         );
       },
       onError: (err) =>
-        toast({ variant: "destructive", title: "Submission Failed", description: err.message }),
+        toast({ variant: "destructive", title: "Could not save book", description: getFriendlyBookError(err.message) }),
     });
 
   // ── Submit ──────────────────────────────────────────────────────────────────
@@ -487,12 +619,16 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
       return;
     }
     if (values.e_copy && !uploads.pdf.url && !uploads.docx.url) {
-      toast({ variant: "destructive", title: "Missing Document", description: "Upload a PDF or DOCX for the e-book." });
+      toast({ variant: "destructive", title: "Missing e-book file", description: "Upload a PDF or DOCX for the e-book." });
+      return;
+    }
+    if ((values.paper_back || values.hard_cover) && !uploads.pdf.url) {
+      toast({ variant: "destructive", title: "Missing print PDF", description: "Upload the print-ready PDF for your physical book." });
       return;
     }
     const finalAuthorId = values.author_id || sessionAuthorId;
     if (!finalAuthorId) {
-      toast({ variant: "destructive", title: "Validation Error", description: "Author context is missing." });
+      toast({ variant: "destructive", title: "Missing author", description: "Please choose the author for this book." });
       return;
     }
 
@@ -513,19 +649,41 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
       paper_back:  !!values.paper_back,
       hard_cover:  !!values.hard_cover,
       e_copy:      !!values.e_copy,
+      admin_private_notes: values.admin_private_notes || undefined,
+      size_bucket: matchedSizeBucket ?? undefined,
+      display_width_in: values.display_width_in ?? undefined,
+      display_height_in: values.display_height_in ?? undefined,
       price: values.e_copy
         ? (values.ebook_price     || 0)
         : (values.paperback_price || values.hardcover_price || 0),
       variants: [
         ...(values.paper_back ? [{
           format:     "paperback" as const,
-          size:       values.size || "A5",
+          size:       matchedSizeBucket || values.size || "A5",
+          size_bucket: matchedSizeBucket || values.size || "A5",
+          trim_size_mode: values.trim_size_mode || "standard",
+          paper_type: values.paper_type,
+          lamination_type: values.lamination_type,
+          flap_type: values.flap_type || "none",
+          custom_width_in: values.custom_width_in ?? undefined,
+          custom_height_in: values.custom_height_in ?? undefined,
+          display_width_in: values.display_width_in ?? undefined,
+          display_height_in: values.display_height_in ?? undefined,
           list_price: values.paperback_price!,
           status:     "active"   as const,
         }] : []),
         ...(values.hard_cover ? [{
           format:     "hardcover" as const,
-          size:       values.size || "A5",
+          size:       matchedSizeBucket || values.size || "A5",
+          size_bucket: matchedSizeBucket || values.size || "A5",
+          trim_size_mode: values.trim_size_mode || "standard",
+          paper_type: values.paper_type,
+          lamination_type: values.lamination_type,
+          flap_type: values.flap_type || "none",
+          custom_width_in: values.custom_width_in ?? undefined,
+          custom_height_in: values.custom_height_in ?? undefined,
+          display_width_in: values.display_width_in ?? undefined,
+          display_height_in: values.display_height_in ?? undefined,
           list_price: values.hardcover_price!,
           status:     "active"   as const,
         }] : []),
@@ -614,6 +772,91 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                   )}
                 />
 
+                {bookFeatureToggles?.subtitle && (
+                  <FormField
+                    control={form.control}
+                    name="subtitle"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="font-bold text-xs">SUBTITLE</FormLabel>
+                        <FormControl>
+                          <Input className="input-gumroad" {...field} value={field.value ?? ""} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {bookFeatureToggles?.language && (
+                    <FormField
+                      control={form.control}
+                      name="default_language"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="font-bold text-xs uppercase">Language</FormLabel>
+                          <Select value={field.value ?? "English"} onValueChange={field.onChange}>
+                            <FormControl>
+                              <SelectTrigger className="input-gumroad">
+                                <SelectValue placeholder="Select language" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent className="bg-white">
+                              {COMMON_BOOK_LANGUAGES.map((language) => (
+                                <SelectItem key={language} value={language}>
+                                  {language}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </FormItem>
+                      )}
+                    />
+                  )}
+
+                  {bookFeatureToggles?.isbn && (
+                    <FormField
+                      control={form.control}
+                      name="isbn"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="font-bold text-xs uppercase">ISBN</FormLabel>
+                          <FormControl>
+                            <Input
+                              className="input-gumroad"
+                              inputMode="numeric"
+                              {...field}
+                              value={field.value ?? ""}
+                              onChange={(e) => field.onChange(e.target.value.replace(/\D/g, ""))}
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  )}
+
+                  {bookFeatureToggles?.publication_date && (
+                    <FormField
+                      control={form.control}
+                      name="publication_date"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="font-bold text-xs uppercase">Publication Date</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="date"
+                              className="input-gumroad"
+                              value={field.value ? new Date(field.value).toISOString().split("T")[0] : ""}
+                              onChange={(e) => field.onChange(e.target.value ? new Date(e.target.value) : undefined)}
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  )}
+                </div>
+
                 {/* Author select (only if not already an author) */}
                 {!sessionAuthorId && (
                   <FormField
@@ -692,6 +935,71 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
               </div>
             </section>
 
+            {customFieldDefinitions.length > 0 && (
+              <section className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <span className="h-8 w-8 bg-black text-white flex items-center justify-center font-bold">+</span>
+                  <h3 className="font-bold uppercase tracking-tight">Additional Information</h3>
+                </div>
+
+                <div className="bg-white border-2 border-black p-6 space-y-4">
+                  {customFieldDefinitions
+                    .filter((field) => field.enabled && field.show_on_creator_view !== false)
+                    .map((field) => (
+                      <FormField
+                        key={field.key}
+                        control={form.control}
+                        name={`custom_fields.${field.key}` as any}
+                        render={({ field: valueField }) => (
+                          <FormItem>
+                            <FormLabel className="font-bold text-xs uppercase">{field.label}</FormLabel>
+                            <FormControl>
+                              {field.field_type === "textarea" ? (
+                                <Textarea
+                                  className="input-gumroad min-h-[120px]"
+                                  value={(valueField.value as string) ?? ""}
+                                  onChange={(e) => valueField.onChange(e.target.value)}
+                                  placeholder={field.placeholder}
+                                />
+                              ) : field.field_type === "select" ? (
+                                <Select onValueChange={valueField.onChange} value={(valueField.value as string) ?? ""}>
+                                  <SelectTrigger className="input-gumroad">
+                                    <SelectValue placeholder={field.placeholder || `Select ${field.label}`} />
+                                  </SelectTrigger>
+                                  <SelectContent className="rounded-none border-2 border-black bg-white">
+                                    {(field.options ?? []).map((option) => (
+                                      <SelectItem key={option.value} value={option.value}>
+                                        {option.label}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              ) : field.field_type === "checkbox" ? (
+                                <div className="flex items-center gap-2">
+                                  <Checkbox checked={!!valueField.value} onCheckedChange={valueField.onChange} />
+                                  <span className="text-sm font-medium">{field.help_text || field.label}</span>
+                                </div>
+                              ) : (
+                                <Input
+                                  type={field.field_type === "number" ? "number" : field.field_type === "date" ? "date" : "text"}
+                                  className="input-gumroad"
+                                  value={(valueField.value as string) ?? ""}
+                                  onChange={(e) => valueField.onChange(field.field_type === "number" ? Number(e.target.value) : e.target.value)}
+                                  placeholder={field.placeholder}
+                                />
+                              )}
+                            </FormControl>
+                            {field.help_text && (
+                              <p className="text-[10px] font-medium opacity-50">{field.help_text}</p>
+                            )}
+                          </FormItem>
+                        )}
+                      />
+                    ))}
+                </div>
+              </section>
+            )}
+
             {/* ── Section 2: Format & Pricing ────────────────────────── */}
             <section className="space-y-4">
               <div className="flex items-center gap-2">
@@ -706,6 +1014,7 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                   <div className="flex gap-6">
                     <div className="flex items-center gap-2">
                       <Checkbox
+                        disabled={bookFeatureToggles?.paperback === false || bookFeatureToggles?.physical_printing === false}
                         checked={!!watched.paper_back}
                         onCheckedChange={(v) => form.setValue("paper_back", !!v)}
                       />
@@ -713,6 +1022,7 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                     </div>
                     <div className="flex items-center gap-2">
                       <Checkbox
+                        disabled={bookFeatureToggles?.hardcover === false || bookFeatureToggles?.physical_printing === false}
                         checked={!!watched.hard_cover}
                         onCheckedChange={(v) => form.setValue("hard_cover", !!v)}
                       />
@@ -724,7 +1034,28 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                     <div className="space-y-6 pl-6 border-l-2 border-black animate-in fade-in slide-in-from-top-2">
 
                       {/* Size + Page count row */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <FormField
+                          control={form.control}
+                          name="trim_size_mode"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="text-[10px] font-black uppercase">Trim Size Mode *</FormLabel>
+                              <Select onValueChange={field.onChange} value={field.value}>
+                                <FormControl>
+                                  <SelectTrigger className="input-gumroad">
+                                    <SelectValue placeholder="Select Size Mode" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent className="rounded-none border-2 border-black bg-white">
+                                  <SelectItem value="standard">Standard Size</SelectItem>
+                                  <SelectItem value="custom">Custom Size</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </FormItem>
+                          )}
+                        />
+
                         <FormField
                           control={form.control}
                           name="size"
@@ -733,14 +1064,14 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                               <FormLabel className="text-[10px] font-black uppercase">Book Size *</FormLabel>
                               <Select onValueChange={field.onChange} value={field.value}>
                                 <FormControl>
-                                  <SelectTrigger className="input-gumroad">
+                                  <SelectTrigger className="input-gumroad" disabled={watched.trim_size_mode === "custom"}>
                                     <SelectValue placeholder="Select Size" />
                                   </SelectTrigger>
                                 </FormControl>
                                 <SelectContent className="rounded-none border-2 border-black bg-white">
-                                  <SelectItem value="A6">A6 — Pocket (105 × 148 mm)</SelectItem>
-                                  <SelectItem value="A5">A5 — Standard (148 × 210 mm)</SelectItem>
-                                  <SelectItem value="A4">A4 — Large (210 × 297 mm)</SelectItem>
+                                  <SelectItem value="A6">A6 — 4.10 x 5.80 in</SelectItem>
+                                  <SelectItem value="A5">A5 — 5.83 x 8.27 in</SelectItem>
+                                  <SelectItem value="A4">A4 — 8.27 x 11.69 in</SelectItem>
                                 </SelectContent>
                               </Select>
                               <FormMessage />
@@ -772,8 +1103,111 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                         />
                       </div>
 
+                      {watched.trim_size_mode === "custom" && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <FormField
+                            control={form.control}
+                            name="custom_width_in"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel className="text-[10px] font-black uppercase">Custom Width (in)</FormLabel>
+                                <FormControl>
+                                  <Input
+                                    type="number"
+                                    className="input-gumroad"
+                                    value={field.value ?? ""}
+                                    onChange={(e) => field.onChange(e.target.value === "" ? null : Number(e.target.value))}
+                                  />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={form.control}
+                            name="custom_height_in"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel className="text-[10px] font-black uppercase">Custom Height (in)</FormLabel>
+                                <FormControl>
+                                  <Input
+                                    type="number"
+                                    className="input-gumroad"
+                                    value={field.value ?? ""}
+                                    onChange={(e) => field.onChange(e.target.value === "" ? null : Number(e.target.value))}
+                                  />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <FormField
+                          control={form.control}
+                          name="paper_type"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="text-[10px] font-black uppercase">Paper Type</FormLabel>
+                              <Select onValueChange={field.onChange} value={field.value}>
+                                <FormControl><SelectTrigger className="input-gumroad"><SelectValue /></SelectTrigger></FormControl>
+                                <SelectContent className="rounded-none border-2 border-black bg-white">
+                                  <SelectItem value="cream">Cream</SelectItem>
+                                  <SelectItem value="white">White</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="lamination_type"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="text-[10px] font-black uppercase">Lamination</FormLabel>
+                              <Select onValueChange={field.onChange} value={field.value}>
+                                <FormControl><SelectTrigger className="input-gumroad"><SelectValue /></SelectTrigger></FormControl>
+                                <SelectContent className="rounded-none border-2 border-black bg-white">
+                                  <SelectItem value="matte">Matte</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </FormItem>
+                          )}
+                        />
+                        {bookFeatureToggles?.flap !== false && (
+                          <FormField
+                            control={form.control}
+                            name="flap_type"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel className="text-[10px] font-black uppercase">Flaps</FormLabel>
+                                <Select onValueChange={field.onChange} value={field.value}>
+                                  <FormControl><SelectTrigger className="input-gumroad"><SelectValue /></SelectTrigger></FormControl>
+                                  <SelectContent className="rounded-none border-2 border-black bg-white">
+                                    <SelectItem value="none">None</SelectItem>
+                                    <SelectItem value="single">Single Flap</SelectItem>
+                                    <SelectItem value="double">Double Flap</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </FormItem>
+                            )}
+                          />
+                        )}
+                      </div>
+
+                      <div className="border-2 border-black bg-[#f9f6f0] p-4 text-xs font-bold">
+                        <p className="uppercase text-[10px] tracking-widest opacity-40">Calculated Size Bucket</p>
+                        <p className="mt-2">
+                          {matchedSizeBucket
+                            ? `${matchedSizeBucket} · ${formatDimensionsInches(watched.display_width_in ?? undefined, watched.display_height_in ?? undefined) ?? "—"}`
+                            : watched.trim_size_mode === "custom"
+                            ? "No matching size bucket yet. Adjust the custom dimensions."
+                            : watched.size || "A5"}
+                        </p>
+                      </div>
+
                       {/* Author markup row */}
-                      {systemSettings && watched.page_count && watched.page_count > 0 && (
+                      {!!systemSettings && Number(watched.page_count ?? 0) > 0 && (
                         <div className="space-y-4">
                           <p className="text-[10px] font-black uppercase tracking-widest opacity-50">
                             Your Markup
@@ -951,6 +1385,9 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                                 }}
                               />
                             </FormControl>
+                            <p className="text-[10px] text-gray-500">
+                              Set this to 0 if you want the e-book to be free.
+                            </p>
                             <FormMessage />
                           </FormItem>
                         )}
@@ -994,11 +1431,11 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                     <div className="space-y-2">
                       <div className="space-y-1">
                         <label className="text-[9px] font-black uppercase text-gray-500">
-                          Print-Ready PDF (Optional)
+                          Print-Ready PDF (Required)
                         </label>
                         <p className="text-[9px] text-gray-400 leading-relaxed">
-                          Upload your print-ready PDF and we&apos;ll automatically detect the page count
-                          to calculate your printing cost accurately.
+                          Upload the PDF file that should be printed for this book. We&apos;ll also use it
+                          to detect page count and calculate print pricing.
                         </p>
                       </div>
  
@@ -1254,9 +1691,35 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                         </div>
                       </div>
                     </div>
- 
+
                   </div>
                 )}
+
+                <div className="space-y-2 border-t-2 border-black pt-6">
+                  <FormField
+                    control={form.control}
+                    name="admin_private_notes"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="font-bold text-xs uppercase">
+                          Other Book Notes for Admin
+                        </FormLabel>
+                        <FormControl>
+                          <Textarea
+                            className="input-gumroad min-h-[120px]"
+                            placeholder="Let us know about any other information or special feature about this book not captured above. This will only be visible to the admin team."
+                            {...field}
+                            value={field.value ?? ""}
+                          />
+                        </FormControl>
+                        <p className="text-[11px] text-gray-500">
+                          This note is only visible to the admin team on the backend.
+                        </p>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
  
               </div>
             </section>

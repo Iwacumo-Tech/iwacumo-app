@@ -2,6 +2,7 @@ import { publicProcedure } from "../trpc";
 import { z } from "zod";
 import prisma from "@/lib/prisma";
 import { TRPCError } from "@trpc/server";
+import { auth } from "@/auth";
 
 /**
  * Reader Module
@@ -62,4 +63,75 @@ export const getChapterContent = publicProcedure
         message: "An unexpected error occurred while fetching chapter content",
       });
     }
+  });
+
+const readerBookmarkSchema = z.object({
+  id: z.string(),
+  chapterId: z.string(),
+  chapterTitle: z.string(),
+  page: z.number().int().min(1),
+  createdAt: z.string(),
+});
+
+export const getReaderProgress = publicProcedure
+  .input(
+    z.object({
+      bookId: z.string().min(1, "Book ID is required"),
+    })
+  )
+  .query(async ({ input }) => {
+    const session = await auth();
+
+    if (!session?.user?.id) {
+      return null;
+    }
+
+    const key = `reader_progress:${session.user.id}:${input.bookId}`;
+    const progress = await prisma.systemSettings.findUnique({
+      where: { key },
+    });
+
+    return progress?.value ?? null;
+  });
+
+export const saveReaderProgress = publicProcedure
+  .input(
+    z.object({
+      bookId: z.string().min(1, "Book ID is required"),
+      chapterId: z.string().min(1, "Chapter ID is required"),
+      page: z.number().int().min(1),
+      pageCount: z.number().int().min(1),
+      scrollRatio: z.number().min(0).max(1),
+      fontSize: z.number().min(12).max(32),
+      bookmarks: z.array(readerBookmarkSchema).max(20).default([]),
+    })
+  )
+  .mutation(async ({ input }) => {
+    const session = await auth();
+
+    if (!session?.user?.id) {
+      throw new TRPCError({
+        code: "UNAUTHORIZED",
+        message: "Please sign in to sync your reading progress.",
+      });
+    }
+
+    const key = `reader_progress:${session.user.id}:${input.bookId}`;
+
+    return prisma.systemSettings.upsert({
+      where: { key },
+      update: {
+        value: {
+          ...input,
+          updatedAt: new Date().toISOString(),
+        },
+      },
+      create: {
+        key,
+        value: {
+          ...input,
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    });
   });

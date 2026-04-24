@@ -9,6 +9,7 @@ import Image from "next/image";
 import { trpc } from "@/app/_providers/trpc-provider";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import ProfileUpgradeSection from "./ProfileUpgradeSection";
 
 const ProfileDetails = ({ user, setEditProfile }: any) => {
   const [isUploading, setIsUploading] = useState(false);
@@ -19,6 +20,7 @@ const ProfileDetails = ({ user, setEditProfile }: any) => {
   
   const isPublisher = !!user?.publisher;
   const isAuthor = !!user?.author;
+  const hasReaderProfile = (user?.customers?.length || 0) > 0;
   const canUpdateAvatar = isPublisher || isAuthor;
 
   const storefrontUrl = isPublisher ? `https://${user?.username?.toLowerCase()}.${baseUrl}` : null;
@@ -202,7 +204,9 @@ const ProfileDetails = ({ user, setEditProfile }: any) => {
             ) : (
               <div>
                 <p className="text-[10px] font-black uppercase opacity-40 tracking-widest">Account Level</p>
-                <p className="font-black uppercase italic">{user?.claims[0]?.role_name} Access</p>
+                <p className="font-black uppercase italic">
+                  {hasReaderProfile ? "Reader Access" : user?.claims[0]?.role_name} Access
+                </p>
               </div>
             )}
 
@@ -215,6 +219,8 @@ const ProfileDetails = ({ user, setEditProfile }: any) => {
           </div>
         </div>
       </div>
+
+      <ProfileUpgradeSection user={user} />
     </div>
   );
 };

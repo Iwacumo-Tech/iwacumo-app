@@ -269,7 +269,7 @@ function StaffBookAction({ book, meta }: { book: any; meta: any }) {
         </DropdownMenuItem>
 
         {/* 4. Manage chapters */}
-        {book.e_copy && (
+        {!!book.text_url && (
           <ViewChapters
             id={book.id}
             trigger={<div className={menuButtonStyle}><BookOpen size={14} /> Manage Chapters</div>}

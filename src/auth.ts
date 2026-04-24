@@ -2,7 +2,14 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import NextAuth from "next-auth";
 import { compare } from "bcryptjs";
 import { Permission, Role } from "@prisma/client";
+import { cookies } from "next/headers";
 import prisma from "@/lib/prisma";
+import {
+  ACTIVE_PROFILE_COOKIE,
+  DashboardProfile,
+  resolveActiveProfile,
+} from "@/lib/profile-mode";
+import { checkIsSuperAdmin } from "@/lib/is-super-admin";
 
 export const { handlers, auth } = NextAuth({
   trustHost: true,
@@ -42,8 +49,12 @@ export const { handlers, auth } = NextAuth({
 
               // ── Email verification gate ──────────────────────────────────
               if (!user.email_verified_at) {
-                const roleName = user.claims[0]?.role_name?.toLowerCase() ?? "";
-                const isProtectedRole = roleName === "publisher" || roleName === "author";
+                const roleNames = user.claims
+                  .map((claim) => claim.role_name?.toLowerCase())
+                  .filter((roleName): roleName is string => Boolean(roleName));
+                const isProtectedRole = roleNames.some(
+                  (roleName) => roleName === "publisher" || roleName === "author"
+                );
                 if (isProtectedRole) {
                   throw new Error("EMAIL_NOT_VERIFIED");
                 }
@@ -65,6 +76,7 @@ export const { handlers, auth } = NextAuth({
                 email:      user.email,
                 first_name: user.first_name,
                 last_name:  user.last_name || "",
+                username:   user.username || null,
               };
             }
           }
@@ -88,6 +100,7 @@ export const { handlers, auth } = NextAuth({
                 email:      adminUser.email,
                 first_name: adminUser.first_name || "",
                 last_name:  adminUser.last_name  || "",
+                username:   adminUser.email.split("@")[0] || null,
               };
             }
           }
@@ -113,6 +126,9 @@ export const { handlers, auth } = NextAuth({
         token.name       = (user as any).first_name;
         token.email      = user.email;
         token.last_name  = (user as any).last_name || "";
+        token.username   = (user as any).username || null;
+        token.avatar_url = (user as any).avatar_url || null;
+        token.email_verified = (user as any).email_verified || false;
       }
       return token;
     },
@@ -121,7 +137,7 @@ export const { handlers, auth } = NextAuth({
 
       const claims = await getUserClaims(token.sub);
 
-      const [userProfile, adminProfile] = await Promise.all([
+      const [userProfile, adminProfile, isSuperAdmin] = await Promise.all([
         prisma.user.findUnique({
           where:   { id: token.sub },
           include: { author: true, publisher: true, customers: true },
@@ -133,10 +149,21 @@ export const { handlers, auth } = NextAuth({
             tenant: { include: { publishers: true } },
           },
         }),
+        checkIsSuperAdmin(token.sub),
       ]);
 
       const author_id    = userProfile?.author?.id    || null;
       let publisher_id   = userProfile?.publisher?.id || null;
+      const isEmailVerified = !!userProfile?.email_verified_at || !!adminProfile?.email_verified_at;
+      const username     =
+        userProfile?.username
+        || userProfile?.email?.split("@")[0]
+        || adminProfile?.email?.split("@")[0]
+        || null;
+      const avatar_url   =
+        userProfile?.publisher?.profile_picture
+        || userProfile?.author?.profile_picture
+        || null;
 
       if (adminProfile) {
         publisher_id = publisher_id
@@ -161,6 +188,31 @@ export const { handlers, auth } = NextAuth({
         finalizedRoles.push({ name: "author", active: true, built_in: true } as Role);
       }
 
+      const availableProfiles: DashboardProfile[] = [];
+
+      if (adminProfile || isSuperAdmin) {
+        availableProfiles.push("staff");
+      }
+      if (userProfile?.publisher && isEmailVerified) {
+        availableProfiles.push("publisher");
+      }
+      if (author_id && isEmailVerified) {
+        availableProfiles.push("author");
+      }
+      if (hasCustomerProfiles) {
+        availableProfiles.push("reader");
+      }
+
+      const uniqueProfiles = Array.from(new Set(availableProfiles));
+      const cookieStore = await cookies();
+      const requestedProfile = cookieStore.get(ACTIVE_PROFILE_COOKIE)?.value ?? null;
+      const activeProfile =
+        requestedProfile
+          ? resolveActiveProfile(uniqueProfiles, requestedProfile)
+          : isSuperAdmin && uniqueProfiles.includes("staff")
+            ? "staff"
+            : resolveActiveProfile(uniqueProfiles, requestedProfile);
+
       return {
         ...session,
         user: {
@@ -168,12 +220,17 @@ export const { handlers, auth } = NextAuth({
           first_name: (token.name as string)      || "",
           last_name:  (token.last_name as string)  || "",
           email:      (token.email as string)      || "",
+          username,
+          avatar_url,
+          email_verified: isEmailVerified,
           author_id,
           publisher_id,
           isCustomer: hasCustomerProfiles,
         },
         ...claims,
         roles: finalizedRoles,
+        availableProfiles: uniqueProfiles,
+        activeProfile,
       };
     },
   },

@@ -1,12 +1,23 @@
 // revelation/src/lib/watermark.ts
 import { PDFDocument, rgb, StandardFonts, degrees } from 'pdf-lib'; // 1. Add degrees to your imports
 
-export async function watermarkPdf(pdfBuffer: Buffer, userEmail: string) {
+export async function watermarkPdf(
+  pdfBuffer: Buffer,
+  userEmail: string,
+  options?: {
+    storeLabel?: string | null;
+    storeUrl?: string | null;
+  }
+) {
   const pdfDoc = await PDFDocument.load(pdfBuffer);
   const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const pages = pdfDoc.getPages();
-
-  const watermarkText = `Licensed to: ${userEmail} | Booka. | Secure Digital Edition`;
+  const watermarkParts = [
+    `Licensed to: ${userEmail}`,
+    options?.storeLabel ? `Store: ${options.storeLabel}` : "Iwacumo Secure Digital Edition",
+    options?.storeUrl ? `Access: ${options.storeUrl}` : null,
+  ].filter(Boolean);
+  const watermarkText = watermarkParts.join(" | ");
 
   pages.forEach((page) => {
     const { width, height } = page.getSize();

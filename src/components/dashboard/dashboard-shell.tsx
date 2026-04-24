@@ -1,15 +1,16 @@
 "use client";
 
-import React, { BaseSyntheticEvent, ReactNode, useState } from "react";
-import { usePathname } from "next/navigation";
+import React, { BaseSyntheticEvent, ReactNode, useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { FaBars } from "react-icons/fa";
-import { signOut } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 import { Sidebar }       from "./sidebar";
 import { SidebarMobile } from "./sidebar-mobile";
 import { ShoppingBag }   from "lucide-react";
 import { useCartStore }  from "@/store/use-cart-store";
 import { Button }        from "@/components/ui/button";
 import { KycGate }       from "@/components/kyc/kyc-gate";
+import { ProfileSwitcher } from "./profile-switcher";
 
 export interface Link {
   name: string;
@@ -42,9 +43,29 @@ export default function DashboardShell({
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const pathname    = usePathname();
+  const router      = useRouter();
+  const { data: session } = useSession();
   const toggleCart  = useCartStore((state) => state.toggleCart);
 
   const currentTitle = PATH_TITLES[pathname] || "Dashboard";
+
+  const allowedPrefixes = useMemo(
+    () => links.map((link) => link.url).filter((url) => url !== "/app"),
+    [links]
+  );
+
+  useEffect(() => {
+    if (!pathname) return;
+    if (pathname === "/app" || pathname === "/app/profile") return;
+
+    const isAllowed = allowedPrefixes.some(
+      (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+    );
+
+    if (!isAllowed) {
+      router.replace("/app");
+    }
+  }, [allowedPrefixes, pathname, router]);
 
   const logout = async (e?: BaseSyntheticEvent) => {
     e?.preventDefault();
@@ -83,7 +104,8 @@ export default function DashboardShell({
             </h1>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 md:gap-4">
+            {session?.activeProfile && <ProfileSwitcher />}
             <Button
               onClick={toggleCart}
               className="bg-accent text-black border-2 border-black h-12 px-4 flex items-center gap-3 gumroad-shadow-sm hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-none transition-all"

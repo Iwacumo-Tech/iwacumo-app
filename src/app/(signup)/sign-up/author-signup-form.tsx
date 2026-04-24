@@ -16,11 +16,14 @@ import { useToast } from "@/components/ui/use-toast";
 import { trpc } from "@/app/_providers/trpc-provider";
 import { useState } from "react";
 import { signUpAuthorSchema, TSignUpAuthorSchema } from "@/server/dtos";
+import { Eye, EyeOff } from "lucide-react";
 
 const AuthorSignUpForm = () => {
   const { toast } = useToast();
   const utils = trpc.useUtils();
   const [, setOpen] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const form = useForm({
     resolver: zodResolver(signUpAuthorSchema),
@@ -31,6 +34,7 @@ const AuthorSignUpForm = () => {
       slug: "",
       phone_number: "",
       password: "",
+      confirm_password: "",
     },
   });
 
@@ -56,8 +60,17 @@ const AuthorSignUpForm = () => {
 
   const { control, handleSubmit } = form;
 
-  const onSubmit = (values: TSignUpAuthorSchema) => {
-    addUserMutation.mutate(values);
+  const onSubmit = (values: TSignUpAuthorSchema & { confirm_password?: string }) => {
+    if (values.password !== values.confirm_password) {
+      toast({
+        title: "Passwords do not match",
+        description: "Please make sure both password fields are the same.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const { confirm_password, ...payload } = values;
+    addUserMutation.mutate(payload);
   };
 
   return (
@@ -139,7 +152,39 @@ const AuthorSignUpForm = () => {
               <FormItem>
                 <FormLabel>Password</FormLabel>
                 <FormControl>
-                  <Input {...field} type="password" placeholder="Enter Password" />
+                  <div className="relative">
+                    <Input {...field} type={showPassword ? "text" : "password"} placeholder="Enter Password" className="pr-12" />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((value) => !value)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-black/50 hover:text-black"
+                    >
+                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={control}
+            name={"confirm_password" as never}
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Confirm Password</FormLabel>
+                <FormControl>
+                  <div className="relative">
+                    <Input {...field} type={showConfirmPassword ? "text" : "password"} placeholder="Confirm Password" className="pr-12" />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword((value) => !value)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-black/50 hover:text-black"
+                    >
+                      {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
                 </FormControl>
                 <FormMessage />
               </FormItem>

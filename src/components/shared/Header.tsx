@@ -19,6 +19,7 @@ import { useSession, signOut } from "next-auth/react";
 import { trpc } from "@/app/_providers/trpc-provider";
 import { cn } from "@/lib/utils";
 import { SearchOverlay } from "../shared/SearchOverlay";
+import { UserIdentityBadge } from "./UserIdentityBadge";
 
 function HeaderContent() {
   const pathname = usePathname();
@@ -127,6 +128,20 @@ function HeaderContent() {
 
           <div className="h-4 w-[1px] bg-black/10 mx-2" />
 
+          {session && (
+            <div className="max-w-[180px]">
+              <UserIdentityBadge
+                username={session.user.username}
+                avatarUrl={session.user.avatar_url}
+                firstName={session.user.first_name}
+                lastName={session.user.last_name}
+                className="gap-2.5"
+                avatarClassName="size-9"
+                nameClassName="text-[10px]"
+              />
+            </div>
+          )}
+
           <Link href="/cart" className="relative p-2 group">
             <ShoppingCart className="h-6 w-6 group-hover:scale-110 transition-transform" />
             {userCart.data && userCart.data.length > 0 && (
@@ -177,13 +192,29 @@ function HeaderContent() {
             </SheetTrigger>
             <SheetContent side="right" className="w-full sm:w-[400px] border-l-[1.5px] border-black p-0 bg-background flex flex-col">
               <div className="p-8 border-b-[1.5px] border-black bg-white">
-                 <Image 
-                    src="/black-logo.png" 
-                    alt="Iwacu Logo" 
-                    width={120} 
-                    height={32} 
-                    className="h-8 w-auto brightness-0" 
-                  />
+                <div className="space-y-5">
+                  <Image 
+                      src="/black-logo.png" 
+                      alt="Iwacu Logo" 
+                      width={120} 
+                      height={32} 
+                      className="h-8 w-auto brightness-0" 
+                    />
+                  {session && (
+                    <div className="max-w-full border-[1.5px] border-black rounded-[var(--radius)] px-4 py-3">
+                      <p className="mb-2 text-[10px] font-black uppercase tracking-widest opacity-35">Signed In</p>
+                      <UserIdentityBadge
+                        username={session.user.username}
+                        avatarUrl={session.user.avatar_url}
+                        firstName={session.user.first_name}
+                        lastName={session.user.last_name}
+                        className="w-full"
+                        avatarClassName="size-10"
+                        nameClassName="text-[11px]"
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
               
               <div className="flex-1 p-8 space-y-10 overflow-y-auto">

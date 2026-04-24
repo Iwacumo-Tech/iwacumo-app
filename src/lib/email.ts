@@ -71,6 +71,55 @@ export async function sendBookApprovedEmail({
   });
 }
 
+export async function sendBookDeniedEmail({
+  to, firstName, bookTitle, reviewerNotes,
+}: { to: string; firstName: string; bookTitle: string; reviewerNotes?: string | null }) {
+  return resend.emails.send({
+    from: FROM,
+    to,
+    subject: `Action needed for "${bookTitle}" — iwacumo`,
+    html: `
+      <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111">
+        <p>Hello ${firstName || "Author"},</p>
+        <p>Your book <strong>${bookTitle}</strong> was reviewed, but it was not approved yet.</p>
+        ${reviewerNotes ? `<p><strong>Reviewer note:</strong><br/>${reviewerNotes}</p>` : ""}
+        <p>Please update the book and submit it again when ready.</p>
+      </div>
+    `,
+  });
+}
+
+export async function sendBookIssueReportEmail({
+  to,
+  bookTitle,
+  issueType,
+  description,
+  reporterName,
+  reporterEmail,
+}: {
+  to: string;
+  bookTitle: string;
+  issueType: string;
+  description: string;
+  reporterName?: string | null;
+  reporterEmail?: string | null;
+}) {
+  return resend.emails.send({
+    from: FROM,
+    to,
+    subject: `Book issue reported: "${bookTitle}"`,
+    html: `
+      <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111">
+        <p>A book issue report has been submitted.</p>
+        <p><strong>Book:</strong> ${bookTitle}</p>
+        <p><strong>Issue type:</strong> ${issueType}</p>
+        <p><strong>Reporter:</strong> ${reporterName || "Anonymous"}${reporterEmail ? ` (${reporterEmail})` : ""}</p>
+        <p><strong>Details:</strong><br/>${description}</p>
+      </div>
+    `,
+  });
+}
+
 // ─── Staff invite ─────────────────────────────────────────────────────────────
 
 export async function sendStaffInviteEmail({

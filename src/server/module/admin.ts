@@ -2,6 +2,17 @@ import bcrypt from "bcryptjs";
 import { hash } from "bcryptjs";
 import { z } from "zod";
 import prisma from "@/lib/prisma";
+import {
+  DEFAULT_BOOK_LIVE_PRICING_ENABLED,
+  DEFAULT_BOOK_FEATURE_TOGGLES,
+  DEFAULT_BOOK_FLAP_COSTS,
+  DEFAULT_BOOK_SIZE_RANGES,
+  normalizeBookCustomFields,
+  normalizeBookFeatureToggles,
+  normalizeBookFlapCosts,
+  normalizeBookLivePricingEnabled,
+  normalizeBookSizeRanges,
+} from "@/lib/book-config";
 import { publicProcedure } from "@/server/trpc";
 import {
   createAdminUserSchema,
@@ -491,11 +502,16 @@ export const getSystemSettings = publicProcedure.query(async () => {
       require_business_reg:     true,
       require_proof_of_address: true,
     },
+    book_feature_toggles: normalizeBookFeatureToggles(settingsMap.book_feature_toggles ?? DEFAULT_BOOK_FEATURE_TOGGLES),
+    book_size_ranges: normalizeBookSizeRanges(settingsMap.book_size_ranges ?? DEFAULT_BOOK_SIZE_RANGES),
+    book_flap_costs: normalizeBookFlapCosts(settingsMap.book_flap_costs ?? DEFAULT_BOOK_FLAP_COSTS),
+    book_live_pricing_enabled: normalizeBookLivePricingEnabled(settingsMap.book_live_pricing_enabled ?? DEFAULT_BOOK_LIVE_PRICING_ENABLED),
+    book_custom_fields: normalizeBookCustomFields(settingsMap.book_custom_fields ?? []),
   };
 });
- 
+
 export const updateSystemSettings = publicProcedure
-  .input(z.object({ key: z.string(), value: z.record(z.any()) }))
+  .input(z.object({ key: z.string(), value: z.any() }))
   .mutation(async ({ input }) => {
     return await prisma.systemSettings.upsert({
       where: { key: input.key },

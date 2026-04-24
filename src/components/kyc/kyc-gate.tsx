@@ -173,7 +173,8 @@ export function KycGate({ children }: KycGateProps) {
   const pathname = usePathname();
 
   const userRoles      = (session?.roles ?? []).map((r: any) => r.name?.toLowerCase());
-  const isPublisher    = userRoles.includes("publisher");
+  const activeProfile  = session?.activeProfile;
+  const isPublisher    = activeProfile === "publisher";
   const isStaffOrAdmin = userRoles.some((r: string) => STAFF_ROLES.has(r));
   const needsGate      = isPublisher && !isStaffOrAdmin;
   const publisherId    = (session?.user as any)?.publisher_id as string | undefined;

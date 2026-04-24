@@ -12,17 +12,19 @@
 import {
   Loader2, AlertCircle, CheckCircle2, Clock, Download, ExternalLink,
   BookOpen, FileText, Image as ImageIcon, Package, Tag, User,
-  Building2, ChevronLeft, Layers,
+  Building2, ChevronLeft, Layers, Power, RotateCcw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { cn } from "@/lib/utils";
 import Image from "next/image";
 import Link from "next/link";
+import { useState } from "react";
 import { trpc } from "@/app/_providers/trpc-provider";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import ViewBookPage from "@/components/books/book-viewer";
+import { formatDimensionsInches, getBookLanguageLabel, normalizeBookCustomFields } from "@/lib/book-config";
 
 // ─── Helpers (module level) ───────────────────────────────────────────────────
 
@@ -191,10 +193,16 @@ export default function BookDetailPage() {
   const isStaff      = isSuperAdmin || userRoles.some((r: any) =>
     ["publisher", "author"].includes(r.name)
   );
+  const [denyNotes, setDenyNotes] = useState("");
 
   const { data: book, isLoading, isError } = trpc.getBookById.useQuery(
     { id },
     { enabled: !!id }
+  );
+  const { data: systemSettings } = trpc.getSystemSettings.useQuery();
+  const { data: issueReports } = trpc.getBookIssueReports.useQuery(
+    { id },
+    { enabled: !!id && isStaff }
   );
 
   const { mutate: approveBook, isPending: isApproving } =
@@ -207,6 +215,41 @@ export default function BookDetailPage() {
       onError: (err) =>
         toast({ variant: "destructive", title: "Error", description: err.message }),
     });
+  const { mutate: denyBook, isPending: isDenying } =
+    trpc.denyBook.useMutation({
+      onSuccess: () => {
+        toast({ title: "Denied", description: "The creator has been notified." });
+        setDenyNotes("");
+        utils.getBookById.invalidate({ id });
+        utils.getAllBooks.invalidate();
+      },
+      onError: (err) =>
+        toast({ variant: "destructive", title: "Error", description: err.message }),
+    });
+  const { mutate: updateIssueReportStatus } = trpc.updateBookIssueReportStatus.useMutation({
+    onSuccess: () => {
+      toast({ title: "Report updated", description: "The issue report status has been updated." });
+      utils.getBookIssueReports.invalidate({ id });
+      utils.getBookById.invalidate({ id });
+    },
+    onError: (err) => toast({ variant: "destructive", title: "Error", description: err.message }),
+  });
+  const { mutate: deactivateBook, isPending: isDeactivating } = trpc.deactivateBook.useMutation({
+    onSuccess: () => {
+      toast({ title: "Book deactivated", description: "This book is no longer visible to shoppers." });
+      utils.getBookById.invalidate({ id });
+      utils.getAllBooks.invalidate();
+    },
+    onError: (err) => toast({ variant: "destructive", title: "Error", description: err.message }),
+  });
+  const { mutate: reactivateBook, isPending: isReactivating } = trpc.reactivateBook.useMutation({
+    onSuccess: () => {
+      toast({ title: "Book restored", description: "This book has been reactivated." });
+      utils.getBookById.invalidate({ id });
+      utils.getAllBooks.invalidate();
+    },
+    onError: (err) => toast({ variant: "destructive", title: "Error", description: err.message }),
+  });
 
   if (isLoading) {
     return (
@@ -242,6 +285,12 @@ export default function BookDetailPage() {
     (v: any) => v.format === "paperback" || v.format === "hardcover"
   );
   const ebookVariant = (book.variants ?? []).find((v: any) => v.format === "ebook");
+  const customFieldDefinitions = normalizeBookCustomFields(systemSettings?.book_custom_fields ?? []);
+  const customFieldValues = (book as any)?.metadata?.custom_fields ?? {};
+  const privateCreatorNotes = (book as any)?.metadata?.private_creator_notes ?? null;
+  const internalCustomFields = customFieldDefinitions.filter((field) =>
+    isSuperAdmin ? field.show_on_admin_view : field.show_on_creator_view
+  );
 
   return (
     <div className="space-y-10 pb-20">
@@ -271,15 +320,55 @@ export default function BookDetailPage() {
           </div>
         </div>
 
-        {/* Approve button */}
+        {/* Approval actions */}
         {isSuperAdmin && !book.published && (
+          <div className="w-full md:w-auto md:min-w-[320px] space-y-3">
+            <textarea
+              value={denyNotes}
+              onChange={(event) => setDenyNotes(event.target.value)}
+              placeholder="Optional note if denying this book"
+              className="w-full min-h-[74px] border-2 border-black bg-white p-3 text-xs font-bold outline-none focus:bg-accent/10"
+            />
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Button
+                onClick={() => approveBook({ id: book.id })}
+                disabled={isApproving || isDenying}
+                className="h-14 px-8 bg-emerald-500 hover:bg-emerald-600 text-white font-black uppercase italic tracking-widest rounded-none border-2 border-black gumroad-shadow hover:translate-x-[2px] transition-all text-xs shrink-0"
+              >
+                {isApproving ? <Loader2 size={16} className="animate-spin mr-2" /> : <CheckCircle2 size={16} className="mr-2" />}
+                Approve
+              </Button>
+              <Button
+                onClick={() => denyBook({ id: book.id, reviewerNotes: denyNotes || undefined })}
+                disabled={isApproving || isDenying}
+                className="h-14 px-8 bg-red-600 hover:bg-red-700 text-white font-black uppercase italic tracking-widest rounded-none border-2 border-black gumroad-shadow hover:translate-x-[2px] transition-all text-xs shrink-0"
+              >
+                {isDenying ? <Loader2 size={16} className="animate-spin mr-2" /> : <AlertCircle size={16} className="mr-2" />}
+                Deny
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {isSuperAdmin && book.status === "archived" && (
           <Button
-            onClick={() => approveBook({ id: book.id })}
-            disabled={isApproving}
-            className="h-14 px-10 bg-emerald-500 hover:bg-emerald-600 text-white font-black uppercase italic tracking-widest rounded-none border-2 border-black gumroad-shadow hover:translate-x-[2px] transition-all text-sm shrink-0"
+            onClick={() => reactivateBook({ id: book.id })}
+            disabled={isReactivating || isDeactivating}
+            className="h-12 px-5 bg-white text-black border-2 border-black rounded-none font-black uppercase italic tracking-widest text-xs hover:bg-accent"
           >
-            {isApproving ? <Loader2 size={16} className="animate-spin mr-2" /> : <CheckCircle2 size={16} className="mr-2" />}
-            Approve &amp; Publish
+            {isReactivating ? <Loader2 size={14} className="mr-2 animate-spin" /> : <RotateCcw size={14} className="mr-2" />}
+            Reactivate
+          </Button>
+        )}
+
+        {isSuperAdmin && book.status !== "archived" && (
+          <Button
+            onClick={() => deactivateBook({ id: book.id })}
+            disabled={isReactivating || isDeactivating}
+            className="h-12 px-5 bg-red-600 hover:bg-red-700 text-white border-2 border-black rounded-none font-black uppercase italic tracking-widest text-xs"
+          >
+            {isDeactivating ? <Loader2 size={14} className="mr-2 animate-spin" /> : <Power size={14} className="mr-2" />}
+            Deactivate
           </Button>
         )}
 
@@ -333,8 +422,19 @@ export default function BookDetailPage() {
                 {book.long_description || book.short_description || "—"}
               </span>
             } />
-            <SpecRow label="Language"   value={book.default_language?.toUpperCase()} />
+            <SpecRow label="ISBN"       value={book.isbn ?? "—"} />
+            <SpecRow label="Language"   value={getBookLanguageLabel(book.default_language) ?? "—"} />
             <SpecRow label="Page Count" value={book.page_count ? `${book.page_count} pages` : "—"} />
+            <SpecRow
+              label="Publication Date"
+              value={book.publication_date
+                ? new Date(book.publication_date).toLocaleDateString("en-NG", {
+                    day: "numeric",
+                    month: "long",
+                    year: "numeric",
+                  })
+                : "—"}
+            />
             <SpecRow label="Status"     value={book.status} />
             <SpecRow label="Published"  value={book.published ? "Yes" : "No"} />
             <SpecRow label="Created"    value={new Date(book.created_at).toLocaleDateString("en-NG", {
@@ -364,6 +464,15 @@ export default function BookDetailPage() {
                   </p>
                   <SpecRow label="Sell Price"  value={fmt(v.list_price)} />
                   <SpecRow label="Size"        value={v.size ?? "—"} />
+                  <SpecRow label="Size Bucket" value={v.size_bucket ?? "—"} />
+                  <SpecRow label="Trim Mode"   value={v.trim_size_mode ?? "standard"} />
+                  <SpecRow
+                    label="Display Size"
+                    value={formatDimensionsInches(v.display_width_in, v.display_height_in) || "—"}
+                  />
+                  <SpecRow label="Paper Type"  value={v.paper_type ?? "—"} />
+                  <SpecRow label="Lamination" value={v.lamination_type ?? "—"} />
+                  <SpecRow label="Flap Type"   value={v.flap_type ?? "none"} />
                   <SpecRow label="Weight"      value={v.weight_grams ? `${v.weight_grams}g` : "—"} />
                   <SpecRow label="Stock"       value={v.stock_quantity ?? 0} />
                   <SpecRow label="ISBN"        value={v.isbn13 ?? "Not assigned"} />
@@ -393,6 +502,110 @@ export default function BookDetailPage() {
               value={book.tags?.length ? book.tags.join(", ") : "None"}
             />
           </div>
+
+          <div className="bg-white border-4 border-black gumroad-shadow p-6">
+            <SectionHeader icon={Building2} title="Pricing Adjustments" />
+            <SpecRow
+              label="Author Markup"
+              value={`${book.author_markup_type ?? "percentage"}: ${book.author_markup_value ?? 0}`}
+            />
+            <SpecRow
+              label="Special Add-On Fee"
+              value={book.special_addon_fee ? fmt(book.special_addon_fee) : "—"}
+            />
+            <SpecRow
+              label="Add-On Description"
+              value={book.special_addon_description || "—"}
+            />
+          </div>
+
+          {internalCustomFields.length > 0 && (
+            <div className="bg-white border-4 border-black gumroad-shadow p-6">
+              <SectionHeader icon={Layers} title="Additional Metadata" />
+              {internalCustomFields.map((field) => {
+                const value = customFieldValues[field.key];
+                const displayValue = field.field_type === "checkbox"
+                  ? (value ? "Yes" : "No")
+                  : field.field_type === "date" && value
+                    ? new Date(value).toLocaleDateString("en-NG", {
+                        day: "numeric",
+                        month: "long",
+                        year: "numeric",
+                      })
+                    : value;
+
+                return (
+                  <SpecRow
+                    key={field.key}
+                    label={field.label}
+                    value={displayValue || "—"}
+                  />
+                );
+              })}
+            </div>
+          )}
+
+          {privateCreatorNotes && (
+            <div className="bg-white border-4 border-black gumroad-shadow p-6">
+              <SectionHeader icon={FileText} title="Private Creator Notes" />
+              <p className="text-sm leading-relaxed opacity-80 whitespace-pre-wrap">{privateCreatorNotes}</p>
+            </div>
+          )}
+
+          {isStaff && (
+            <div className="bg-white border-4 border-black gumroad-shadow p-6">
+              <SectionHeader icon={AlertCircle} title="Issue Reports" />
+              {issueReports?.length ? (
+                <div className="space-y-4">
+                  {issueReports.map((report: any) => (
+                    <div key={report.id} className="border-2 border-black/10 p-4 space-y-3">
+                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-widest opacity-50">
+                            {report.issue_type.replaceAll("_", " ")}
+                          </p>
+                          <p className="text-xs font-bold mt-1">
+                            {report.reporter_name || report.reporter_email || "Anonymous reporter"}
+                          </p>
+                        </div>
+                        <span className="inline-flex items-center px-3 py-1 border border-black text-[10px] font-black uppercase tracking-widest">
+                          {report.status}
+                        </span>
+                      </div>
+                      <p className="text-sm leading-relaxed opacity-80">{report.description}</p>
+                      <p className="text-[10px] font-black uppercase tracking-widest opacity-40">
+                        Reported {new Date(report.created_at).toLocaleDateString("en-NG", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </p>
+                      {isSuperAdmin && (
+                        <div className="flex flex-wrap gap-2">
+                          {(["in_review", "resolved", "dismissed"] as const).map((status) => (
+                            <Button
+                              key={status}
+                              type="button"
+                              variant="outline"
+                              className={cn(
+                                "rounded-none border-2 border-black text-[10px] font-black uppercase tracking-widest",
+                                report.status === status && "bg-black text-white"
+                              )}
+                              onClick={() => updateIssueReportStatus({ id: report.id, status })}
+                            >
+                              {status.replaceAll("_", " ")}
+                            </Button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm font-bold opacity-50">No issue reports have been submitted for this book yet.</p>
+              )}
+            </div>
+          )}
 
           {/* Approval action at bottom for long pages */}
           {isSuperAdmin && !book.published && (

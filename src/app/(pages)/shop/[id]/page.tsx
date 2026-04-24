@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
   ChevronLeft, ChevronRight, ShoppingCart, Star, BookOpen,
-  Truck, CheckCircle2, Package, Minus, Plus, Download,
+  Truck, CheckCircle2, Package, Minus, Plus, Download, Globe, CalendarDays, Ruler, Flag,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,7 @@ import { trpc } from "@/app/_providers/trpc-provider";
 import { useToast } from "@/components/ui/use-toast";
 import { useCartStore } from "@/store/use-cart-store";
 import { GUEST_CART_KEY, notifyCartUpdate } from "@/lib/cart-utils";
+import { formatDimensionsInches, getBookLanguageLabel, normalizeBookCustomFields } from "@/lib/book-config";
 
 // ─── Format metadata (module level — hard rule #4) ────────────────────────────
 
@@ -31,6 +32,21 @@ const FORMAT_META: Record<string, {
   paperback: { label: "Paperback", icon: Truck,    description: "Printed & shipped to your door",   maxQty: 99 },
   hardcover: { label: "Hardcover", icon: Package,  description: "Premium hardcover, shipped to you", maxQty: 99 },
 };
+
+function getFriendlyIssueReportError(message?: string) {
+  if (!message) return "Please check the form and try again.";
+
+  try {
+    const parsed = JSON.parse(message);
+    if (Array.isArray(parsed) && typeof parsed[0]?.message === "string") {
+      return parsed[0].message;
+    }
+  } catch {
+    // Ignore JSON parse failure and fall back to plain text handling.
+  }
+
+  return message.length > 180 ? "Please check the form and try again." : message;
+}
 
 // ─── FormatCard (module level) ────────────────────────────────────────────────
 
@@ -148,15 +164,17 @@ export default function ProductDetails() {
   const openCart = useCartStore(state => state.openCart);
 
   const { data: book,    isLoading: bookLoading }    = trpc.getBookById.useQuery({ id });
+  const { data: systemSettings } = trpc.getSystemSettings.useQuery();
   const { data: reviews, isLoading: reviewsLoading } = trpc.getReviewsByBook.useQuery({ book_id: id });
   const createReviewMutation = trpc.createReview.useMutation();
   const addBookToCart        = trpc.createCart.useMutation();
+  const reportBookIssueMutation = trpc.reportBookIssue.useMutation();
 
   // ── Available formats — derived from actual variants only ─────────────────
   const availableFormats = useMemo(() => {
     if (!book?.variants) return [];
     return (["ebook", "paperback", "hardcover"] as const).filter(f =>
-      book.variants!.some(v => v.format.toLowerCase() === f)
+      book.variants!.some((v: any) => v.format.toLowerCase() === f)
     );
   }, [book]);
 
@@ -166,6 +184,10 @@ export default function ProductDetails() {
   const [quantity,       setQuantity]       = useState(1);
   const [reviewRating,   setReviewRating]   = useState(0);
   const [comment,        setComment]        = useState("");
+  const [issueType,      setIssueType]      = useState<"piracy" | "intellectual_property">("piracy");
+  const [issueComment,   setIssueComment]   = useState("");
+  const [isReportOpen,   setIsReportOpen]   = useState(false);
+  const [reportError,    setReportError]    = useState("");
 
   // Auto-select first available format when book loads
   useEffect(() => {
@@ -184,17 +206,33 @@ export default function ProductDetails() {
   }, [selectedFormat]);
 
   // ── Helpers ────────────────────────────────────────────────────────────────
-  const images = [book?.book_cover, book?.book_cover2, book?.book_cover3, book?.book_cover4]
+  const images = [book?.book_cover, book?.book_cover2]
     .filter(Boolean) as string[];
 
   const getVariantPrice = (fmt: string): number => {
-    const variant = book?.variants?.find(v => v.format.toLowerCase() === fmt.toLowerCase());
+    const variant = book?.variants?.find((v: any) => v.format.toLowerCase() === fmt.toLowerCase());
     return variant ? (variant.discount_price ?? variant.list_price) : (book?.price || 0);
   };
 
   const currentPrice  = getVariantPrice(selectedFormat);
   const currentMaxQty = FORMAT_META[selectedFormat]?.maxQty ?? 99;
   const totalPrice    = currentPrice * quantity;
+  const publicCustomFields = useMemo(() => {
+    const definitions = normalizeBookCustomFields(systemSettings?.book_custom_fields ?? []);
+    const valueMap = (book as any)?.metadata?.custom_fields ?? {};
+
+    return definitions.filter((field) => field.enabled && field.show_on_public_page).map((field) => ({
+      ...field,
+      value: valueMap[field.key],
+    })).filter((field) => field.value !== undefined && field.value !== null && field.value !== "");
+  }, [systemSettings?.book_custom_fields, book]);
+  const displayDimensions = useMemo(() => {
+    const firstPhysicalVariant = book?.variants?.find((variant: any) => variant.format === "paperback" || variant.format === "hardcover");
+    if (!firstPhysicalVariant) return null;
+    return formatDimensionsInches((firstPhysicalVariant as any).display_width_in, (firstPhysicalVariant as any).display_height_in);
+  }, [book]);
+  const issueCommentTrimmed = issueComment.trim();
+  const canSubmitIssueReport = issueCommentTrimmed.length >= 10;
 
   // ── Cart handler ───────────────────────────────────────────────────────────
   const handleAddToCart = async () => {
@@ -274,6 +312,34 @@ export default function ProductDetails() {
     }
   };
 
+  const handleIssueReportSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!issueCommentTrimmed) {
+      setReportError("Please describe the issue before sending the report.");
+      return;
+    }
+    if (issueCommentTrimmed.length < 10) {
+      setReportError("Please provide a little more detail before sending the report.");
+      return;
+    }
+
+    try {
+      setReportError("");
+      await reportBookIssueMutation.mutateAsync({
+        book_id: id,
+        issue_type: issueType,
+        description: issueCommentTrimmed,
+        reporter_name: session?.user ? `${session.user.first_name ?? ""} ${session.user.last_name ?? ""}`.trim() : undefined,
+        reporter_email: session?.user?.email ?? "",
+      });
+      setIssueComment("");
+      setIsReportOpen(false);
+      toast({ title: "Report sent", description: "Our team has flagged this book for review." });
+    } catch (error: any) {
+      setReportError(getFriendlyIssueReportError(error.message));
+    }
+  };
+
   const averageRating = reviews?.length
     ? reviews.reduce((acc, r) => acc + r.rating, 0) / reviews.length
     : 0;
@@ -334,7 +400,7 @@ export default function ProductDetails() {
           {/* Title + meta */}
           <div className="space-y-4 border-b-4 border-black pb-8">
             <div className="flex flex-wrap gap-2">
-              {book?.categories?.map(cat => (
+              {book?.categories?.map((cat: any) => (
                 <span key={cat.id} className="bg-black text-white px-3 py-1 text-[10px] font-black uppercase italic">
                   {cat.name}
                 </span>
@@ -359,6 +425,78 @@ export default function ProductDetails() {
           </div>
 
           <p className="text-lg font-medium leading-relaxed text-gray-700">{book?.short_description}</p>
+
+          <div className="border-y-2 border-black/10 py-6 grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="space-y-1">
+              <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Language</p>
+                  <p className="text-sm font-bold flex items-center gap-2"><Globe size={14} /> {getBookLanguageLabel(book?.default_language) || "—"}</p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Publication Date</p>
+              <p className="text-sm font-bold flex items-center gap-2">
+                <CalendarDays size={14} />
+                {book?.publication_date ? new Date(book.publication_date).toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+              </p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Print Length</p>
+              <p className="text-sm font-bold flex items-center gap-2"><BookOpen size={14} /> {book?.page_count ? `${book.page_count} pages` : "—"}</p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Dimensions</p>
+              <p className="text-sm font-bold flex items-center gap-2"><Ruler size={14} /> {displayDimensions || "—"}</p>
+            </div>
+            {book?.subtitle && (
+              <div className="space-y-1 col-span-2">
+                <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Subtitle</p>
+                <p className="text-sm font-bold">{book.subtitle}</p>
+              </div>
+            )}
+            {book?.isbn && (
+              <div className="space-y-1">
+                <p className="text-[10px] font-black uppercase tracking-widest opacity-40">ISBN</p>
+                <p className="text-sm font-bold">{book.isbn}</p>
+              </div>
+            )}
+            <div className="space-y-1">
+              <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Publisher</p>
+              <p className="text-sm font-bold">{(book as any)?.publisher?.name || "—"}</p>
+            </div>
+          </div>
+
+          {publicCustomFields.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {publicCustomFields.map((field) => (
+                <div key={field.key} className="border-2 border-black bg-white p-4">
+                  <p className="text-[10px] font-black uppercase tracking-widest opacity-40">{field.label}</p>
+                  <p className="mt-2 text-sm font-bold">
+                    {field.field_type === "checkbox"
+                      ? field.value ? "Yes" : "No"
+                      : field.field_type === "date"
+                      ? new Date(field.value).toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })
+                      : String(field.value)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex items-center justify-between gap-3 border-b border-black/10 pb-4">
+            <p className="text-xs text-gray-500">
+              Spot a piracy or intellectual property issue?
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setReportError("");
+                setIsReportOpen(true);
+              }}
+              className="inline-flex items-center gap-2 text-xs font-bold text-gray-600 underline underline-offset-4 hover:text-black"
+            >
+              <Flag size={14} />
+              Report this book
+            </button>
+          </div>
 
           {/* ── Format selector ─────────────────────────────────────── */}
           <div className="space-y-3">
@@ -514,6 +652,84 @@ export default function ProductDetails() {
           </TabsContent>
         </Tabs>
       </section>
+
+      {isReportOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-xl border-4 border-black bg-white p-6 gumroad-shadow">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Report Issue</p>
+                <h3 className="mt-2 text-2xl font-black uppercase italic">Piracy or IP Concern</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsReportOpen(false);
+                  setReportError("");
+                }}
+                className="text-xs font-black uppercase underline underline-offset-4"
+              >
+                Close
+              </button>
+            </div>
+
+            <form onSubmit={handleIssueReportSubmit} className="mt-6 space-y-4">
+              <select
+                className="input-gumroad"
+                value={issueType}
+                onChange={(e) => setIssueType(e.target.value as "piracy" | "intellectual_property")}
+              >
+                <option value="piracy">Piracy</option>
+                <option value="intellectual_property">Intellectual Property Issue</option>
+              </select>
+
+              <Textarea
+                value={issueComment}
+                onChange={(e) => {
+                  setIssueComment(e.target.value);
+                  if (reportError) setReportError("");
+                }}
+                className="min-h-[140px] border-2 border-black rounded-none"
+                placeholder="Tell us what seems wrong with this book."
+              />
+
+              <div className="flex items-center justify-between gap-4 text-xs">
+                <p className={cn("font-bold", canSubmitIssueReport ? "text-gray-500" : "text-amber-700")}>
+                  Please enter at least 10 characters.
+                </p>
+                <p className="font-bold text-gray-500">{issueCommentTrimmed.length}/10 minimum</p>
+              </div>
+
+              {reportError && (
+                <div className="border-2 border-red-300 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
+                  {reportError}
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Button
+                  type="submit"
+                  disabled={reportBookIssueMutation.isPending || !canSubmitIssueReport}
+                  className="booka-button-secondary h-12"
+                >
+                  {reportBookIssueMutation.isPending ? "Sending..." : "Submit Report"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setIsReportOpen(false);
+                    setReportError("");
+                  }}
+                  className="h-12 rounded-none border-2 border-black"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

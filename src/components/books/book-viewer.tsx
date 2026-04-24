@@ -13,7 +13,6 @@ import {
   Loader2, 
   ChevronLeft, 
   ChevronRight, 
-  BookOpen,
   Lock
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -26,17 +25,27 @@ interface BookViewerProps {
 export default function ViewBookPage({ book }: BookViewerProps) {
   const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
   const [isGenerating, setIsGenerating] = useState(false);
+  const hasReaderContent = !!book.text_url;
 
   const watermarkMutation = trpc.generateWatermarkedEbook.useMutation({
-    onSuccess: (data) => {
-      const link = document.createElement("a");
-      link.href = data.url;
-      link.download = `${book.title}_Secure_Copy.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      setIsGenerating(false);
-      toast.success("Secure PDF generated successfully!");
+    onSuccess: async (data) => {
+      try {
+        const response = await fetch(data.url);
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = objectUrl;
+        link.download = data.filename ?? `${book.title}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.open(objectUrl, "_blank", "noopener,noreferrer");
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+        toast.success("Secure PDF generated successfully!");
+      } catch {
+        window.open(data.url, "_blank", "noopener,noreferrer");
+        toast.success("Secure PDF opened successfully.");
+      }
     },
     onError: (err) => {
       toast.error(`Error: ${err.message}`);
@@ -64,10 +73,8 @@ export default function ViewBookPage({ book }: BookViewerProps) {
     }
   };
 
-  const currentChapter = book.chapters[currentChapterIndex];
-
   // CASE A: SECURE PDF DOWNLOAD FLOW
-  if (book.pdf_url) {
+  if (!hasReaderContent && book.pdf_url) {
     return (
       <div className="min-h-[80vh] flex items-center justify-center p-6 bg-[#FAF9F6]">
         <motion.div 
@@ -125,15 +132,7 @@ export default function ViewBookPage({ book }: BookViewerProps) {
     );
   }
 
-  // CASE B: ZEN READER FLOW (DOCX/TEXT)
-  if (!book.chapters.length) {
-    return (
-      <div className="min-h-[70vh] flex flex-col items-center justify-center opacity-20 italic font-black uppercase">
-        <BookOpen size={48} className="mb-4" />
-        <p>No readable content found</p>
-      </div>
-    );
-  }
+  const currentChapter = book.chapters[currentChapterIndex] ?? null;
 
   return (
     <div className="min-h-screen bg-white">
@@ -142,7 +141,7 @@ export default function ViewBookPage({ book }: BookViewerProps) {
         <div className="max-w-4xl mx-auto h-full flex items-center justify-between">
           <button 
             onClick={handlePrevChapter}
-            disabled={currentChapterIndex === 0}
+            disabled={!book.chapters.length || currentChapterIndex === 0}
             className="p-3 hover:bg-accent rounded-full transition-all border-[1.5px] border-transparent hover:border-black disabled:opacity-10"
           >
             <ChevronLeft size={24} />
@@ -152,14 +151,20 @@ export default function ViewBookPage({ book }: BookViewerProps) {
             <h2 className="text-[13px] font-black uppercase italic tracking-tighter line-clamp-1">
               {book.title}
             </h2>
-            <p className="text-[9px] font-bold uppercase text-accent bg-black px-2 py-0.5 rounded-full inline-block mt-1">
-              Chapter {currentChapter.chapter_number}
-            </p>
+            {currentChapter ? (
+              <p className="text-[9px] font-bold uppercase text-accent bg-black px-2 py-0.5 rounded-full inline-block mt-1">
+                Chapter {currentChapter.chapter_number}
+              </p>
+            ) : (
+              <p className="text-[9px] font-bold uppercase text-accent bg-black px-2 py-0.5 rounded-full inline-block mt-1">
+                Web Reader
+              </p>
+            )}
           </div>
 
           <button 
             onClick={handleNextChapter}
-            disabled={currentChapterIndex === book.chapters.length - 1}
+            disabled={!book.chapters.length || currentChapterIndex === book.chapters.length - 1}
             className="p-3 hover:bg-accent rounded-full transition-all border-[1.5px] border-transparent hover:border-black disabled:opacity-10"
           >
             <ChevronRight size={24} />
@@ -170,7 +175,7 @@ export default function ViewBookPage({ book }: BookViewerProps) {
       {/* Main Reader Surface */}
       <main className="max-w-4xl mx-auto py-12 px-6">
         <motion.div
-          key={currentChapter.id}
+          key={currentChapter?.id ?? `${book.id}-reader`}
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}

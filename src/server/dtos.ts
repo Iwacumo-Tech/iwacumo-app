@@ -105,14 +105,30 @@ export const signUpAuthorSchema = z.object({
   phone_number: z.string().optional(),
 });
 
+export const upgradeToAuthorSchema = z.object({});
+
+export const upgradeToPublisherSchema = z.object({
+  organization_name: z.string().min(2, "Organization name is required"),
+  tenant_slug: z.string().min(3, "Storefront slug must be at least 3 characters"),
+});
+
 // Schema for book variant
 export const bookVariantSchema = z.object({
   id: z.string().optional(),
   format: z.enum(["hardcover", "paperback", "ebook", "audiobook"]),
   size: z.enum(["A5", "A4", "A6"]).optional(), // Size for physical books only
+  size_bucket: z.enum(["A5", "A4", "A6"]).optional(),
+  trim_size_mode: z.enum(["standard", "custom"]).optional().default("standard"),
+  paper_type: z.enum(["cream", "white"]).optional(),
+  lamination_type: z.enum(["matte"]).optional(),
+  flap_type: z.enum(["none", "single", "double"]).optional().default("none"),
+  custom_width_in: z.number().positive().optional(),
+  custom_height_in: z.number().positive().optional(),
+  display_width_in: z.number().positive().optional(),
+  display_height_in: z.number().positive().optional(),
   isbn13: z.string().optional(),
   language: z.string().default("en"),
-  list_price: z.number().positive("List price must be positive"),
+  list_price: z.number().min(0, "List price cannot be negative"),
   currency: z.string().default("USD"),
   discount_price: z.number().positive("Discount price must be positive").optional(),
   stock_quantity: z.number().int().min(0).default(0),
@@ -131,6 +147,7 @@ export const createBookSchema = z.object({
   id: z.string().optional(),
   title: z.string().min(1, "Title is required"),
   subtitle: z.string().optional(),
+  isbn: z.string().regex(/^\d*$/, "ISBN must contain only numbers").optional().or(z.literal("")),
   slug: z.string().optional(),
   description: z.string().optional(),
   synopsis: z.string().optional(),
@@ -139,7 +156,7 @@ export const createBookSchema = z.object({
   subject_tags: z.array(z.string()).optional(),
   edition: z.string().optional(),
   publication_date: z.date().optional(),
-  default_language: z.string().default("en"),
+  default_language: z.string().default("English"),
   
   page_count: z.number().int().optional().nullable(),
   
@@ -173,12 +190,25 @@ export const createBookSchema = z.object({
   reader_url: z.string().url("Reader URL must be valid").nullable().optional(),
 
   size: z.enum(["A6", "A5", "A4"]).optional().default("A5"),
+  trim_size_mode: z.enum(["standard", "custom"]).optional().default("standard"),
+  paper_type: z.enum(["cream", "white"]).optional(),
+  lamination_type: z.enum(["matte"]).optional(),
+  flap_type: z.enum(["none", "single", "double"]).optional().default("none"),
+  custom_width_in: z.number().positive().optional().nullable(),
+  custom_height_in: z.number().positive().optional().nullable(),
+  size_bucket: z.enum(["A6", "A5", "A4"]).optional(),
+  display_width_in: z.number().positive().optional().nullable(),
+  display_height_in: z.number().positive().optional().nullable(),
  
   // Author/publisher markup on top of the platform base cost.
   // "percentage" = % of print cost added on top.
   // "flat"       = fixed NGN amount added on top.
   author_markup_type: z.enum(["percentage", "flat"]).optional().default("percentage"),
   author_markup_value: z.number().min(0).optional().default(0),
+  special_addon_fee: z.number().min(0).optional().default(0),
+  special_addon_description: z.string().optional(),
+  custom_fields: z.record(z.any()).optional().default({}),
+  admin_private_notes: z.string().optional(),
   
   publisher_id: z.string().optional(),
   author_id: z.string().optional(),
@@ -221,11 +251,21 @@ export const createBookSchema = z.object({
 
   // 4. Validate E-Book Price
   if (data.e_copy) {
-    if (!data.ebook_price || data.ebook_price <= 0) {
+    if (data.ebook_price === undefined || data.ebook_price === null || data.ebook_price < 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "E-book price is required",
         path: ["ebook_price"],
+      });
+    }
+  }
+
+  if ((data.paper_back || data.hard_cover) && data.trim_size_mode === "custom") {
+    if (!data.custom_width_in || !data.custom_height_in) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Custom width and height are required for custom trim size",
+        path: ["custom_width_in"],
       });
     }
   }
@@ -361,6 +401,14 @@ export type TSignUpAuthorSchema = z.infer<typeof signUpAuthorSchema>;
 
 export const deletePublisherSchema = z.object({ id: z.string() });
 export const deleteUserSchema = z.object({ id: z.string() });
+export const toggleUserActiveSchema = z.object({
+  id: z.string(),
+  active: z.boolean(),
+});
+export const permanentDeleteUserSchema = z.object({
+  id: z.string(),
+  confirmation: z.literal("delete"),
+});
 export type TCreateUserSchema = z.infer<typeof createUserSchema>;
 export type TAssignRoleSchema = z.infer<typeof assignRoleSchema>;
 
@@ -369,11 +417,27 @@ export const getSystemSettingsSchema = z.object({});
 
 export const updateSystemSettingsSchema = z.object({
   key: z.string(),
-  value: z.record(z.any()),
+  value: z.any(),
+});
+
+export const reportBookIssueSchema = z.object({
+  book_id: z.string(),
+  issue_type: z.enum(["piracy", "intellectual_property"]),
+  description: z.string().min(10, "Please provide more detail"),
+  reporter_name: z.string().optional(),
+  reporter_email: z.string().email().optional().or(z.literal("")),
+});
+
+export const updateBookIssueReportStatusSchema = z.object({
+  id: z.string(),
+  status: z.enum(["open", "in_review", "resolved", "dismissed"]),
+  reviewer_notes: z.string().optional(),
 });
 
 export type TGetSystemSettings = z.infer<typeof getSystemSettingsSchema>;
 export type TUpdateSystemSettings = z.infer<typeof updateSystemSettingsSchema>;
+export type TReportBookIssueSchema = z.infer<typeof reportBookIssueSchema>;
+export type TUpdateBookIssueReportStatusSchema = z.infer<typeof updateBookIssueReportStatusSchema>;
 
 // AdminUser schemas
 export const createAdminUserSchema = z.object({

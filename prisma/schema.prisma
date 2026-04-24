@@ -223,6 +223,7 @@ model Book {
   id                String        @id @default(uuid())
   title             String
   subtitle          String?
+  isbn              String?
   slug              String?       @unique
   description       String?
   synopsis          String?
@@ -257,6 +258,10 @@ model Book {
   primary_author_id String?
   primary_author    Author?       @relation("PrimaryAuthor", fields: [primary_author_id], references: [id])
   metadata          Json?
+  author_markup_type String       @default("percentage")
+  author_markup_value Float       @default(0)
+  special_addon_fee  Float        @default(0)
+  special_addon_description String?
   chapters          Chapter[]
   variants          BookVariant[]
   publisher         Publisher?    @relation(fields: [publisher_id], references: [id])
@@ -264,6 +269,7 @@ model Book {
   author            Author?        @relation(fields: [author_id], references: [id])
   purchased_by      Customer[]    @relation("PurchasedBooks")
   reviews           Review[]
+  issue_reports     BookIssueReport[]
 
   split_override  BookSplitOverride?
 
@@ -296,6 +302,15 @@ model BookVariant {
   book              Book      @relation(fields: [book_id], references: [id], onDelete: Cascade)
   format            String    // hardcover, paperback, ebook, audiobook, etc.
   size              String?   // A5, A4, A6 (for physical books only)
+  size_bucket       String?
+  trim_size_mode    String?   @default("standard")
+  paper_type        String?
+  lamination_type   String?
+  flap_type         String?   @default("none")
+  custom_width_in   Float?
+  custom_height_in  Float?
+  display_width_in  Float?
+  display_height_in Float?
   isbn13            String?   @unique
   language          String    @default("en")
   list_price        Float
@@ -312,6 +327,23 @@ model BookVariant {
   updated_at        DateTime  @updatedAt
 
   @@map("book_variants")
+}
+
+model BookIssueReport {
+  id                 String   @id @default(uuid())
+  book_id            String
+  book               Book     @relation(fields: [book_id], references: [id], onDelete: Cascade)
+  reporter_user_id   String?
+  reporter_name      String?
+  reporter_email     String?
+  issue_type         String
+  description        String
+  status             String   @default("open")
+  reviewer_notes     String?
+  created_at         DateTime @default(now())
+  updated_at         DateTime @updatedAt
+
+  @@map("book_issue_reports")
 }
 
 model BookSplitOverride {

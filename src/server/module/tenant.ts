@@ -118,7 +118,7 @@ export const getStoreBySlug = publicProcedure
         publishers: {
           include: {
             books: {
-              where: { published: true, deleted_at: null },
+              where: { published: true, deleted_at: null, status: { not: "archived" } },
               include: { 
                 author: { include: { user: true } }, 
                 categories: true 

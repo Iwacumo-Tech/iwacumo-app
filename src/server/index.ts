@@ -12,12 +12,16 @@ import {
   checkSlugAvailability,
   checkUsernameAvailability,
   updateProfileImage,
+  toggleUserActive,
+  permanentDeleteUser,
+  upgradeToAuthor,
+  upgradeToPublisher,
 } from "./module/user";
 import { publicProcedure, router } from "./trpc";
 import { createPublisher, deletePublisher, getAllPublisher, updatePublisher, getPublisherByOrganization, getPublisherDashboardStats } from "./module/publisher";
 import { createAuthor, updateAuthor, deleteAuthor, getAllAuthors, signUpAuthor, getAuthorsByUser, getAuthorBySlug, getAuthorDashboardStats } from "./module/author";
 import { createCustomer, deleteCustomer, updateCustomer, getAllCustomers, getCustomersByUser, registerGuestAndTransferCart, getCustomerDashboardStats } from "./module/customer";
-import { createBook, deleteBook, updateBook, getAllBooks, getBookById, getCategories, getBookByAuthor, toggleBookFeatured,getAllFeaturedBooks, getNewArrivalBooks, getPurchasedBooksByCustomer, generateWatermarkedEbook, searchEverything, approveBook } from "./module/book";
+import { createBook, deleteBook, updateBook, getAllBooks, getBookById, getCategories, getBookByAuthor, toggleBookFeatured,getAllFeaturedBooks, getNewArrivalBooks, getPurchasedBooksByCustomer, generateWatermarkedEbook, searchEverything, approveBook, denyBook, deactivateBook, reactivateBook, reportBookIssue, getBookIssueReports, updateBookIssueReportStatus } from "./module/book";
 import { createChapter, updateChapter, deleteChapter, getAllChapters, viewChapterById, getAllChapterByBookId } from "./module/chapter";
 import {  updateTenant, getAllTenant, deleteTenant, createTenant, getTenantBySlug, getStoreBySlug } from "./module/tenant";
 import { imageUpload, createImageUpload } from "./module/uploads";
@@ -65,7 +69,7 @@ import {
   getTransactionsByOrder,
 } from "./module/payment";
 // import { generateWatermarkedEbook } from "./module/watermark";
-import { getChapterContent } from "./module/reader";
+import { getChapterContent, getReaderProgress, saveReaderProgress } from "./module/reader";
 
 import {
   forgotPassword,
@@ -123,6 +127,10 @@ export const appRouter = router({
   resendVerificationEmail,
   updateUserProfile,
   updateProfileImage,
+  toggleUserActive,
+  permanentDeleteUser,
+  upgradeToAuthor,
+  upgradeToPublisher,
   signUpCustomer,
   deleteUser,
   getUserById,
@@ -170,6 +178,12 @@ export const appRouter = router({
   getAllFeaturedBooks,
   getNewArrivalBooks,
   approveBook,
+  denyBook,
+  deactivateBook,
+  reactivateBook,
+  reportBookIssue,
+  getBookIssueReports,
+  updateBookIssueReportStatus,
   searchEverything,
   updateTenant,
   getTenantBySlug,
@@ -216,6 +230,8 @@ export const appRouter = router({
   generateWatermarkedEbook,
   // Reader management
   getChapterContent,
+  getReaderProgress,
+  saveReaderProgress,
   // AdminUser management
   createAdminUser,
   updateAdminUser,

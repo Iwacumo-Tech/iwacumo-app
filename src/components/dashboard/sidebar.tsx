@@ -6,6 +6,8 @@ import { SidebarItem } from "./sidebar-item";
 import { type Link } from "./dashboard-shell";
 import { ExternalLink, Store } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useSession } from "next-auth/react";
+import { UserIdentityBadge } from "@/components/shared/UserIdentityBadge";
 
 export function Sidebar({ logout, links, storeSlug, setIsOpen }: {
   links:      any[];
@@ -13,6 +15,8 @@ export function Sidebar({ logout, links, storeSlug, setIsOpen }: {
   storeSlug?: string | null;
   setIsOpen?: (val: boolean) => void;
 }) {
+  const { data: session } = useSession();
+
   const handleItemClick = () => {
     if (setIsOpen) setIsOpen(false);
   };
@@ -48,6 +52,21 @@ export function Sidebar({ logout, links, storeSlug, setIsOpen }: {
 
       {/* ── Footer ────────────────────────────────────────────────────── */}
       <div className="p-4 space-y-2 border-t-4 border-black shrink-0 bg-white">
+        {session?.user && (
+          <div className="mb-3 rounded-[var(--radius)] border-[1.5px] border-black px-3 py-3">
+            <p className="mb-2 text-[9px] font-black uppercase tracking-widest opacity-35">Signed In</p>
+            <UserIdentityBadge
+              username={session.user.username}
+              avatarUrl={session.user.avatar_url}
+              firstName={session.user.first_name}
+              lastName={session.user.last_name}
+              className="w-full"
+              avatarClassName="size-10"
+              nameClassName="text-[10px]"
+            />
+          </div>
+        )}
+
         {storeSlug && (
           <SidebarItem
             name="View My Store"

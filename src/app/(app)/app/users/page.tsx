@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { DataTable } from "@/components/table/data-table";
 import { buildAdminColumns, type AdminUserRow } from "@/components/admin/admin-columns";
 import { adminRoleColumns }  from "@/components/admin/admin-role-columns";
+import { buildUserColumns, type PlatformUserRow } from "@/components/admin/user-columns";
 import { InviteStaffForm }   from "@/components/admin/invite-staff-form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/use-toast";
@@ -17,6 +18,7 @@ export default function UsersPage() {
   const utils             = trpc.useUtils();
 
   const { data: allStaff, isLoading } = trpc.getAllAdminUsers.useQuery();
+  const { data: allUsers, isLoading: usersLoading } = trpc.getAllUsers.useQuery();
 
   const resendMutation = trpc.resendStaffInvite.useMutation({
     onSuccess: () => {
@@ -25,6 +27,36 @@ export default function UsersPage() {
     },
     onError: (err) => {
       toast({ variant: "destructive", title: "Failed to resend", description: err.message });
+    },
+  });
+  const toggleUserActiveMutation = trpc.toggleUserActive.useMutation({
+    onSuccess: (_, variables) => {
+      toast({
+        title: variables.active ? "User restored" : "User suspended",
+        description: variables.active ? "This user can sign in again." : "This user can no longer sign in until restored.",
+      });
+      utils.getAllUsers.invalidate();
+    },
+    onError: (err) => {
+      toast({ variant: "destructive", title: "Action failed", description: err.message });
+    },
+  });
+  const softDeleteUserMutation = trpc.deleteUser.useMutation({
+    onSuccess: () => {
+      toast({ title: "User deleted", description: "The account has been removed from the active user list." });
+      utils.getAllUsers.invalidate();
+    },
+    onError: (err) => {
+      toast({ variant: "destructive", title: "Delete failed", description: err.message });
+    },
+  });
+  const permanentDeleteUserMutation = trpc.permanentDeleteUser.useMutation({
+    onSuccess: () => {
+      toast({ title: "User permanently deleted", description: "The account has been removed permanently." });
+      utils.getAllUsers.invalidate();
+    },
+    onError: (err) => {
+      toast({ variant: "destructive", title: "Permanent delete failed", description: err.message });
     },
   });
 
@@ -45,10 +77,40 @@ export default function UsersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [resendMutation.isPending]
   );
+  const userColumns = useMemo(
+    () =>
+      buildUserColumns({
+        onToggleActive: (row) =>
+          toggleUserActiveMutation.mutate({ id: row.id, active: !row.active }),
+        onSoftDelete: (row) => {
+          if (window.confirm(`Delete ${row.email} from the active user list?`)) {
+            softDeleteUserMutation.mutate({ id: row.id });
+          }
+        },
+        onPermanentDelete: (row) => {
+          const confirmation = window.prompt(`Type "delete" to permanently delete ${row.email}.`);
+          if (confirmation === "delete") {
+            permanentDeleteUserMutation.mutate({ id: row.id, confirmation });
+          }
+        },
+        isBusy:
+          toggleUserActiveMutation.isPending ||
+          softDeleteUserMutation.isPending ||
+          permanentDeleteUserMutation.isPending,
+      }),
+    [
+      permanentDeleteUserMutation,
+      softDeleteUserMutation,
+      toggleUserActiveMutation,
+    ]
+  );
 
   const total   = allStaff?.length ?? 0;
   const active  = allStaff?.filter((u) => u.status === "active").length  ?? 0;
   const pending = allStaff?.filter((u) => u.status === "invited").length ?? 0;
+  const totalUsers = allUsers?.length ?? 0;
+  const activeUsers = allUsers?.filter((user) => user.active && !user.deleted_at).length ?? 0;
+  const suspendedUsers = allUsers?.filter((user) => !user.active && !user.deleted_at).length ?? 0;
 
   return (
     <div className="space-y-10">
@@ -67,11 +129,14 @@ export default function UsersPage() {
       </div>
 
       {/* ── Stat cards ─────────────────────────────────────── */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 xl:grid-cols-3 gap-4">
         {[
-          { label: "Total Staff",   value: total,   Icon: Users       },
-          { label: "Active",        value: active,  Icon: ShieldCheck },
-          { label: "Pending Setup", value: pending, Icon: MailX       },
+          { label: "Total Staff",   value: total,         Icon: Users       },
+          { label: "Active Staff",  value: active,        Icon: ShieldCheck },
+          { label: "Pending Setup", value: pending,       Icon: MailX       },
+          { label: "All Users",     value: totalUsers,    Icon: Users       },
+          { label: "Active Users",  value: activeUsers,   Icon: ShieldCheck },
+          { label: "Suspended",     value: suspendedUsers, Icon: MailX      },
         ].map(({ label, value, Icon }) => (
           <div key={label} className="booka-stat-card flex items-center gap-4">
             <div className="w-10 h-10 border-2 border-black flex items-center justify-center shrink-0">
@@ -102,10 +167,10 @@ export default function UsersPage() {
       )}
 
       {/* ── Tables ─────────────────────────────────────────── */}
-      {isLoading ? (
+      {isLoading || usersLoading ? (
         <div className="flex items-center gap-3 p-8 text-sm font-bold uppercase tracking-widest opacity-40">
           <Loader2 size={16} className="animate-spin" />
-          Loading staff...
+          Loading people...
         </div>
       ) : (
         <Tabs defaultValue="staff">
@@ -113,6 +178,7 @@ export default function UsersPage() {
             {[
               { value: "staff", label: "All Staff"        },
               { value: "roles", label: "Role Assignments" },
+              { value: "users", label: "All Users"        },
             ].map(({ value, label }) => (
               <TabsTrigger
                 key={value}
@@ -141,6 +207,15 @@ export default function UsersPage() {
               data={allStaff ?? []}
               filterColumnId="email"           
               filterInputPlaceholder="Search roles by email..." 
+            />
+          </TabsContent>
+
+          <TabsContent value="users" className="mt-6">
+            <DataTable<PlatformUserRow, any>
+              columns={userColumns}
+              data={(allUsers ?? []) as PlatformUserRow[]}
+              filterColumnId="email"
+              filterInputPlaceholder="Search users by email..."
             />
           </TabsContent>
         </Tabs>

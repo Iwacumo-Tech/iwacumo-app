@@ -21,9 +21,17 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { CheckCircle2, Loader2 } from "lucide-react";
 import { useEffect } from "react";
-import { useForm, Control } from "react-hook-form";
+import { useFieldArray, useForm, Control } from "react-hook-form";
 
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DEFAULT_BOOK_LIVE_PRICING_ENABLED,
+  DEFAULT_BOOK_FEATURE_TOGGLES,
+  DEFAULT_BOOK_FLAP_COSTS,
+  DEFAULT_BOOK_SIZE_RANGES,
+  normalizeBookLivePricingEnabled,
+  type BookCustomFieldDefinition,
+} from "@/lib/book-config";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -54,6 +62,27 @@ type SettingsFormValues = {
     require_business_reg:     boolean;
     require_proof_of_address: boolean;
   };
+  book_feature_toggles: {
+    subtitle: boolean;
+    language: boolean;
+    isbn: boolean;
+    publication_date: boolean;
+    paperback: boolean;
+    hardcover: boolean;
+    flap: boolean;
+    physical_printing: boolean;
+  };
+  book_size_ranges: {
+    A6: { width_min: number; width_max: number; height_min: number; height_max: number };
+    A5: { width_min: number; width_max: number; height_min: number; height_max: number };
+    A4: { width_min: number; width_max: number; height_min: number; height_max: number };
+  };
+  book_flap_costs: {
+    single: { A6: number; A5: number; A4: number };
+    double: { A6: number; A5: number; A4: number };
+  };
+  book_live_pricing_enabled: boolean;
+  book_custom_fields: BookCustomFieldDefinition[];
 };
 
 // ---------------------------------------------------------------------------
@@ -99,7 +128,11 @@ const DEFAULTS: SettingsFormValues = {
     require_business_reg:     true,
     require_proof_of_address: true,
   },
-
+  book_feature_toggles: DEFAULT_BOOK_FEATURE_TOGGLES,
+  book_size_ranges: DEFAULT_BOOK_SIZE_RANGES,
+  book_flap_costs: DEFAULT_BOOK_FLAP_COSTS,
+  book_live_pricing_enabled: DEFAULT_BOOK_LIVE_PRICING_ENABLED,
+  book_custom_fields: [],
 };
 
 // ---------------------------------------------------------------------------
@@ -216,6 +249,10 @@ export default function SystemSettingsPage() {
     });
 
   const form = useForm<SettingsFormValues>({ defaultValues: DEFAULTS });
+  const { fields: customFields, append, remove } = useFieldArray({
+    control: form.control,
+    name: "book_custom_fields",
+  });
 
   // Hydrate the form once the server response arrives.
   // flatNumber handles both clean data and the previously-nested broken data.
@@ -232,6 +269,11 @@ export default function SystemSettingsPage() {
       shipping_rates: (settings as any).shipping_rates ?? DEFAULTS.shipping_rates,
       book_weights:   (settings as any).book_weights   ?? DEFAULTS.book_weights,
       kyc_requirements: (settings as any).kyc_requirements ?? DEFAULTS.kyc_requirements,
+      book_feature_toggles: (settings as any).book_feature_toggles ?? DEFAULTS.book_feature_toggles,
+      book_size_ranges: (settings as any).book_size_ranges ?? DEFAULTS.book_size_ranges,
+      book_flap_costs: (settings as any).book_flap_costs ?? DEFAULTS.book_flap_costs,
+      book_live_pricing_enabled: normalizeBookLivePricingEnabled((settings as any).book_live_pricing_enabled),
+      book_custom_fields: (settings as any).book_custom_fields ?? DEFAULTS.book_custom_fields,
     });
   }, [settings, form]);
 
@@ -246,6 +288,11 @@ export default function SystemSettingsPage() {
     updateSettings({ key: "shipping_rates", value: data.shipping_rates });
     updateSettings({ key: "book_weights",   value: data.book_weights });
     updateSettings({ key: "kyc_requirements", value: data.kyc_requirements });
+    updateSettings({ key: "book_feature_toggles", value: data.book_feature_toggles });
+    updateSettings({ key: "book_size_ranges", value: data.book_size_ranges });
+    updateSettings({ key: "book_flap_costs", value: data.book_flap_costs });
+    updateSettings({ key: "book_live_pricing_enabled", value: data.book_live_pricing_enabled });
+    updateSettings({ key: "book_custom_fields", value: data.book_custom_fields });
   };
 
   return (
@@ -460,6 +507,238 @@ export default function SystemSettingsPage() {
             </section>
 
             {/* ── Save ─────────────────────────────────────────────────── */}
+            <section className="bg-white border-4 border-black gumroad-shadow p-6 space-y-6">
+              <div>
+                <h2 className="text-2xl font-black uppercase italic">Book Feature Toggles</h2>
+                <p className="text-xs opacity-50 font-medium mt-1">
+                  Control which standard book options appear in author and publisher book setup.
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                {[
+                  { field: "book_feature_toggles.subtitle" as const, label: "Subtitle" },
+                  { field: "book_feature_toggles.language" as const, label: "Language" },
+                  { field: "book_feature_toggles.isbn" as const, label: "ISBN" },
+                  { field: "book_feature_toggles.publication_date" as const, label: "Publication Date" },
+                  { field: "book_feature_toggles.paperback" as const, label: "Paperback" },
+                  { field: "book_feature_toggles.hardcover" as const, label: "Hardcover" },
+                  { field: "book_feature_toggles.flap" as const, label: "Flaps" },
+                  { field: "book_feature_toggles.physical_printing" as const, label: "Physical Printing" },
+                ].map(({ field, label }) => (
+                  <FormField
+                    key={field}
+                    control={form.control}
+                    name={field}
+                    render={({ field: f }) => (
+                      <FormItem className="flex items-start gap-4 space-y-0 border-2 border-black p-4">
+                        <FormControl>
+                          <Checkbox
+                            checked={f.value as boolean}
+                            onCheckedChange={f.onChange}
+                            className="mt-0.5 border-2 border-black data-[state=checked]:bg-black data-[state=checked]:text-accent"
+                          />
+                        </FormControl>
+                        <FormLabel className="font-black uppercase text-[11px] tracking-widest cursor-pointer">
+                          {label}
+                        </FormLabel>
+                      </FormItem>
+                    )}
+                  />
+                ))}
+              </div>
+            </section>
+
+            <section className="bg-white border-4 border-black gumroad-shadow p-6 space-y-8">
+              <div>
+                <h2 className="text-2xl font-black uppercase italic">Book Size Ranges</h2>
+                <p className="text-xs opacity-50 font-medium mt-1">
+                  Match custom width and height in inches to the nearest supported A6, A5, or A4 bucket.
+                </p>
+              </div>
+              {(["A6", "A5", "A4"] as const).map((size) => (
+                <div key={size} className="space-y-4">
+                  <h3 className="text-lg font-black uppercase italic border-b-2 border-black pb-2">{size}</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <NumberField control={form.control} name={`book_size_ranges.${size}.width_min`} label={`${size} Width Min`} />
+                    <NumberField control={form.control} name={`book_size_ranges.${size}.width_max`} label={`${size} Width Max`} />
+                    <NumberField control={form.control} name={`book_size_ranges.${size}.height_min`} label={`${size} Height Min`} />
+                    <NumberField control={form.control} name={`book_size_ranges.${size}.height_max`} label={`${size} Height Max`} />
+                  </div>
+                </div>
+              ))}
+            </section>
+
+            <section className="bg-white border-4 border-black gumroad-shadow p-6 space-y-8">
+              <div>
+                <h2 className="text-2xl font-black uppercase italic">Flap Costs</h2>
+                <p className="text-xs opacity-50 font-medium mt-1">
+                  Additional constants applied to physical print cost before markup.
+                </p>
+              </div>
+              {(["single", "double"] as const).map((flapType) => (
+                <div key={flapType} className="space-y-4">
+                  <h3 className="text-lg font-black uppercase italic border-b-2 border-black pb-2">
+                    {flapType === "single" ? "Single Flap" : "Double Flap"}
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <NumberField control={form.control} name={`book_flap_costs.${flapType}.A6`} label="A6" />
+                    <NumberField control={form.control} name={`book_flap_costs.${flapType}.A5`} label="A5" />
+                    <NumberField control={form.control} name={`book_flap_costs.${flapType}.A4`} label="A4" />
+                  </div>
+                </div>
+              ))}
+            </section>
+
+            <section className="bg-white border-4 border-black gumroad-shadow p-6 space-y-6">
+              <div>
+                <h2 className="text-2xl font-black uppercase italic">Physical Price Mode</h2>
+                <p className="text-xs opacity-50 font-medium mt-1">
+                  When live pricing is on, physical book prices update automatically when print settings change.
+                </p>
+              </div>
+
+              <FormField
+                control={form.control}
+                name="book_live_pricing_enabled"
+                render={({ field }) => (
+                  <FormItem className="flex items-start gap-4 space-y-0 border-2 border-black p-4">
+                    <FormControl>
+                      <Checkbox
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        className="mt-0.5 border-2 border-black data-[state=checked]:bg-black data-[state=checked]:text-accent"
+                      />
+                    </FormControl>
+                    <div className="space-y-1">
+                      <FormLabel className="font-black uppercase text-[11px] tracking-widest cursor-pointer">
+                        Enable Live Physical Pricing
+                      </FormLabel>
+                      <p className="text-xs opacity-60">
+                        Existing paperback and hardcover book prices will follow the latest admin print settings.
+                      </p>
+                    </div>
+                  </FormItem>
+                )}
+              />
+            </section>
+
+            <section className="bg-white border-4 border-black gumroad-shadow p-6 space-y-8">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div>
+                  <h2 className="text-2xl font-black uppercase italic">Book Custom Fields</h2>
+                  <p className="text-xs opacity-50 font-medium mt-1">
+                    Add extra metadata fields that appear automatically on book setup and detail pages.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  onClick={() => append({
+                    key: `field_${Date.now()}`,
+                    label: "New Field",
+                    field_type: "text",
+                    placeholder: "",
+                    help_text: "",
+                    options: [],
+                    required: false,
+                    enabled: true,
+                    show_on_public_page: false,
+                    show_on_creator_view: true,
+                    show_on_admin_view: true,
+                    section: "Additional Information",
+                    sort_order: customFields.length,
+                  })}
+                  className="rounded-none border-2 border-black bg-black text-white"
+                >
+                  Add Field
+                </Button>
+              </div>
+
+              <div className="space-y-6">
+                {customFields.map((fieldItem, index) => (
+                  <div key={fieldItem.id} className="border-2 border-black p-4 space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <FormField control={form.control} name={`book_custom_fields.${index}.key`} render={({ field }) => (
+                        <FormItem><FormLabel className="font-bold text-xs uppercase">Key</FormLabel><FormControl><Input className="input-gumroad" {...field} /></FormControl></FormItem>
+                      )} />
+                      <FormField control={form.control} name={`book_custom_fields.${index}.label`} render={({ field }) => (
+                        <FormItem><FormLabel className="font-bold text-xs uppercase">Label</FormLabel><FormControl><Input className="input-gumroad" {...field} /></FormControl></FormItem>
+                      )} />
+                      <FormField control={form.control} name={`book_custom_fields.${index}.field_type`} render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="font-bold text-xs uppercase">Field Type</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl><SelectTrigger className="input-gumroad"><SelectValue /></SelectTrigger></FormControl>
+                            <SelectContent className="rounded-none border-2 border-black bg-white text-black">
+                              <SelectItem value="text">Text</SelectItem>
+                              <SelectItem value="textarea">Textarea</SelectItem>
+                              <SelectItem value="number">Number</SelectItem>
+                              <SelectItem value="date">Date</SelectItem>
+                              <SelectItem value="select">Select</SelectItem>
+                              <SelectItem value="checkbox">Checkbox</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </FormItem>
+                      )} />
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <FormField control={form.control} name={`book_custom_fields.${index}.placeholder`} render={({ field }) => (
+                        <FormItem><FormLabel className="font-bold text-xs uppercase">Placeholder</FormLabel><FormControl><Input className="input-gumroad" {...field} value={field.value ?? ""} /></FormControl></FormItem>
+                      )} />
+                      <FormField control={form.control} name={`book_custom_fields.${index}.help_text`} render={({ field }) => (
+                        <FormItem><FormLabel className="font-bold text-xs uppercase">Help Text</FormLabel><FormControl><Input className="input-gumroad" {...field} value={field.value ?? ""} /></FormControl></FormItem>
+                      )} />
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {[
+                        { name: `book_custom_fields.${index}.enabled` as const, label: "Enabled" },
+                        { name: `book_custom_fields.${index}.required` as const, label: "Required" },
+                        { name: `book_custom_fields.${index}.show_on_public_page` as const, label: "Public" },
+                        { name: `book_custom_fields.${index}.show_on_creator_view` as const, label: "Creator" },
+                        { name: `book_custom_fields.${index}.show_on_admin_view` as const, label: "Admin" },
+                      ].map((checkboxField) => (
+                        <FormField
+                          key={checkboxField.name}
+                          control={form.control}
+                          name={checkboxField.name}
+                          render={({ field }) => (
+                            <FormItem className="flex items-center gap-2 space-y-0">
+                              <FormControl><Checkbox checked={!!field.value} onCheckedChange={field.onChange} /></FormControl>
+                              <FormLabel className="font-bold text-xs uppercase">{checkboxField.label}</FormLabel>
+                            </FormItem>
+                          )}
+                        />
+                      ))}
+                    </div>
+
+                    <FormField control={form.control} name={`book_custom_fields.${index}.options`} render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="font-bold text-xs uppercase">Select Options</FormLabel>
+                        <FormControl>
+                          <Input
+                            className="input-gumroad"
+                            value={Array.isArray(field.value) ? field.value.map((option: any) => option?.label ?? option?.value ?? "").join(", ") : ""}
+                            onChange={(e) => {
+                              const options = e.target.value.split(",").map((value) => value.trim()).filter(Boolean).map((value) => ({ label: value, value }));
+                              field.onChange(options);
+                            }}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )} />
+
+                    <div className="flex justify-end">
+                      <Button type="button" variant="destructive" onClick={() => remove(index)} className="rounded-none">
+                        Remove Field
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
             <div className="flex justify-end pt-2">
               <Button
                 type="submit"

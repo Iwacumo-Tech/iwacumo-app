@@ -5,7 +5,8 @@ import { trpc } from "@/app/_providers/trpc-provider";
 import { useBookStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ChevronLeft, ChevronRight, Save, Settings, Type } from "lucide-react";
+import { ChevronLeft, ChevronRight, Save, Bookmark, BookmarkPlus, Type } from "lucide-react";
+import { useSession } from "next-auth/react";
 
 /**
  * Location: src/components/books/reader.tsx
@@ -23,8 +24,17 @@ interface Comment {
   comment: string;
 }
 
+interface ReaderBookmark {
+  id: string;
+  chapterId: string;
+  chapterTitle: string;
+  page: number;
+  createdAt: string;
+}
+
 const Reader: React.FC<ReaderProps> = ({ bookId, initialChapterId }) => {
   const { content, setContent } = useBookStore();
+  const { data: session } = useSession();
   
   // State for Navigation
   const [activeChapterId, setActiveChapterId] = useState<string | undefined>(initialChapterId);
@@ -37,6 +47,14 @@ const Reader: React.FC<ReaderProps> = ({ bookId, initialChapterId }) => {
   const [showCommentBox, setShowCommentBox] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [pendingChanges, setPendingChanges] = useState<string | null>(null);
+  const [fontSize, setFontSize] = useState(18);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageCount, setPageCount] = useState(1);
+  const [bookmarks, setBookmarks] = useState<ReaderBookmark[]>([]);
+  const [readerContainer, setReaderContainer] = useState<HTMLDivElement | null>(null);
+  const [chapterEdgeJump, setChapterEdgeJump] = useState<"start" | "end" | null>(null);
+
+  const progressStorageKey = `reader_progress_local:${bookId}`;
 
   // 1. Fetch Chapter List for Navigation
   const { data: chapters } = trpc.getAllChapterByBookId.useQuery(
@@ -49,6 +67,11 @@ const Reader: React.FC<ReaderProps> = ({ bookId, initialChapterId }) => {
     { bookId, chapterId: activeChapterId || "" },
     { enabled: !!activeChapterId }
   );
+  const { data: cloudProgress } = trpc.getReaderProgress.useQuery(
+    { bookId },
+    { enabled: !!bookId && !!session?.user?.id }
+  );
+  const saveReaderProgress = trpc.saveReaderProgress.useMutation();
 
   useEffect(() => {
     if (initialChapterId && initialChapterId !== activeChapterId) {
@@ -59,10 +82,12 @@ const Reader: React.FC<ReaderProps> = ({ bookId, initialChapterId }) => {
   // Sync initial content to store when chapter changes
   useEffect(() => {
     if (chapterData?.content) {
-      setContent(chapterData.content);
+      const savedChapterNotes =
+        activeChapterId ? localStorage.getItem(`book_${bookId}_chapter_${activeChapterId}`) : null;
+      setContent(savedChapterNotes || chapterData.content);
       setPendingChanges(null);
     }
-  }, [chapterData, setContent]);
+  }, [chapterData, setContent, activeChapterId, bookId]);
 
   // Set first chapter if none provided
   useEffect(() => {
@@ -70,6 +95,100 @@ const Reader: React.FC<ReaderProps> = ({ bookId, initialChapterId }) => {
       setActiveChapterId(chapters[0].id);
     }
   }, [chapters, activeChapterId]);
+
+  useEffect(() => {
+    try {
+      const localProgressRaw = localStorage.getItem(progressStorageKey);
+      const localProgress = localProgressRaw ? JSON.parse(localProgressRaw) : null;
+      const sourceProgress = (cloudProgress as any) ?? localProgress;
+
+      if (sourceProgress?.fontSize) {
+        setFontSize(sourceProgress.fontSize);
+      }
+      if (Array.isArray(sourceProgress?.bookmarks)) {
+        setBookmarks(sourceProgress.bookmarks);
+      }
+      if (sourceProgress?.chapterId && !initialChapterId) {
+        setActiveChapterId(sourceProgress.chapterId);
+      }
+    } catch {
+      // Ignore local progress parse issues and continue with defaults.
+    }
+  }, [cloudProgress, initialChapterId, progressStorageKey]);
+
+  useEffect(() => {
+    if (!readerContainer) return;
+
+    const updatePagination = () => {
+      const nextPageCount = Math.max(1, Math.ceil(readerContainer.scrollHeight / readerContainer.clientHeight));
+      const nextCurrentPage = Math.min(
+        nextPageCount,
+        Math.max(1, Math.floor(readerContainer.scrollTop / readerContainer.clientHeight) + 1)
+      );
+      setPageCount(nextPageCount);
+      setCurrentPage(nextCurrentPage);
+    };
+
+    updatePagination();
+    readerContainer.addEventListener("scroll", updatePagination);
+    window.addEventListener("resize", updatePagination);
+
+    return () => {
+      readerContainer.removeEventListener("scroll", updatePagination);
+      window.removeEventListener("resize", updatePagination);
+    };
+  }, [readerContainer, content, pendingChanges, fontSize]);
+
+  useEffect(() => {
+    if (!readerContainer) return;
+    const sourceProgress = cloudProgress as any;
+    const chapterProgress = sourceProgress?.chapterId === activeChapterId ? sourceProgress : null;
+
+    if (chapterEdgeJump) {
+      requestAnimationFrame(() => {
+        const maxScroll = Math.max(0, readerContainer.scrollHeight - readerContainer.clientHeight);
+        readerContainer.scrollTo({ top: chapterEdgeJump === "end" ? maxScroll : 0 });
+        setChapterEdgeJump(null);
+      });
+      return;
+    }
+
+    if (!chapterProgress) {
+      readerContainer.scrollTo({ top: 0 });
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      const maxScroll = Math.max(0, readerContainer.scrollHeight - readerContainer.clientHeight);
+      readerContainer.scrollTo({ top: maxScroll * (chapterProgress.scrollRatio ?? 0) });
+    });
+  }, [activeChapterId, cloudProgress, readerContainer, content, pendingChanges, fontSize, chapterEdgeJump]);
+
+  useEffect(() => {
+    if (!activeChapterId || !readerContainer) return;
+
+    const timeoutId = window.setTimeout(() => {
+      const maxScroll = Math.max(1, readerContainer.scrollHeight - readerContainer.clientHeight);
+      const scrollRatio = Math.min(1, readerContainer.scrollTop / maxScroll);
+      const payload = {
+        bookId,
+        chapterId: activeChapterId,
+        page: currentPage,
+        pageCount,
+        scrollRatio,
+        fontSize,
+        bookmarks,
+      };
+
+      localStorage.setItem(progressStorageKey, JSON.stringify(payload));
+
+      if (session?.user?.id) {
+        saveReaderProgress.mutate(payload);
+      }
+    }, 600);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [activeChapterId, bookId, currentPage, pageCount, fontSize, bookmarks, readerContainer?.scrollTop, session?.user?.id]);
 
   // --- Formatting Logic (Maintained from your snippet) ---
 
@@ -138,6 +257,62 @@ const Reader: React.FC<ReaderProps> = ({ bookId, initialChapterId }) => {
     }
   };
 
+  const handlePrevPage = () => {
+    if (!readerContainer) return;
+    if (currentPage <= 1) {
+      if (chapters && currentIndex > 0) {
+        setChapterEdgeJump("end");
+        setActiveChapterId(chapters[currentIndex - 1].id);
+      }
+      return;
+    }
+    readerContainer.scrollBy({ top: -readerContainer.clientHeight, behavior: "smooth" });
+  };
+
+  const handleNextPage = () => {
+    if (!readerContainer) return;
+    if (currentPage >= pageCount) {
+      if (chapters && currentIndex < chapters.length - 1) {
+        setChapterEdgeJump("start");
+        setActiveChapterId(chapters[currentIndex + 1].id);
+      }
+      return;
+    }
+    readerContainer.scrollBy({ top: readerContainer.clientHeight, behavior: "smooth" });
+  };
+
+  const handleAddBookmark = () => {
+    if (!activeChapterId) return;
+
+    const nextBookmark: ReaderBookmark = {
+      id: `${activeChapterId}-${currentPage}`,
+      chapterId: activeChapterId,
+      chapterTitle: chapterData?.title || `Chapter ${currentPage}`,
+      page: currentPage,
+      createdAt: new Date().toISOString(),
+    };
+
+    setBookmarks((currentBookmarks) => {
+      if (currentBookmarks.some((bookmark) => bookmark.id === nextBookmark.id)) {
+        return currentBookmarks;
+      }
+
+      return [nextBookmark, ...currentBookmarks].slice(0, 20);
+    });
+  };
+
+  const jumpToBookmark = (bookmark: ReaderBookmark) => {
+    setActiveChapterId(bookmark.chapterId);
+
+    requestAnimationFrame(() => {
+      if (!readerContainer) return;
+      readerContainer.scrollTo({
+        top: Math.max(0, (bookmark.page - 1) * readerContainer.clientHeight),
+        behavior: "smooth",
+      });
+    });
+  };
+
   // Navigation handlers
   const currentIndex = chapters?.findIndex((c) => c.id === activeChapterId) ?? -1;
   const handleNext = () => {
@@ -159,20 +334,35 @@ const Reader: React.FC<ReaderProps> = ({ bookId, initialChapterId }) => {
   return (
     <div className="flex flex-col w-full max-w-5xl mx-auto bg-background min-h-[70vh]">
       {/* Header / Save Bar */}
-      <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-background/95 backdrop-blur z-10">
-        <div className="flex items-center gap-4">
-          <h2 className="font-semibold">{chapterData?.title || "Loading Chapter..."}</h2>
+      <div className="sticky top-0 z-10 border-b bg-background/95 p-3 backdrop-blur md:p-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="min-w-0">
+          <h2 className="truncate text-sm font-semibold md:text-base">{chapterData?.title || "Loading Chapter..."}</h2>
           {pendingChanges && <span className="text-xs text-orange-500 font-medium animate-pulse">Unsaved changes</span>}
         </div>
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" onClick={handleSave} disabled={!pendingChanges}>
-            <Save className="h-4 w-4 mr-2" /> Save Notes
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="outline" className="h-9 rounded-none px-3 text-xs md:text-sm" onClick={() => setFontSize((current) => Math.max(14, current - 2))}>
+            <Type className="mr-1 h-4 w-4" /> A-
           </Button>
+          <Button size="sm" variant="outline" className="h-9 rounded-none px-3 text-xs md:text-sm" onClick={() => setFontSize((current) => Math.min(28, current + 2))}>
+            <Type className="mr-1 h-4 w-4" /> A+
+          </Button>
+          <Button size="sm" variant="outline" className="h-9 rounded-none px-3 text-xs md:text-sm" onClick={handleAddBookmark}>
+            <BookmarkPlus className="mr-1 h-4 w-4" /> Bookmark
+          </Button>
+          <Button size="sm" variant="outline" className="h-9 rounded-none px-3 text-xs md:text-sm" onClick={handleSave} disabled={!pendingChanges}>
+            <Save className="mr-1 h-4 w-4" /> Save Notes
+          </Button>
+        </div>
         </div>
       </div>
 
       {/* Main Content Area */}
-      <div className="relative flex-grow p-6 md:p-12">
+      <div className="grid gap-4 p-3 md:gap-6 md:p-6 lg:grid-cols-[minmax(0,1fr)_240px] lg:p-8">
+        <div
+          ref={setReaderContainer}
+          className="relative min-h-[60vh] max-h-[calc(100vh-240px)] overflow-y-auto rounded-xl border bg-white p-4 md:min-h-[70vh] md:p-8 lg:p-12"
+        >
         {isLoading ? (
           <div className="space-y-4">
             <Skeleton className="h-6 w-full" />
@@ -182,7 +372,8 @@ const Reader: React.FC<ReaderProps> = ({ bookId, initialChapterId }) => {
           </div>
         ) : (
           <div
-            className="prose prose-lg dark:prose-invert max-w-none focus:outline-none leading-relaxed"
+            className="prose max-w-none focus:outline-none leading-relaxed md:prose-lg"
+            style={{ fontSize: `${fontSize}px` }}
             onMouseUp={handleMouseUp}
             onMouseOver={handleMouseOver}
             dangerouslySetInnerHTML={{ __html: pendingChanges || content }}
@@ -241,19 +432,62 @@ const Reader: React.FC<ReaderProps> = ({ bookId, initialChapterId }) => {
             />
           </div>
         )}
+        </div>
+
+        <aside className="space-y-4 lg:sticky lg:top-28">
+          <div className="rounded-xl border bg-muted/20 p-4">
+            <p className="text-xs font-black uppercase tracking-widest opacity-40">Reading Progress</p>
+            <p className="mt-2 text-sm font-bold">Page {currentPage} of {pageCount}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {session?.user?.id ? "Progress syncs to your account." : "Progress is saved on this device."}
+            </p>
+          </div>
+
+          <div className="rounded-xl border bg-muted/20 p-4 space-y-3">
+            <p className="text-xs font-black uppercase tracking-widest opacity-40">Bookmarks</p>
+            {bookmarks.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No bookmarks yet.</p>
+            ) : (
+              bookmarks.map((bookmark) => (
+                <button
+                  key={bookmark.id}
+                  type="button"
+                  onClick={() => jumpToBookmark(bookmark)}
+                  className="w-full rounded-lg border bg-white px-3 py-2 text-left hover:bg-accent/10"
+                >
+                  <p className="text-xs font-black uppercase tracking-widest opacity-40">
+                    <Bookmark className="mr-1 inline h-3 w-3" />
+                    Page {bookmark.page}
+                  </p>
+                  <p className="mt-1 text-sm font-bold">{bookmark.chapterTitle}</p>
+                </button>
+              ))
+            )}
+          </div>
+        </aside>
       </div>
 
       {/* Navigation Footer */}
-      <div className="flex items-center justify-between p-6 border-t bg-muted/20">
-        <Button variant="outline" onClick={handlePrev} disabled={currentIndex <= 0}>
-          <ChevronLeft className="h-4 w-4 mr-2" /> Previous Chapter
-        </Button>
-        <span className="text-sm text-muted-foreground">
-          Chapter {currentIndex + 1} of {chapters?.length}
+      <div className="flex flex-col gap-3 border-t bg-muted/20 p-3 md:p-6 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Button variant="outline" className="rounded-none text-xs md:text-sm" onClick={handlePrevPage} disabled={currentPage <= 1 && currentIndex <= 0}>
+            <ChevronLeft className="mr-2 h-4 w-4" /> Previous Page
+          </Button>
+          <Button variant="outline" className="rounded-none text-xs md:text-sm" onClick={handleNextPage} disabled={currentPage >= pageCount && (!chapters || currentIndex === chapters.length - 1)}>
+            Next Page <ChevronRight className="ml-2 h-4 w-4" />
+          </Button>
+        </div>
+        <span className="text-center text-xs text-muted-foreground md:text-sm">
+          Chapter {currentIndex + 1} of {chapters?.length} · Page {currentPage}/{pageCount}
         </span>
-        <Button variant="outline" onClick={handleNext} disabled={!chapters || currentIndex === chapters.length - 1}>
-          Next Chapter <ChevronRight className="h-4 w-4 ml-2" />
-        </Button>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Button variant="outline" className="rounded-none text-xs md:text-sm" onClick={handlePrev} disabled={currentIndex <= 0}>
+            <ChevronLeft className="mr-2 h-4 w-4" /> Previous Chapter
+          </Button>
+          <Button variant="outline" className="rounded-none text-xs md:text-sm" onClick={handleNext} disabled={!chapters || currentIndex === chapters.length - 1}>
+            Next Chapter <ChevronRight className="ml-2 h-4 w-4" />
+          </Button>
+        </div>
       </div>
     </div>
   );

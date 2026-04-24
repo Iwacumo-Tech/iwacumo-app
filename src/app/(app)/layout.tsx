@@ -1,10 +1,10 @@
 import DashboardShell from "@/components/dashboard/dashboard-shell";
-import { auth }       from "@/auth";
-import { notFound }   from "next/navigation";
+import { auth } from "@/auth";
 import { SessionProvider } from "next-auth/react";
-import { Session }    from "next-auth";
-import { links }      from "./links";
+import { Session } from "next-auth";
+import { links } from "./links";
 import { redirect } from "next/navigation";
+import { getRolesForActiveProfile } from "@/lib/profile-mode";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -12,7 +12,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect("/login?callbackUrl=/app");
   }
 
-  const userRoles = session.roles?.map(r => r.name.toLowerCase()) || [];
+  const availableProfiles = session.availableProfiles ?? [];
+  const activeProfile = session.activeProfile ?? null;
+  const userRoles = getRolesForActiveProfile(
+    activeProfile,
+    session.roles?.map((r) => r.name.toLowerCase()) || []
+  );
 
   // Sidebar link filtering — same logic as before
   const filteredLinks = links.filter((link) => {
@@ -23,8 +28,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     return userRoles.some(role => allowedRoles.includes(role));
   });
 
+  const hydratedSession = {
+    ...session,
+    availableProfiles,
+    activeProfile,
+  };
+
   return (
-    <SessionProvider session={session as Session | null}>
+    <SessionProvider
+      key={`${activeProfile ?? "none"}:${availableProfiles.join(",")}`}
+      session={hydratedSession as Session | null}
+    >
       <DashboardShell links={filteredLinks}>
         {children}
       </DashboardShell>

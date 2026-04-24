@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/form";
 import { useToast } from "@/components/ui/use-toast";
 import Link from "next/link";
-import { Loader2, CheckCircle2, MailWarning, UserCheck, ShieldOff } from "lucide-react";
+import { Loader2, CheckCircle2, MailWarning, UserCheck, ShieldOff, Eye, EyeOff } from "lucide-react";
 import { useState, Suspense } from "react";
 import { ResendVerificationButton } from "@/components/auth/resend-verification-button";
 
@@ -37,6 +37,7 @@ function LoginContent() {
   const prefillEmail = searchParams.get("email")    ?? "";
 
   const [errorState, setErrorState] = useState<ErrorState>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   const form = useForm({
     resolver: zodResolver(loginSchema),
@@ -187,7 +188,16 @@ function LoginContent() {
                     Password
                   </FormLabel>
                   <FormControl>
-                    <Input type="password" disabled={isSubmitting} {...field} className="booka-input-minimal h-14" />
+                    <div className="relative">
+                      <Input type={showPassword ? "text" : "password"} disabled={isSubmitting} {...field} className="booka-input-minimal h-14 pr-12" />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((value) => !value)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-primary/50 hover:text-primary"
+                      >
+                        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                    </div>
                   </FormControl>
                   <FormMessage />
                 </FormItem>

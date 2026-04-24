@@ -14,6 +14,8 @@ import {
   Loader2,
   CheckCircle2,
   AlertCircle,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDebounce } from "@/hooks/use-debounce";
@@ -25,6 +27,8 @@ export function RegisterForm() {
   const [slugInput, setSlugInput] = useState("");
   // Track submitted email so we can pass it to the verify page
   const [submittedEmail, setSubmittedEmail] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
  
   const debouncedUsername = useDebounce(usernameInput, 500);
   const debouncedSlug = useDebounce(slugInput, 500);
@@ -99,6 +103,17 @@ export function RegisterForm() {
  
     const formData = new FormData(e.currentTarget);
     const email = formData.get("email") as string;
+    const password = formData.get("password") as string;
+    const confirmPassword = formData.get("confirm_password") as string;
+
+    if (password !== confirmPassword) {
+      toast({
+        variant: "destructive",
+        title: "Passwords do not match",
+        description: "Please make sure both password fields are the same.",
+      });
+      return;
+    }
  
     // Store email before mutation fires so onSuccess can use it
     setSubmittedEmail(email);
@@ -109,7 +124,7 @@ export function RegisterForm() {
       last_name: formData.get("last_name") as string,
       email,
       username: usernameInput,
-      password: formData.get("password") as string,
+      password,
       name:
         selectedRole === "Publisher"
           ? (formData.get("tenant_name") as string)
@@ -291,12 +306,42 @@ export function RegisterForm() {
               <label className="text-[9px] font-black uppercase tracking-widest">
                 Password
               </label>
-              <Input
-                name="password"
-                type="password"
-                className="booka-input-minimal h-14"
-                required
-              />
+              <div className="relative">
+                <Input
+                  name="password"
+                  type={showPassword ? "text" : "password"}
+                  className="booka-input-minimal h-14 pr-12"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((value) => !value)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-primary/50 hover:text-primary"
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[9px] font-black uppercase tracking-widest">
+                Confirm Password
+              </label>
+              <div className="relative">
+                <Input
+                  name="confirm_password"
+                  type={showConfirmPassword ? "text" : "password"}
+                  className="booka-input-minimal h-14 pr-12"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword((value) => !value)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-primary/50 hover:text-primary"
+                >
+                  {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
             </div>
  
             <div className="pt-6">
