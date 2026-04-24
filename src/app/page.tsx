@@ -7,12 +7,10 @@ import FeaturedSection from "@/components/home/FeaturedSection";
 import Marquee from "@/components/home/Marquee";
 import CategoryGrid from "@/components/home/CategoryGrid";
 import SellerCTA from "@/components/home/SellerCTA";
-import { PublicTranslationProvider } from "@/components/shared/translation-provider";
 
 export default function Home() {
   return (
-    <PublicTranslationProvider>
-      <main className="min-h-screen bg-background selection:bg-accent selection:text-black">
+    <main className="min-h-screen bg-background selection:bg-accent selection:text-black">
       <Header />
       
       {/* 1. Impactful Hero Section */}
@@ -33,8 +31,7 @@ export default function Home() {
       {/* 6. Dual-Purpose CTA for Sellers */}
       <SellerCTA />
       
-        <Footer />
-      </main>
-    </PublicTranslationProvider>
+      <Footer />
+    </main>
   );
 }

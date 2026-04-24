@@ -30,6 +30,7 @@ const AuthorSignUpForm = () => {
     defaultValues: {
       first_name: "",
       last_name: "",
+      pen_name: "",
       email: "",
       slug: "",
       phone_number: "",
@@ -162,6 +163,19 @@ const AuthorSignUpForm = () => {
                       {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                     </button>
                   </div>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={control}
+            name="pen_name"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Pen Name</FormLabel>
+                <FormControl>
+                  <Input {...field} placeholder="Optional pen name" />
                 </FormControl>
                 <FormMessage />
               </FormItem>

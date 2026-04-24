@@ -133,6 +133,36 @@ export async function sendStaffInviteEmail({
   });
 }
 
+export async function sendAuthorInviteEmail({
+  to,
+  inviterName,
+  publisherName,
+  token,
+}: {
+  to: string;
+  inviterName: string;
+  publisherName: string;
+  token: string;
+}) {
+  const setupUrl = `${APP_URL}/api/verification/author-invite?token=${token}`;
+  return resend.emails.send({
+    from: FROM,
+    to,
+    subject: `You've been invited to author on ${publisherName} — iwacumo`,
+    html: `
+      <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111">
+        <p>Hello,</p>
+        <p><strong>${inviterName}</strong> has invited you to complete your author onboarding for <strong>${publisherName}</strong> on iwacumo.</p>
+        <p>Use the button below to set your password and activate your author account.</p>
+        <p style="margin:24px 0;">
+          <a href="${setupUrl}" style="display:inline-block;background:#111;color:#fff;padding:12px 18px;text-decoration:none;font-weight:700;">Set Up Author Account</a>
+        </p>
+        <p>This link expires in 7 days.</p>
+      </div>
+    `,
+  });
+}
+
 // ─── Order confirmation ───────────────────────────────────────────────────────
 
 interface OrderConfirmationParams {
@@ -194,4 +224,53 @@ export async function sendKycApprovedEmail({ to, firstName, orgName }: { to: str
 // ── KYC rejected ─────────────────────────────────────────────
 export async function sendKycRejectedEmail({ to, firstName, orgName, reviewerNotes }: { to: string; firstName: string; orgName: string; reviewerNotes: string | null }) {
   return resend.emails.send({ from: FROM, to, subject: "Action required: KYC submission needs attention", react: KycRejectedTemplate({ firstName, orgName, reviewerNotes }) });
+}
+
+export async function sendAuthorKycApprovedEmail({
+  to,
+  firstName,
+  publisherName,
+}: {
+  to: string;
+  firstName: string;
+  publisherName: string;
+}) {
+  return resend.emails.send({
+    from: FROM,
+    to,
+    subject: "Your author verification has been approved",
+    html: `
+      <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111">
+        <p>Hello ${firstName || "Author"},</p>
+        <p>Your author verification for <strong>${publisherName}</strong> has been approved.</p>
+        <p>You can now access your author tools on iwacumo.</p>
+      </div>
+    `,
+  });
+}
+
+export async function sendAuthorKycRejectedEmail({
+  to,
+  firstName,
+  publisherName,
+  reviewerNotes,
+}: {
+  to: string;
+  firstName: string;
+  publisherName: string;
+  reviewerNotes: string | null;
+}) {
+  return resend.emails.send({
+    from: FROM,
+    to,
+    subject: "Action required: author verification needs attention",
+    html: `
+      <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111">
+        <p>Hello ${firstName || "Author"},</p>
+        <p>Your author verification for <strong>${publisherName}</strong> needs attention.</p>
+        ${reviewerNotes ? `<p><strong>Reviewer note:</strong><br/>${reviewerNotes}</p>` : ""}
+        <p>Please update and resubmit your documents.</p>
+      </div>
+    `,
+  });
 }

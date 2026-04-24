@@ -140,7 +140,11 @@ export const { handlers, auth } = NextAuth({
       const [userProfile, adminProfile, isSuperAdmin] = await Promise.all([
         prisma.user.findUnique({
           where:   { id: token.sub },
-          include: { author: true, publisher: true, customers: true },
+          include: {
+            author: { include: { publisher: { select: { white_label: true } } } },
+            publisher: true,
+            customers: true,
+          },
         }),
         prisma.adminUser.findUnique({
           where:   { id: token.sub },
@@ -164,6 +168,7 @@ export const { handlers, auth } = NextAuth({
         userProfile?.publisher?.profile_picture
         || userProfile?.author?.profile_picture
         || null;
+      const authorRequiresKyc = !!userProfile?.author?.publisher?.white_label;
 
       if (adminProfile) {
         publisher_id = publisher_id
@@ -226,6 +231,7 @@ export const { handlers, auth } = NextAuth({
           author_id,
           publisher_id,
           isCustomer: hasCustomerProfiles,
+          author_requires_kyc: authorRequiresKyc,
         },
         ...claims,
         roles: finalizedRoles,

@@ -87,6 +87,7 @@ export const createAuthorSchema = z.object({
   password: z.string().optional(),
   username: z.string().optional(),
   first_name: z.string().optional(),
+  pen_name: z.string().optional(),
   publisher_id: z.string().optional(),
   last_name: z.string().optional(),
   phone_number: z.string().optional(),
@@ -99,6 +100,7 @@ export const signUpAuthorSchema = z.object({
   email: z.string().optional(),
   password: z.string().optional(),
   first_name: z.string().optional(),
+  pen_name: z.string().optional(),
   slug: z.string().optional(),
   publisher_id: z.string().optional(),
   last_name: z.string().optional(),
@@ -627,12 +629,39 @@ export type TGetOrdersNeedingShippingSchema = z.infer<typeof getOrdersNeedingShi
 export const updateAuthorSchema = z.object({
   id: z.string(), // Required to identify which author to update
   first_name: z.string().min(1, "First name is required"),
+  pen_name: z.string().optional(),
   last_name: z.string().min(1, "Last name is required"),
-  username: z.string().min(3, "Username must be at least 3 characters"),
+  username: z.string().min(3, "Username must be at least 3 characters").optional().or(z.literal("")),
   phone_number: z.string().optional(),
 });
 
 export type TUpdateAuthorSchema = z.infer<typeof updateAuthorSchema>;
+
+export const inviteAuthorSchema = z.object({
+  author_id: z.string(),
+  email: z.string().email("Valid email required"),
+});
+
+export const authorAccountSetupSchema = z.object({
+  token: z.string().min(1),
+  first_name: z.string().min(1, "First name is required"),
+  last_name: z.string().min(1, "Last name is required"),
+  pen_name: z.string().optional(),
+  password: z.string()
+    .min(8, "Password must be at least 8 characters")
+    .regex(/[A-Z]/, "Must contain at least one uppercase letter")
+    .regex(/[0-9]/, "Must contain at least one number"),
+});
+
+export const resendAuthorInviteSchema = z.object({
+  author_id: z.string(),
+  inviter_user_id: z.string(),
+  email: z.string().email("Valid email required").optional(),
+});
+
+export type TInviteAuthorSchema = z.infer<typeof inviteAuthorSchema>;
+export type TAuthorAccountSetupSchema = z.infer<typeof authorAccountSetupSchema>;
+export type TResendAuthorInviteSchema = z.infer<typeof resendAuthorInviteSchema>;
 
 
 export const updateCustomerSchema = z.object({

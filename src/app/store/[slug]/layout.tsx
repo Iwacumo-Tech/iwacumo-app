@@ -6,7 +6,6 @@ import Link from "next/link";
 import Image from "next/image";
 import prisma from "@/lib/prisma";
 import { ShoppingCart, Search } from "lucide-react";
-import { PublicTranslationProvider } from "@/components/shared/translation-provider";
 import { LanguageSwitcher } from "@/components/shared/language-switcher";
 
 interface StoreLayoutProps {
@@ -70,7 +69,6 @@ export default async function StoreLayout({ children, params }: StoreLayoutProps
   const navBorder = isWhiteLabel ? secondaryColor : "#000000";
 
   return (
-    <PublicTranslationProvider>
     <div
       className="min-h-screen selection:bg-[var(--store-accent)] selection:text-black"
       style={{ fontFamily, ["--store-accent" as any]: accentColor, ["--store-secondary" as any]: secondaryColor }}
@@ -168,6 +166,5 @@ export default async function StoreLayout({ children, params }: StoreLayoutProps
         </div>
       )}
     </div>
-    </PublicTranslationProvider>
   );
 }

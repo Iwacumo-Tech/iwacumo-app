@@ -62,6 +62,11 @@ type SettingsFormValues = {
     require_business_reg:     boolean;
     require_proof_of_address: boolean;
   };
+  author_kyc_requirements: {
+    require_id:               boolean;
+    require_business_reg:     boolean;
+    require_proof_of_address: boolean;
+  };
   book_feature_toggles: {
     subtitle: boolean;
     language: boolean;
@@ -124,6 +129,11 @@ const DEFAULTS: SettingsFormValues = {
     },
   },
   kyc_requirements: {
+    require_id:               true,
+    require_business_reg:     true,
+    require_proof_of_address: true,
+  },
+  author_kyc_requirements: {
     require_id:               true,
     require_business_reg:     true,
     require_proof_of_address: true,
@@ -269,6 +279,7 @@ export default function SystemSettingsPage() {
       shipping_rates: (settings as any).shipping_rates ?? DEFAULTS.shipping_rates,
       book_weights:   (settings as any).book_weights   ?? DEFAULTS.book_weights,
       kyc_requirements: (settings as any).kyc_requirements ?? DEFAULTS.kyc_requirements,
+      author_kyc_requirements: (settings as any).author_kyc_requirements ?? DEFAULTS.author_kyc_requirements,
       book_feature_toggles: (settings as any).book_feature_toggles ?? DEFAULTS.book_feature_toggles,
       book_size_ranges: (settings as any).book_size_ranges ?? DEFAULTS.book_size_ranges,
       book_flap_costs: (settings as any).book_flap_costs ?? DEFAULTS.book_flap_costs,
@@ -287,7 +298,8 @@ export default function SystemSettingsPage() {
     updateSettings({ key: "printing_costs", value: data.printing_costs });
     updateSettings({ key: "shipping_rates", value: data.shipping_rates });
     updateSettings({ key: "book_weights",   value: data.book_weights });
-    updateSettings({ key: "kyc_requirements", value: data.kyc_requirements });
+      updateSettings({ key: "kyc_requirements", value: data.kyc_requirements });
+      updateSettings({ key: "author_kyc_requirements", value: data.author_kyc_requirements });
     updateSettings({ key: "book_feature_toggles", value: data.book_feature_toggles });
     updateSettings({ key: "book_size_ranges", value: data.book_size_ranges });
     updateSettings({ key: "book_flap_costs", value: data.book_flap_costs });
@@ -507,6 +519,59 @@ export default function SystemSettingsPage() {
             </section>
 
             {/* ── Save ─────────────────────────────────────────────────── */}
+            <section className="bg-white border-4 border-black gumroad-shadow p-6 space-y-6">
+              <div>
+                <h2 className="text-2xl font-black uppercase italic">Author KYC Requirements</h2>
+                <p className="text-xs opacity-50 font-medium mt-1">
+                  Choose which documents white-label authors must submit before accessing author tools.
+                  Changes take effect immediately for any author who hasn&apos;t been approved yet.
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                {[
+                  {
+                    field: "author_kyc_requirements.require_id" as const,
+                    label: "Government ID",
+                    desc: "Passport, National ID, or Driver's Licence",
+                  },
+                  {
+                    field: "author_kyc_requirements.require_business_reg" as const,
+                    label: "Business Registration",
+                    desc: "CAC certificate or equivalent business registration document",
+                  },
+                  {
+                    field: "author_kyc_requirements.require_proof_of_address" as const,
+                    label: "Proof of Address",
+                    desc: "Utility bill or bank statement dated within 3 months",
+                  },
+                ].map(({ field, label, desc }) => (
+                  <FormField
+                    key={field}
+                    control={form.control}
+                    name={field}
+                    render={({ field: f }) => (
+                      <FormItem className="flex items-start gap-4 space-y-0 border-2 border-black p-4">
+                        <FormControl>
+                          <Checkbox
+                            checked={f.value as boolean}
+                            onCheckedChange={f.onChange}
+                            className="mt-0.5 border-2 border-black data-[state=checked]:bg-black data-[state=checked]:text-accent"
+                          />
+                        </FormControl>
+                        <div>
+                          <FormLabel className="font-black uppercase text-[11px] tracking-widest cursor-pointer">
+                            {label}
+                          </FormLabel>
+                          <p className="text-xs opacity-50 mt-0.5">{desc}</p>
+                        </div>
+                      </FormItem>
+                    )}
+                  />
+                ))}
+              </div>
+            </section>
+
             <section className="bg-white border-4 border-black gumroad-shadow p-6 space-y-6">
               <div>
                 <h2 className="text-2xl font-black uppercase italic">Book Feature Toggles</h2>

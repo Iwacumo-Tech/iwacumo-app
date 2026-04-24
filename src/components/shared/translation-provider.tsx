@@ -32,11 +32,46 @@ declare global {
   }
 }
 
-function setTranslateCookie(language: PublicLanguage) {
+function writeCookie(cookieValue: string, maxAge: number, domain?: string) {
   if (typeof document === "undefined") return;
 
-  const cookieValue = language === "fr" ? "/en/fr" : "/en/en";
-  document.cookie = `${COOKIE_NAME}=${cookieValue};path=/;max-age=31536000`;
+  const domainPart = domain ? `;domain=${domain}` : "";
+  document.cookie = `${COOKIE_NAME}=${cookieValue};path=/;max-age=${maxAge}${domainPart}`;
+}
+
+function clearTranslateCookie() {
+  if (typeof window === "undefined") return;
+
+  const hostname = window.location.hostname;
+  const hostnameParts = hostname.split(".").filter(Boolean);
+  const baseDomain =
+    hostnameParts.length > 1 ? `.${hostnameParts.slice(-2).join(".")}` : undefined;
+
+  writeCookie("", 0);
+  writeCookie("", 0, hostname);
+  if (baseDomain) {
+    writeCookie("", 0, baseDomain);
+  }
+}
+
+function setTranslateCookie(language: PublicLanguage) {
+  if (typeof window === "undefined") return;
+
+  if (language === "en") {
+    clearTranslateCookie();
+    return;
+  }
+
+  const hostname = window.location.hostname;
+  const hostnameParts = hostname.split(".").filter(Boolean);
+  const baseDomain =
+    hostnameParts.length > 1 ? `.${hostnameParts.slice(-2).join(".")}` : undefined;
+
+  writeCookie("/en/fr", 31536000);
+  writeCookie("/en/fr", 31536000, hostname);
+  if (baseDomain) {
+    writeCookie("/en/fr", 31536000, baseDomain);
+  }
 }
 
 function readStoredLanguage(): PublicLanguage {
@@ -148,4 +183,3 @@ export function usePublicTranslation() {
   }
   return context;
 }
-

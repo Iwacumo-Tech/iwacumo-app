@@ -27,7 +27,9 @@ interface KycRequirements {
 }
 
 interface KycFormProps {
-  publisherId:  string;
+  publisherId?: string;
+  authorId?: string;
+  mode?: "publisher" | "author";
   existingKyc?: any;
   requirements: KycRequirements;
 }
@@ -184,7 +186,7 @@ function FileUploadField({
 }
 
 // ── Main form ─────────────────────────────────────────────────
-export function KycForm({ publisherId, existingKyc, requirements }: KycFormProps) {
+export function KycForm({ publisherId, authorId, mode = "publisher", existingKyc, requirements }: KycFormProps) {
   const { toast } = useToast();
   const router    = useRouter();
 
@@ -232,22 +234,46 @@ export function KycForm({ publisherId, existingKyc, requirements }: KycFormProps
       });
     },
   });
+  const authorMutation = trpc.submitAuthorKyc.useMutation({
+    onSuccess: () => {
+      toast({
+        title: "Verification Submitted",
+        description: "Our team will review your documents shortly.",
+      });
+      router.replace("/app/kyc/pending");
+    },
+    onError: (err) => {
+      toast({
+        variant: "destructive",
+        title: "Submission Failed",
+        description: err.message,
+      });
+    },
+  });
 
   const onSubmit = (values: FormValues) => {
-    // Log for debugging — remove after confirming it works
-    console.log("[kyc submit] publisher_id:", publisherId);
-    console.log("[kyc submit] values:", values);
+    const payload = {
+      id_document_url: values.id_document_url ?? "",
+      id_document_type: (values.id_document_type ?? "passport") as any,
+      legal_name: values.legal_name ?? "",
+      phone_number: values.phone_number ?? "",
+      business_reg_url: values.business_reg_url ?? "",
+      business_name: values.business_name ?? "",
+      business_address: values.business_address ?? "",
+      proof_of_address_url: values.proof_of_address_url ?? "",
+    };
+
+    if (mode === "author") {
+      authorMutation.mutate({
+        author_id: authorId!,
+        ...payload,
+      });
+      return;
+    }
 
     mutation.mutate({
-      publisher_id:         publisherId,
-      id_document_url:      values.id_document_url      ?? "",
-      id_document_type:     (values.id_document_type    ?? "passport") as any,
-      legal_name:           values.legal_name            ?? "",
-      phone_number:         values.phone_number          ?? "",
-      business_reg_url:     values.business_reg_url      ?? "",
-      business_name:        values.business_name         ?? "",
-      business_address:     values.business_address      ?? "",
-      proof_of_address_url: values.proof_of_address_url ?? "",
+      publisher_id: publisherId!,
+      ...payload,
     });
   };
 
@@ -374,23 +400,23 @@ export function KycForm({ publisherId, existingKyc, requirements }: KycFormProps
         {/* ── Submit ───────────────────────────────────────── */}
         <Button
           type="submit"
-          disabled={mutation.isPending || isSubmitting}
+          disabled={mutation.isPending || authorMutation.isPending || isSubmitting}
           className="w-full booka-button-primary h-16 text-lg flex items-center justify-center gap-2"
         >
-          {mutation.isPending || isSubmitting ? (
+          {mutation.isPending || authorMutation.isPending || isSubmitting ? (
             <><Loader2 className="animate-spin size-4" />Submitting...</>
           ) : existingKyc?.status === "rejected" ? (
-            "Resubmit KYC Documents"
+            mode === "author" ? "Resubmit Verification" : "Resubmit KYC Documents"
           ) : (
-            "Submit for Verification"
+            mode === "author" ? "Submit Author Verification" : "Submit for Verification"
           )}
         </Button>
 
         {/* Show any top-level form error */}
-        {mutation.isError && (
+        {(mutation.isError || authorMutation.isError) && (
           <div className="flex items-center gap-2 border-2 border-red-500 bg-red-50 p-4">
             <AlertCircle className="size-4 text-red-500 shrink-0" />
-            <p className="text-sm text-red-600 font-bold">{mutation.error.message}</p>
+            <p className="text-sm text-red-600 font-bold">{mutation.error?.message || authorMutation.error?.message}</p>
           </div>
         )}
       </form>

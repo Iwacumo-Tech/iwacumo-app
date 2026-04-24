@@ -5,7 +5,7 @@ import { ColumnDef } from "@tanstack/react-table";
 import {
   Truck, Download, Package, MapPin, Clock, CheckCircle2,
   BookOpen, MoreHorizontal, Trash2, Edit3, Star, Eye,
-  LayoutDashboard, ExternalLink,
+  LayoutDashboard, ExternalLink, Archive, Undo2,
 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
@@ -183,6 +183,7 @@ function StaffBookAction({ book, meta }: { book: any; meta: any }) {
 
   const isSuperAdmin = meta?.isSuperAdmin;
   const isPublisher  = meta?.isPublisher;
+  const isArchived   = book.status === "archived";
 
   const toggleFeatured = trpc.toggleFeatured.useMutation({
     onSuccess: (_, variables) => {
@@ -219,6 +220,28 @@ function StaffBookAction({ book, meta }: { book: any; meta: any }) {
       toast({ variant: "destructive", title: "Error", description: err.message }),
   });
 
+  const deactivateBook = trpc.deactivateBook.useMutation({
+    onSuccess: () => {
+      toast({ title: "Book deactivated", description: `"${book.title}" is now hidden from shoppers.` });
+      setIsMenuOpen(false);
+      utils.getAllBooks.invalidate();
+      utils.getBookByAuthor.invalidate();
+    },
+    onError: (err) =>
+      toast({ variant: "destructive", title: "Error", description: err.message }),
+  });
+
+  const reactivateBook = trpc.reactivateBook.useMutation({
+    onSuccess: () => {
+      toast({ title: "Book restored", description: `"${book.title}" is available in the catalog again.` });
+      setIsMenuOpen(false);
+      utils.getAllBooks.invalidate();
+      utils.getBookByAuthor.invalidate();
+    },
+    onError: (err) =>
+      toast({ variant: "destructive", title: "Error", description: err.message }),
+  });
+
   return (
     <DropdownMenu open={isMenuOpen} onOpenChange={setIsMenuOpen}>
       <DropdownMenuTrigger asChild>
@@ -239,6 +262,10 @@ function StaffBookAction({ book, meta }: { book: any; meta: any }) {
               {book.published ? (
                 <span className="flex items-center gap-1 text-emerald-400 text-[9px] font-bold uppercase">
                   <CheckCircle2 size={8} /> Live
+                </span>
+              ) : isArchived ? (
+                <span className="flex items-center gap-1 text-red-300 text-[9px] font-bold uppercase">
+                  <Archive size={8} /> Deactivated
                 </span>
               ) : (
                 <span className="flex items-center gap-1 text-amber-400 text-[9px] font-bold uppercase">
@@ -298,6 +325,30 @@ function StaffBookAction({ book, meta }: { book: any; meta: any }) {
           >
             <Star size={14} className={cn(book.featured ? "fill-blue-600 text-blue-600" : "text-black")} />
             {book.featured ? "Unfeature Globally" : "Feature Globally"}
+          </DropdownMenuItem>
+        )}
+
+        {isSuperAdmin && (
+          <DropdownMenuItem
+            className={cn(
+              menuButtonStyle,
+              isArchived ? "text-emerald-700 hover:bg-emerald-50" : "text-red-700 hover:bg-red-50"
+            )}
+            onClick={() =>
+              isArchived
+                ? reactivateBook.mutate({ id: book.id })
+                : deactivateBook.mutate({ id: book.id })
+            }
+            disabled={deactivateBook.isPending || reactivateBook.isPending}
+          >
+            {isArchived ? <Undo2 size={14} /> : <Archive size={14} />}
+            {isArchived
+              ? reactivateBook.isPending
+                ? "Restoring…"
+                : "Reactivate Book"
+              : deactivateBook.isPending
+              ? "Deactivating…"
+              : "Deactivate Book"}
           </DropdownMenuItem>
         )}
 
@@ -368,6 +419,10 @@ export const staffBookColumns: ColumnDef<any>[] = [
           {row.original.published ? (
             <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase text-emerald-600">
               <CheckCircle2 size={9} /> Live
+            </span>
+          ) : row.original.status === "archived" ? (
+            <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase text-red-600">
+              <Archive size={9} /> Deactivated
             </span>
           ) : (
             <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase text-amber-600">

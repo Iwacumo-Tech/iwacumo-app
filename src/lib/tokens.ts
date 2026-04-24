@@ -1,12 +1,13 @@
 import crypto from "crypto";
 import prisma from "@/lib/prisma";
  
-export type TokenType = "EMAIL_VERIFY" | "PASSWORD_RESET" | "STAFF_INVITE";
+export type TokenType = "EMAIL_VERIFY" | "PASSWORD_RESET" | "STAFF_INVITE" | "AUTHOR_INVITE";
  
 const EXPIRY: Record<TokenType, number> = {
   EMAIL_VERIFY:   24 * 60 * 60 * 1000,      // 24 hours
   PASSWORD_RESET:  1 * 60 * 60 * 1000,      // 1 hour
   STAFF_INVITE:    7 * 24 * 60 * 60 * 1000, // 7 days
+  AUTHOR_INVITE:   7 * 24 * 60 * 60 * 1000, // 7 days
 };
  
 // ── Create token for a regular User ──────────────────────────

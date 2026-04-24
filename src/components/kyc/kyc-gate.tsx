@@ -86,13 +86,18 @@ function KycOverlay({
   status,
   orgName,
   reviewerNotes,
+  requirementsUpdated,
 }: {
   status:        KycStatus;
   orgName?:      string;
   reviewerNotes?: string | null;
+  requirementsUpdated?: boolean;
 }) {
   const router = useRouter();
   const cfg    = getStatusConfig(status, orgName);
+  const body = requirementsUpdated
+    ? `Your verification for ${orgName ?? "your organisation"} needs one more document because the KYC requirements were updated. Please review the form and resubmit to continue.`
+    : cfg.body;
 
   const handleAction = (action: "go_kyc" | "sign_out") => {
     if (action === "go_kyc")   router.push("/app/kyc");
@@ -115,8 +120,19 @@ function KycOverlay({
             {cfg.title}<span className="text-accent">.</span>
           </h2>
           <p className="text-sm text-muted-foreground leading-relaxed">
-            {cfg.body}
+            {body}
           </p>
+
+          {requirementsUpdated && (
+            <div className="border-2 border-black bg-[#f9f6f0] p-4 text-left mt-2">
+              <p className="text-[10px] font-black uppercase tracking-widest opacity-50">
+                Requirements Updated
+              </p>
+              <p className="text-sm font-bold mt-1">
+                Your earlier approval stays on record, but you need to add the newly required document before access can continue.
+              </p>
+            </div>
+          )}
 
           {/* Rejection notes from reviewer */}
           {status === "rejected" && reviewerNotes && (
@@ -175,9 +191,13 @@ export function KycGate({ children }: KycGateProps) {
   const userRoles      = (session?.roles ?? []).map((r: any) => r.name?.toLowerCase());
   const activeProfile  = session?.activeProfile;
   const isPublisher    = activeProfile === "publisher";
+  const isAuthor       = activeProfile === "author";
   const isStaffOrAdmin = userRoles.some((r: string) => STAFF_ROLES.has(r));
-  const needsGate      = isPublisher && !isStaffOrAdmin;
+  const needsPublisherGate = isPublisher && !isStaffOrAdmin;
+  const needsAuthorGate = isAuthor && !!(session?.user as any)?.author_requires_kyc;
+  const needsGate      = needsPublisherGate || needsAuthorGate;
   const publisherId    = (session?.user as any)?.publisher_id as string | undefined;
+  const authorId       = (session?.user as any)?.author_id as string | undefined;
 
   // Resolve org name for personalised messaging
   const orgName = (session as any)?.tenantSlug ?? undefined;
@@ -185,37 +205,45 @@ export function KycGate({ children }: KycGateProps) {
   const { data: kyc, isLoading: kycLoading } = trpc.getMyKyc.useQuery(
     { publisher_id: publisherId! },
     {
-      enabled:              needsGate && !!publisherId && sessionStatus === "authenticated",
+      enabled:              needsPublisherGate && !!publisherId && sessionStatus === "authenticated",
+      refetchOnWindowFocus: false,
+    }
+  );
+  const { data: authorKyc, isLoading: authorKycLoading } = trpc.getMyAuthorKyc.useQuery(
+    { author_id: authorId! },
+    {
+      enabled: needsAuthorGate && !!authorId && sessionStatus === "authenticated",
       refetchOnWindowFocus: false,
     }
   );
 
   const { data: requirements, isLoading: reqLoading } =
     trpc.getKycRequirements.useQuery(undefined, {
-      enabled:              needsGate && sessionStatus === "authenticated",
+      enabled:              needsPublisherGate && sessionStatus === "authenticated",
+      refetchOnWindowFocus: false,
+    });
+
+  const { data: authorRequirements, isLoading: authorReqLoading } =
+    trpc.getAuthorKycRequirements.useQuery(undefined, {
+      enabled: needsAuthorGate && sessionStatus === "authenticated",
       refetchOnWindowFocus: false,
     });
 
   // ── Determine KYC status ──────────────────────────────────
   const isOnKycPath = KYC_PATHS.some(p => pathname.startsWith(p));
-  const isChecking  = needsGate && (kycLoading || reqLoading) && sessionStatus === "authenticated";
+  const isChecking  =
+    needsGate &&
+    (kycLoading || reqLoading || authorKycLoading || authorReqLoading) &&
+    sessionStatus === "authenticated";
+  const currentKyc = needsAuthorGate ? authorKyc : kyc;
+  const currentRequirements = needsAuthorGate ? authorRequirements : requirements;
+  const requirementsUpdated = !!currentKyc?.needs_resubmission;
 
   let kycStatus: KycStatus = "none";
 
-  if (needsGate && !kycLoading && !reqLoading && kyc) {
-    const req = requirements ?? {
-      require_id:               true,
-      require_business_reg:     true,
-      require_proof_of_address: true,
-    };
-
-    const idMet      = !req.require_id               || !!kyc.id_document_url;
-    const regMet     = !req.require_business_reg     || !!kyc.business_reg_url;
-    const addressMet = !req.require_proof_of_address || !!kyc.proof_of_address_url;
-    const docsMet    = idMet && regMet && addressMet;
-
-    if (!docsMet || kyc.status === "pending") kycStatus = "pending";
-    else kycStatus = kyc.status as KycStatus;
+  if (needsGate && !isChecking && currentKyc) {
+    if (currentKyc.needs_resubmission || currentKyc.status === "pending") kycStatus = "pending";
+    else kycStatus = currentKyc.status as KycStatus;
   }
 
   const showOverlay =
@@ -233,7 +261,7 @@ export function KycGate({ children }: KycGateProps) {
     !isChecking &&
     !kycLoading &&
     sessionStatus === "authenticated" &&
-    !kyc; // no record at all
+    !currentKyc; // no record at all
 
   return (
     <>
@@ -255,7 +283,8 @@ export function KycGate({ children }: KycGateProps) {
         <KycOverlay
           status={showOverlayNone ? "none" : kycStatus}
           orgName={orgName}
-          reviewerNotes={kyc?.reviewer_notes}
+          reviewerNotes={currentKyc?.reviewer_notes}
+          requirementsUpdated={requirementsUpdated}
         />
       )}
     </>

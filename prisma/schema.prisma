@@ -178,6 +178,7 @@ model PublisherAuthorSplit {
 model Author {
   id              String     @id @default(uuid())
   name            String?
+  pen_name        String?
   bio             String?
   profile_picture String?
   social_handles  Json?
@@ -185,11 +186,16 @@ model Author {
   user            User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
   publisher_id    String?
   slug            String?    @unique
+  invite_email    String?
+  onboarding_status String   @default("active") // active, roster_only, invited
+  invite_sent_at  DateTime?
+  onboarding_completed_at DateTime?
   publisher       Publisher? @relation(fields: [publisher_id], references: [id])
   publisher_splits PublisherAuthorSplit[]
   books           Book[]
   primary_books   Book[]     @relation("PrimaryAuthor")
   customers       Customer[]
+  kyc             AuthorKycVerification?
   deleted_at      DateTime?
   created_at      DateTime   @default(now())
   updated_at      DateTime   @updatedAt
@@ -589,6 +595,7 @@ model AdminUser {
 
   verification_tokens VerificationToken[]
   kyc_reviews KycVerification[]
+  author_kyc_reviews AuthorKycVerification[]
 
   @@map("admin_users")
 }
@@ -635,6 +642,35 @@ model VerificationToken {
   created_at     DateTime   @default(now())
 
   @@map("verification_tokens")
+}
+
+model AuthorKycVerification {
+  id           String    @id @default(uuid())
+  author_id    String    @unique
+  author       Author    @relation(fields: [author_id], references: [id], onDelete: Cascade)
+
+  status       String    @default("pending")
+
+  id_document_url  String?
+  id_document_type String?
+  legal_name       String?
+  phone_number     String?
+
+  business_reg_url     String?
+  business_name        String?
+  business_address     String?
+  proof_of_address_url String?
+
+  submitted_at   DateTime?
+  reviewed_at    DateTime?
+  reviewer_id    String?
+  reviewer       AdminUser? @relation(fields: [reviewer_id], references: [id])
+  reviewer_notes String?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@map("author_kyc_verifications")
 }
 
 

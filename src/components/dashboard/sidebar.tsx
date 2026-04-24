@@ -8,6 +8,7 @@ import { ExternalLink, Store } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSession } from "next-auth/react";
 import { UserIdentityBadge } from "@/components/shared/UserIdentityBadge";
+import { LanguageSwitcher } from "@/components/shared/language-switcher";
 
 export function Sidebar({ logout, links, storeSlug, setIsOpen }: {
   links:      any[];
@@ -84,6 +85,11 @@ export function Sidebar({ logout, links, storeSlug, setIsOpen }: {
           onClick={handleItemClick}
           className="text-black opacity-60 hover:opacity-100 font-bold uppercase text-[10px]"
         />
+
+        <div className="pt-1">
+          <p className="mb-2 text-[9px] font-black uppercase tracking-widest opacity-35">Language</p>
+          <LanguageSwitcher className="w-full justify-between bg-[#F9F6F0]" />
+        </div>
 
         <Button
           variant="ghost"

@@ -4,8 +4,11 @@ import { Clock, Mail, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { signOut } from "next-auth/react";
+import { useSession } from "next-auth/react";
  
 export default function KycPendingPage() {
+  const { data: session } = useSession();
+  const isAuthor = session?.activeProfile === "author";
   return (
     <div className="max-w-lg mx-auto space-y-10 py-12">
  
@@ -20,7 +23,7 @@ export default function KycPendingPage() {
             Under Review<span className="text-accent">.</span>
           </h1>
           <p className="text-sm text-muted-foreground leading-relaxed">
-            Your KYC documents have been submitted and are being reviewed by our team.
+            Your {isAuthor ? "verification" : "KYC documents"} have been submitted and are being reviewed by our team.
             This usually takes <strong>1–2 business days</strong>.
           </p>
         </div>
@@ -36,7 +39,9 @@ export default function KycPendingPage() {
           {
             icon: ShieldCheck,
             title: "Manual Review",
-            desc: "Our compliance team verifies your identity and business documents.",
+            desc: isAuthor
+              ? "Our compliance team verifies your author identity and supporting documents."
+              : "Our compliance team verifies your identity and business documents.",
           },
           {
             icon: Mail,

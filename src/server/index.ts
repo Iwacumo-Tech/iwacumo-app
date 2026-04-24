@@ -19,7 +19,7 @@ import {
 } from "./module/user";
 import { publicProcedure, router } from "./trpc";
 import { createPublisher, deletePublisher, getAllPublisher, updatePublisher, getPublisherByOrganization, getPublisherDashboardStats } from "./module/publisher";
-import { createAuthor, updateAuthor, deleteAuthor, getAllAuthors, signUpAuthor, getAuthorsByUser, getAuthorBySlug, getAuthorDashboardStats } from "./module/author";
+import { createAuthor, updateAuthor, deleteAuthor, getAllAuthors, signUpAuthor, getAuthorsByUser, getAuthorBySlug, getAuthorDashboardStats, inviteAuthor, resendAuthorInvite, setupAuthorAccount } from "./module/author";
 import { createCustomer, deleteCustomer, updateCustomer, getAllCustomers, getCustomersByUser, registerGuestAndTransferCart, getCustomerDashboardStats } from "./module/customer";
 import { createBook, deleteBook, updateBook, getAllBooks, getBookById, getCategories, getBookByAuthor, toggleBookFeatured,getAllFeaturedBooks, getNewArrivalBooks, getPurchasedBooksByCustomer, generateWatermarkedEbook, searchEverything, approveBook, denyBook, deactivateBook, reactivateBook, reportBookIssue, getBookIssueReports, updateBookIssueReportStatus } from "./module/book";
 import { createChapter, updateChapter, deleteChapter, getAllChapters, viewChapterById, getAllChapterByBookId } from "./module/chapter";
@@ -115,6 +115,12 @@ import {
   reviewKyc,
   getKycRequirements,
   updateKycRequirements,
+  submitAuthorKyc,
+  getMyAuthorKyc,
+  getAllAuthorKycSubmissions,
+  reviewAuthorKyc,
+  getAuthorKycRequirements,
+  updateAuthorKycRequirements,
 } from "./module/kyc";
 
 export const appRouter = router({
@@ -154,6 +160,9 @@ export const appRouter = router({
   getAuthorsByUser,
   getAuthorDashboardStats,
   getAllAuthors,
+  inviteAuthor,
+  resendAuthorInvite,
+  setupAuthorAccount,
   createCustomer,
   updateCustomer,
   deleteCustomer,
@@ -277,6 +286,12 @@ export const appRouter = router({
   reviewKyc,
   getKycRequirements,
   updateKycRequirements,
+  submitAuthorKyc,
+  getMyAuthorKyc,
+  getAllAuthorKycSubmissions,
+  reviewAuthorKyc,
+  getAuthorKycRequirements,
+  updateAuthorKycRequirements,
 
   getAuthorPricingContext,
   

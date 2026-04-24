@@ -30,9 +30,11 @@ const PATH_TITLES: Record<string, string> = {
   "/app/kyc":              "Publisher Verification",
   "/app/kyc/pending":      "Verification Pending",
   "/app/kyc-reviews":      "KYC Reviews",
-  "/app/users":            "Staff",
+  "/app/users":            "Users",
   "/app/categories":       "Categories",
 };
+
+const ALWAYS_ALLOWED_PATH_PREFIXES = ["/app/kyc", "/app/kyc/pending"];
 
 export default function DashboardShell({
   children,
@@ -57,6 +59,12 @@ export default function DashboardShell({
   useEffect(() => {
     if (!pathname) return;
     if (pathname === "/app" || pathname === "/app/profile") return;
+
+    const isAlwaysAllowed = ALWAYS_ALLOWED_PATH_PREFIXES.some(
+      (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+    );
+
+    if (isAlwaysAllowed) return;
 
     const isAllowed = allowedPrefixes.some(
       (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)

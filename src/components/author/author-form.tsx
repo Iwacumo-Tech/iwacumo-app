@@ -11,15 +11,21 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Loader2 } from "lucide-react";
+import { useSession } from "next-auth/react";
 
 const AuthorForm = ({ author, action, trigger }: { author?: any; action: "Add" | "Edit"; trigger?: React.ReactNode }) => {
   const { toast } = useToast();
   const utils = trpc.useUtils();
   const [open, setOpen] = useState(false);
   const isEditMode = action === "Edit" && !!author?.id;
+  const { data: session } = useSession();
+  const publisherId = session?.user?.publisher_id ?? null;
+  const { data: publishers } = trpc.getAllPublisher.useQuery(undefined, {
+    enabled: !!publisherId && !isEditMode,
+  });
+  const currentPublisher = publishers?.find((publisher: any) => publisher.id === publisherId);
+  const isWhiteLabelPublisher = !!currentPublisher?.white_label;
 
-  // FIX 1: Explicitly define which schema to use based on action
-  // This prevents the 'parseAsync' of undefined error
   const currentSchema = isEditMode ? updateAuthorSchema : createAuthorSchema;
 
   const form = useForm<any>({
@@ -27,6 +33,7 @@ const AuthorForm = ({ author, action, trigger }: { author?: any; action: "Add" |
     defaultValues: {
       first_name: "",
       last_name: "",
+      pen_name: "",
       email: "",
       username: "",
       password: "",
@@ -42,6 +49,7 @@ const AuthorForm = ({ author, action, trigger }: { author?: any; action: "Add" |
           id: author.id,
           first_name: author.user?.first_name || "",
           last_name: author.user?.last_name || "",
+          pen_name: author.pen_name || "",
           email: author.user?.email || "",
           username: author.user?.username || "",
           phone_number: author.user?.phone_number || "",
@@ -50,6 +58,7 @@ const AuthorForm = ({ author, action, trigger }: { author?: any; action: "Add" |
         form.reset({
           first_name: "",
           last_name: "",
+          pen_name: "",
           email: "",
           username: "",
           password: "",
@@ -60,12 +69,19 @@ const AuthorForm = ({ author, action, trigger }: { author?: any; action: "Add" |
   }, [open, isEditMode, author, form]);
 
   const { mutate: addAuthor, isPending: isAdding } = trpc.createAuthor.useMutation({
-    onSuccess: () => {
-      toast({ title: "Success", description: "Author added to your roster." });
+    onSuccess: (result) => {
+      toast({
+        title: "Success",
+        description:
+          result?.onboarding_mode === "invite"
+            ? "Author invite sent successfully."
+            : "Author added to your roster.",
+      });
+      utils.getAllAuthors.invalidate();
       utils.getAuthorsByUser.invalidate();
       setOpen(false);
     },
-    onError: (err) => toast({ variant: "destructive", title: "Error", description: err.message }) // Pure English from Backend
+    onError: (err) => toast({ variant: "destructive", title: "Error", description: err.message })
   });
 
   const { mutate: updateAuthor, isPending: isUpdating } = trpc.updateAuthor.useMutation({
@@ -117,28 +133,45 @@ const AuthorForm = ({ author, action, trigger }: { author?: any; action: "Add" |
                   </FormItem>
                 )} />
               </div>
-              
-              <FormField control={form.control} name="username" render={({ field }) => (
+
+              <FormField control={form.control} name="pen_name" render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-[10px] font-black uppercase opacity-40">Username</FormLabel>
-                  <FormControl><Input className="input-gumroad" {...field} /></FormControl>
+                  <FormLabel className="text-[10px] font-black uppercase opacity-40">Pen Name</FormLabel>
+                  <FormControl><Input className="input-gumroad" placeholder="Optional public author name" {...field} /></FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
 
-              <FormField control={form.control} name="email" render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-[10px] font-black uppercase opacity-40">Email Address</FormLabel>
-                  <FormControl><Input disabled={isEditMode} className="input-gumroad" {...field} /></FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
-
-              {!isEditMode && (
-                <FormField control={form.control} name="password" render={({ field }) => (
+              {isEditMode && (
+                <FormField control={form.control} name="username" render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-[10px] font-black uppercase opacity-40">Password</FormLabel>
-                    <FormControl><Input type="password" className="input-gumroad" {...field} /></FormControl>
+                    <FormLabel className="text-[10px] font-black uppercase opacity-40">Username</FormLabel>
+                    <FormControl><Input className="input-gumroad" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              )}
+
+              {!isEditMode && isWhiteLabelPublisher && (
+                <>
+                  <div className="border-2 border-black bg-[#f9f6f0] p-4 text-xs font-bold leading-relaxed">
+                    White-label authors are onboarded by invite. Add their email and we&apos;ll send a setup link so they can activate their account and complete KYC.
+                  </div>
+                  <FormField control={form.control} name="email" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-[10px] font-black uppercase opacity-40">Email Address</FormLabel>
+                      <FormControl><Input className="input-gumroad" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </>
+              )}
+
+              {isEditMode && (
+                <FormField control={form.control} name="email" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-[10px] font-black uppercase opacity-40">Email Address</FormLabel>
+                    <FormControl><Input disabled className="input-gumroad" {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
@@ -150,7 +183,7 @@ const AuthorForm = ({ author, action, trigger }: { author?: any; action: "Add" |
               disabled={isAdding || isUpdating} 
               className="w-full h-14 bg-black text-white font-black uppercase italic border-2 border-black gumroad-shadow hover:translate-x-[2px] transition-all"
             >
-              {(isAdding || isUpdating) ? <Loader2 className="animate-spin" /> : `${action} Author`}
+              {(isAdding || isUpdating) ? <Loader2 className="animate-spin" /> : !isEditMode && isWhiteLabelPublisher ? "Invite Author" : `${action} Author`}
             </Button>
           </form>
         </Form>

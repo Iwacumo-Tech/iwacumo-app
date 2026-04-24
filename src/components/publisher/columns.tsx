@@ -1,14 +1,16 @@
 "use client";
 
+import React from "react";
 import { ColumnDef } from "@tanstack/react-table";
 import {
   MoreHorizontal,
-  Trash2,
   Edit3,
   ExternalLink,
   Globe,
   Shield,
   ShieldOff,
+  ShieldCheck,
+  Users,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -21,27 +23,13 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { trpc } from "@/app/_providers/trpc-provider";
 import PublisherForm from "./publisher-form";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+import PublisherInfoModal from "./publisher-info-modal";
 import { Switch } from "@/components/ui/switch";
 import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
 
 const menuButtonStyle =
   "w-full text-left px-3 py-2.5 text-xs font-black uppercase italic hover:bg-accent cursor-pointer flex items-center gap-2 transition-colors rounded-none outline-none border-none bg-transparent text-black shadow-none";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Inline white-label toggle — used both in the table column and in the menu
-// ─────────────────────────────────────────────────────────────────────────────
 
 function WhiteLabelToggle({
   publisher,
@@ -66,7 +54,6 @@ function WhiteLabelToggle({
   });
 
   if (compact) {
-    // Used inside the dropdown — label + switch side by side
     return (
       <div className="flex items-center justify-between px-3 py-2.5">
         <span className="flex items-center gap-2 text-xs font-black uppercase italic">
@@ -88,7 +75,6 @@ function WhiteLabelToggle({
     );
   }
 
-  // Used in the table column — badge style with clickable toggle
   return (
     <button
       onClick={() =>
@@ -115,10 +101,6 @@ function WhiteLabelToggle({
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Action menu
-// ─────────────────────────────────────────────────────────────────────────────
-
 function PublisherAction({ publisher }: { publisher: any }) {
   const { toast } = useToast();
   const utils = trpc.useUtils();
@@ -126,11 +108,13 @@ function PublisherAction({ publisher }: { publisher: any }) {
   const isSuperAdmin = session?.roles?.some((r) => r.name === "super-admin");
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
 
-  const deletePublisher = trpc.deletePublisher.useMutation({
+  const toggleUserActive = trpc.toggleUserActive.useMutation({
     onSuccess: () => {
       toast({
-        title: "Removed",
-        description: "Publisher and associated tenant account deactivated.",
+        title: publisher.user?.active ? "Publisher suspended" : "Publisher restored",
+        description: publisher.user?.active
+          ? "This publisher can no longer sign in until restored."
+          : "This publisher can sign in and manage their store again.",
       });
       utils.getAllPublisher.invalidate();
     },
@@ -138,11 +122,18 @@ function PublisherAction({ publisher }: { publisher: any }) {
       toast({ variant: "destructive", title: "Error", description: err.message }),
   });
 
-  const orgName   = publisher.tenant?.name  ?? "Unknown Org";
-  const leadName  = [publisher.user?.first_name, publisher.user?.last_name]
-    .filter(Boolean)
-    .join(" ") || "—";
-  const initials  = (publisher.user?.first_name?.[0] ?? publisher.tenant?.name?.[0] ?? "?").toUpperCase();
+  const orgName = publisher.tenant?.name ?? "Unknown Org";
+  const leadName =
+    [publisher.user?.first_name, publisher.user?.last_name].filter(Boolean).join(" ") || "—";
+  const initials = (
+    publisher.user?.first_name?.[0] ??
+    publisher.tenant?.name?.[0] ??
+    "?"
+  ).toUpperCase();
+  const browserUrl = process.env.NEXT_PUBLIC_BROWSER_URL ?? "";
+  const storefrontUrl = publisher.slug
+    ? `${browserUrl.replace(/\/$/, "")}/${publisher.slug}`
+    : browserUrl;
 
   return (
     <DropdownMenu open={isMenuOpen} onOpenChange={setIsMenuOpen}>
@@ -159,7 +150,6 @@ function PublisherAction({ publisher }: { publisher: any }) {
         align="end"
         className="rounded-none border-4 border-black gumroad-shadow w-72 p-0 bg-white"
       >
-        {/* ── Context header: who is this menu for ─────────────── */}
         <div className="flex items-center gap-3 px-3 py-3 border-b-2 border-black bg-black text-white">
           <div className="w-9 h-9 rounded-full border-2 border-white/30 bg-accent text-black flex items-center justify-center font-black text-xs shrink-0">
             {initials}
@@ -168,13 +158,24 @@ function PublisherAction({ publisher }: { publisher: any }) {
             <p className="font-black uppercase italic text-xs tracking-tight leading-tight truncate">
               {orgName}
             </p>
-            <p className="text-[9px] font-bold opacity-50 uppercase truncate">
-              {leadName}
-            </p>
+            <p className="text-[9px] font-bold opacity-50 uppercase truncate">{leadName}</p>
           </div>
         </div>
 
-        {/* 1. Edit */}
+        <DropdownMenuItem
+          onSelect={(e) => e.preventDefault()}
+          className="p-0 focus:bg-transparent"
+        >
+          <PublisherInfoModal
+            publisher={publisher}
+            trigger={
+              <div className={menuButtonStyle}>
+                <Users size={14} /> View Publisher Info
+              </div>
+            }
+          />
+        </DropdownMenuItem>
+
         <DropdownMenuItem
           onSelect={(e) => e.preventDefault()}
           className="p-0 focus:bg-transparent"
@@ -190,9 +191,8 @@ function PublisherAction({ publisher }: { publisher: any }) {
           />
         </DropdownMenuItem>
 
-        {/* 2. Visit storefront */}
         <a
-          href={`https://${publisher.slug}.booka.africa`}
+          href={storefrontUrl || "#"}
           target="_blank"
           rel="noopener noreferrer"
           className={menuButtonStyle}
@@ -201,7 +201,6 @@ function PublisherAction({ publisher }: { publisher: any }) {
           <ExternalLink size={14} /> Visit Storefront
         </a>
 
-        {/* 3. White-label toggle (super admin only) */}
         {isSuperAdmin && (
           <>
             <DropdownMenuSeparator className="bg-black m-0 h-[2px]" />
@@ -216,55 +215,28 @@ function PublisherAction({ publisher }: { publisher: any }) {
 
         <DropdownMenuSeparator className="bg-black m-0 h-[2px]" />
 
-        {/* 4. Delete */}
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <div
-              className={cn(
-                menuButtonStyle,
-                "text-red-600 focus:bg-red-50 focus:text-red-600"
-              )}
-            >
-              <Trash2 size={14} /> Delete Publisher
-            </div>
-          </AlertDialogTrigger>
-          <AlertDialogContent className="rounded-none border-4 border-black bg-white gumroad-shadow-lg">
-            <AlertDialogHeader>
-              <AlertDialogTitle className="font-black uppercase italic text-2xl tracking-tighter">
-                Are you sure?
-              </AlertDialogTitle>
-              <AlertDialogDescription className="font-bold text-black/60">
-                This will deactivate{" "}
-                <span className="text-black underline">"{orgName}"</span> and
-                all its direct authors.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter className="gap-4">
-              <AlertDialogCancel className="rounded-none border-2 border-black font-black uppercase italic text-xs hover:bg-accent transition-colors">
-                Cancel
-              </AlertDialogCancel>
-              <AlertDialogAction
-                onClick={() => deletePublisher.mutate({ id: publisher.id })}
-                className="rounded-none border-2 border-black bg-red-600 text-white font-black uppercase italic text-xs hover:bg-red-700 transition-colors"
-              >
-                Confirm Deletion
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <button
+          type="button"
+          disabled={!publisher.user?.id || toggleUserActive.isPending}
+          onClick={() => {
+            if (!publisher.user?.id) return;
+            toggleUserActive.mutate({ id: publisher.user.id, active: !publisher.user?.active });
+          }}
+          className={cn(
+            menuButtonStyle,
+            publisher.user?.active
+              ? "text-red-600 focus:bg-red-50 focus:text-red-600"
+              : "text-emerald-700 focus:bg-emerald-50 focus:text-emerald-700",
+            "disabled:cursor-not-allowed disabled:opacity-40"
+          )}
+        >
+          {publisher.user?.active ? <ShieldOff size={14} /> : <ShieldCheck size={14} />}
+          {publisher.user?.active ? "Suspend Publisher" : "Restore Publisher"}
+        </button>
       </DropdownMenuContent>
     </DropdownMenu>
   );
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Missing React import (columns files need it for useState)
-// ─────────────────────────────────────────────────────────────────────────────
-import React from "react";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Column definitions
-// ─────────────────────────────────────────────────────────────────────────────
 
 export const publisherColumns: ColumnDef<any>[] = [
   {
@@ -296,10 +268,27 @@ export const publisherColumns: ColumnDef<any>[] = [
     ),
   },
   {
+    accessorKey: "authors",
+    header: "Authors",
+    cell: ({ row }) => {
+      const authors = row.original.authors ?? [];
+
+      return (
+        <div className="flex items-center gap-2">
+          <Users size={13} className="opacity-50" />
+          <span className="font-black italic text-sm">{authors.length}</span>
+          <span className="text-[10px] font-bold uppercase tracking-widest opacity-40">
+            {authors.length === 1 ? "Author" : "Authors"}
+          </span>
+        </div>
+      );
+    },
+  },
+  {
     accessorKey: "custom_domain",
     header: "URL / Address",
     cell: ({ row }) => {
-      const slug          = row.original.slug;
+      const slug = row.original.slug;
       const displayDomain = row.original.custom_domain || `www.iwacumo.com/${slug}`;
       return (
         <div className="flex items-center gap-2 text-xs font-bold opacity-60 italic">
@@ -310,7 +299,6 @@ export const publisherColumns: ColumnDef<any>[] = [
     },
   },
   {
-    // White-label status as a dedicated, visible column with an inline toggle
     accessorKey: "white_label",
     header: "White-Label",
     cell: ({ row }) => <WhiteLabelToggle publisher={row.original} />,

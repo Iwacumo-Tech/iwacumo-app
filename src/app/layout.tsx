@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import TRPCProvider from "./_providers/trpc-provider";
 import { SessionProvider } from "next-auth/react";
 import CartDrawer from "@/components/shared/CartDrawer";
+import { PublicTranslationProvider } from "@/components/shared/translation-provider";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -19,14 +20,15 @@ export default function RootLayout ({ children }: Readonly<{
   return (
     <html lang="en">
       <body className={inter.className}>
-
-        <SessionProvider>
-          <TRPCProvider>
-            {children}
-            <Toaster />
-            <CartDrawer />
-          </TRPCProvider>
-        </SessionProvider>
+        <PublicTranslationProvider>
+          <SessionProvider>
+            <TRPCProvider>
+              {children}
+              <Toaster />
+              <CartDrawer />
+            </TRPCProvider>
+          </SessionProvider>
+        </PublicTranslationProvider>
       </body> 
     </html>
   );

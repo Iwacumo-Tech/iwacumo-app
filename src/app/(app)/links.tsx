@@ -17,7 +17,7 @@ export const links = [
     requiredPermission: "super-admin, staff-basic, staff-content, staff-publisher, staff-finance, tenant-admin, publisher, author, customer",
   },
   {
-    name: "Staff",
+    name: "Users",
     url:  "/app/users",
     icon: <LuUsers className="size-5 mr-2" />,
     requiredPermission: "super-admin",

@@ -3,15 +3,19 @@
 import { trpc }       from "@/app/_providers/trpc-provider";
 import { DataTable }  from "@/components/table/data-table";
 import { kycColumns } from "@/components/kyc/kyc-columns";
+import { authorKycColumns } from "@/components/kyc/author-kyc-columns";
 import { Loader2, ShieldCheck, Clock, CheckCircle2, XCircle } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export default function KycReviewsPage() {
   const { data: submissions, isLoading } = trpc.getAllKycSubmissions.useQuery();
+  const { data: authorSubmissions, isLoading: authorLoading } = trpc.getAllAuthorKycSubmissions.useQuery();
 
   const total     = submissions?.length ?? 0;
   const pending   = submissions?.filter(k => k.status === "submitted").length ?? 0;
   const approved  = submissions?.filter(k => k.status === "approved").length  ?? 0;
   const rejected  = submissions?.filter(k => k.status === "rejected").length  ?? 0;
+  const authorPending = authorSubmissions?.filter((k: any) => k.status === "submitted").length ?? 0;
 
   return (
     <div className="space-y-10">
@@ -23,7 +27,7 @@ export default function KycReviewsPage() {
             KYC Reviews<span className="text-accent">.</span>
           </h1>
           <p className="font-bold text-xs uppercase opacity-40 tracking-widest mt-2">
-            Publisher verification submissions
+            Publisher and author verification submissions
           </p>
         </div>
       </div>
@@ -49,15 +53,15 @@ export default function KycReviewsPage() {
       </div>
 
       {/* ── Pending attention banner ─────────────────────────── */}
-      {pending > 0 && (
+      {(pending > 0 || authorPending > 0) && (
         <div className="flex items-start gap-3 border-2 border-black bg-accent p-4">
           <Clock className="size-5 shrink-0 mt-0.5" />
           <div>
             <p className="font-black uppercase text-[11px] tracking-widest">
-              {pending} submission{pending > 1 ? "s" : ""} awaiting review
+              {pending + authorPending} submission{pending + authorPending > 1 ? "s" : ""} awaiting review
             </p>
             <p className="text-sm mt-1">
-              Publishers are blocked from the platform until their KYC is reviewed.
+              White-label publishers and authors are blocked until their verification is reviewed.
               Please action these promptly.
             </p>
           </div>
@@ -65,20 +69,44 @@ export default function KycReviewsPage() {
       )}
 
       {/* ── Table ──────────────────────────────────────────── */}
-      {isLoading ? (
+      {isLoading || authorLoading ? (
         <div className="flex items-center gap-3 p-8 text-sm font-bold uppercase tracking-widest opacity-40">
           <Loader2 size={16} className="animate-spin" />
           Loading submissions...
         </div>
       ) : (
-        <div className="bg-white border-4 border-black gumroad-shadow overflow-hidden">
-          <DataTable
-            columns={kycColumns as any}
-            data={submissions ?? []}
-            filterInputPlaceholder="Search by status..."
-            filterColumnId="status"
-          />
-        </div>
+        <Tabs defaultValue="publishers">
+          <TabsList className="border-b-4 border-black rounded-none bg-transparent gap-1 h-auto pb-0">
+            <TabsTrigger value="publishers" className="font-black uppercase text-[10px] tracking-widest rounded-none border-2 border-transparent data-[state=active]:border-black data-[state=active]:bg-accent data-[state=active]:text-black h-10 px-6">
+              Publisher KYC
+            </TabsTrigger>
+            <TabsTrigger value="authors" className="font-black uppercase text-[10px] tracking-widest rounded-none border-2 border-transparent data-[state=active]:border-black data-[state=active]:bg-accent data-[state=active]:text-black h-10 px-6">
+              Author KYC
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="publishers" className="mt-6">
+            <div className="bg-white border-4 border-black gumroad-shadow overflow-hidden">
+              <DataTable
+                columns={kycColumns as any}
+                data={submissions ?? []}
+                filterInputPlaceholder="Search publisher submissions..."
+                filterColumnId="status"
+              />
+            </div>
+          </TabsContent>
+
+          <TabsContent value="authors" className="mt-6">
+            <div className="bg-white border-4 border-black gumroad-shadow overflow-hidden">
+              <DataTable
+                columns={authorKycColumns as any}
+                data={authorSubmissions ?? []}
+                filterInputPlaceholder="Search author submissions..."
+                filterColumnId="status"
+              />
+            </div>
+          </TabsContent>
+        </Tabs>
       )}
     </div>
   );

@@ -17,6 +17,7 @@ declare module "next-auth" {
     isCustomer?: boolean;
     author_id?: string | null;
     publisher_id?: string | null;
+    author_requires_kyc?: boolean;
   }
 
   /**
@@ -50,5 +51,6 @@ declare module "next-auth/jwt" {
     author_id?: string | null;
     publisher_id?: string | null;
     isCustomer?: boolean;
+    author_requires_kyc?: boolean;
   }
 }

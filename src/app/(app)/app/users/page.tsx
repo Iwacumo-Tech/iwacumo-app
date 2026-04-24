@@ -119,10 +119,10 @@ export default function UsersPage() {
       <div className="flex flex-col md:flex-row justify-between items-end gap-6 border-b-4 border-black pb-8">
         <div>
           <h1 className="text-4xl md:text-6xl font-black uppercase italic tracking-tighter">
-            Staff<span className="text-accent">.</span>
+            Users<span className="text-accent">.</span>
           </h1>
           <p className="font-bold text-xs uppercase opacity-40 tracking-widest mt-2">
-            Manage your team and their access levels
+            Manage platform users, staff, and access levels
           </p>
         </div>
         <InviteStaffForm />
@@ -173,12 +173,12 @@ export default function UsersPage() {
           Loading people...
         </div>
       ) : (
-        <Tabs defaultValue="staff">
+        <Tabs defaultValue="users">
           <TabsList className="border-b-4 border-black rounded-none bg-transparent gap-1 h-auto pb-0">
             {[
+              { value: "users", label: "All Users"        },
               { value: "staff", label: "All Staff"        },
               { value: "roles", label: "Role Assignments" },
-              { value: "users", label: "All Users"        },
             ].map(({ value, label }) => (
               <TabsTrigger
                 key={value}
@@ -201,21 +201,21 @@ export default function UsersPage() {
             />
           </TabsContent>
 
-          <TabsContent value="roles" className="mt-6">
-            <DataTable<AdminUserRow, any>
-              columns={adminRoleColumns}
-              data={allStaff ?? []}
-              filterColumnId="email"           
-              filterInputPlaceholder="Search roles by email..." 
-            />
-          </TabsContent>
-
           <TabsContent value="users" className="mt-6">
             <DataTable<PlatformUserRow, any>
               columns={userColumns}
               data={(allUsers ?? []) as PlatformUserRow[]}
               filterColumnId="email"
               filterInputPlaceholder="Search users by email..."
+            />
+          </TabsContent>
+
+          <TabsContent value="roles" className="mt-6">
+            <DataTable<AdminUserRow, any>
+              columns={adminRoleColumns}
+              data={allStaff ?? []}
+              filterColumnId="email"           
+              filterInputPlaceholder="Search roles by email..." 
             />
           </TabsContent>
         </Tabs>

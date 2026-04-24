@@ -183,7 +183,17 @@ export const updatePublisher = publicProcedure
 export const getAllPublisher = publicProcedure.query(async () => {
   return await prisma.publisher.findMany({ 
     where: { deleted_at: null }, 
-    include: { tenant: true, user: true } 
+    include: {
+      tenant: true,
+      user: true,
+      authors: {
+        where: { deleted_at: null },
+        include: {
+          user: true,
+        },
+        orderBy: { created_at: "desc" },
+      },
+    }
   });
 });
 
