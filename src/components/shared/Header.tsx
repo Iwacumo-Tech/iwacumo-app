@@ -20,6 +20,7 @@ import { trpc } from "@/app/_providers/trpc-provider";
 import { cn } from "@/lib/utils";
 import { SearchOverlay } from "../shared/SearchOverlay";
 import { UserIdentityBadge } from "./UserIdentityBadge";
+import { LanguageSwitcher } from "./language-switcher";
 
 function HeaderContent() {
   const pathname = usePathname();
@@ -119,6 +120,8 @@ function HeaderContent() {
           )}>
             Discover
           </Link>
+
+          <LanguageSwitcher compact />
           
           {session && (
             <Link href="/app" className="flex items-center gap-2 hover:text-accent transition-colors">
@@ -214,6 +217,9 @@ function HeaderContent() {
                       />
                     </div>
                   )}
+                  <div className="pt-1">
+                    <LanguageSwitcher />
+                  </div>
                 </div>
               </div>
               

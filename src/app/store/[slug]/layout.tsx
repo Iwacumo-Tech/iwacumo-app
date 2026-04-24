@@ -6,6 +6,8 @@ import Link from "next/link";
 import Image from "next/image";
 import prisma from "@/lib/prisma";
 import { ShoppingCart, Search } from "lucide-react";
+import { PublicTranslationProvider } from "@/components/shared/translation-provider";
+import { LanguageSwitcher } from "@/components/shared/language-switcher";
 
 interface StoreLayoutProps {
   children: React.ReactNode;
@@ -68,6 +70,7 @@ export default async function StoreLayout({ children, params }: StoreLayoutProps
   const navBorder = isWhiteLabel ? secondaryColor : "#000000";
 
   return (
+    <PublicTranslationProvider>
     <div
       className="min-h-screen selection:bg-[var(--store-accent)] selection:text-black"
       style={{ fontFamily, ["--store-accent" as any]: accentColor, ["--store-secondary" as any]: secondaryColor }}
@@ -128,7 +131,8 @@ export default async function StoreLayout({ children, params }: StoreLayoutProps
           </Link>
 
           {/* Actions */}
-          <div className="flex items-center gap-4 md:gap-6">
+          <div className="flex items-center gap-3 md:gap-4">
+            <LanguageSwitcher compact inverted={isWhiteLabel} />
             <button className="transition-colors hover:opacity-70" style={{ color: navText }}>
               <Search size={20} />
             </button>
@@ -164,5 +168,6 @@ export default async function StoreLayout({ children, params }: StoreLayoutProps
         </div>
       )}
     </div>
+    </PublicTranslationProvider>
   );
 }

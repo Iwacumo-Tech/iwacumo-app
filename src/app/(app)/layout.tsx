@@ -5,6 +5,7 @@ import { Session } from "next-auth";
 import { links } from "./links";
 import { redirect } from "next/navigation";
 import { getRolesForActiveProfile } from "@/lib/profile-mode";
+import { DisableTranslation } from "@/components/shared/disable-translation";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -39,6 +40,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       key={`${activeProfile ?? "none"}:${availableProfiles.join(",")}`}
       session={hydratedSession as Session | null}
     >
+      <DisableTranslation />
       <DashboardShell links={filteredLinks}>
         {children}
       </DashboardShell>

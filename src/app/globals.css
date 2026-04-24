@@ -107,3 +107,19 @@
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { @apply bg-transparent; }
 ::-webkit-scrollbar-thumb { @apply bg-black/10 rounded-full hover:bg-black/20; }
+
+.goog-te-banner-frame.skiptranslate,
+iframe.skiptranslate {
+  display: none !important;
+}
+
+body {
+  top: 0 !important;
+}
+
+.goog-logo-link,
+.goog-te-gadget span,
+.goog-te-gadget-icon,
+.goog-te-combo {
+  display: none !important;
+}
