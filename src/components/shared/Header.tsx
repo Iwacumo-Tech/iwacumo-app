@@ -32,7 +32,8 @@ function HeaderContent() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   
   const desktopSearchRef = useRef<HTMLDivElement>(null);
-  const mobileSearchRef = useRef<HTMLDivElement>(null);
+  const mobileSearchButtonRef = useRef<HTMLDivElement>(null);
+  const mobileSearchPanelRef = useRef<HTMLDivElement>(null);
   const userId = session?.user?.id as string;
   
   const userCart = trpc.getCartsByUser.useQuery(
@@ -46,10 +47,12 @@ function HeaderContent() {
       const target = e.target as Node;
       const clickedDesktopSearch =
         desktopSearchRef.current && desktopSearchRef.current.contains(target);
-      const clickedMobileSearch =
-        mobileSearchRef.current && mobileSearchRef.current.contains(target);
+      const clickedMobileSearchButton =
+        mobileSearchButtonRef.current && mobileSearchButtonRef.current.contains(target);
+      const clickedMobileSearchPanel =
+        mobileSearchPanelRef.current && mobileSearchPanelRef.current.contains(target);
 
-      if (!clickedDesktopSearch && !clickedMobileSearch) {
+      if (!clickedDesktopSearch && !clickedMobileSearchButton && !clickedMobileSearchPanel) {
         setIsSearchOpen(false);
       }
     };
@@ -185,7 +188,7 @@ function HeaderContent() {
 
         {/* --- 4. MOBILE ACTIONS --- */}
         <div className="flex items-center gap-3 lg:hidden">
-          <div ref={mobileSearchRef} className="relative md:hidden">
+          <div ref={mobileSearchButtonRef} className="relative md:hidden">
             <Button
               type="button"
               variant="ghost"
@@ -201,45 +204,6 @@ function HeaderContent() {
             >
               {isSearchOpen ? <X className="h-5 w-5" /> : <Search className="h-5 w-5" />}
             </Button>
-
-            {isSearchOpen && (
-              <div className="absolute left-1/2 top-full z-[90] mt-3 w-[min(calc(100vw-2rem),22rem)] -translate-x-1/2 bg-white p-3 border-[1.5px] border-black rounded-[var(--radius)] gumroad-shadow-sm">
-                <div className="relative w-full">
-                  <Input
-                    autoFocus
-                    className="booka-input-minimal pl-10 h-11 bg-[#F9F9F9] focus:bg-white text-sm"
-                    placeholder="Search library..."
-                    value={searchQuery}
-                    onChange={(e) => {
-                      setSearchQuery(e.target.value);
-                      setIsSearchOpen(true);
-                    }}
-                    onFocus={() => setIsSearchOpen(true)}
-                    type="search"
-                  />
-                  <Search className={cn(
-                    "absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 transition-colors",
-                    isSearchOpen ? "text-black" : "text-gray-400"
-                  )} />
-
-                  {searchQuery && (
-                    <button
-                      type="button"
-                      onClick={() => setSearchQuery("")}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-black"
-                    >
-                      <X size={16} />
-                    </button>
-                  )}
-                </div>
-
-                <SearchOverlay
-                  query={searchQuery}
-                  isOpen={isSearchOpen}
-                  onClose={() => setIsSearchOpen(false)}
-                />
-              </div>
-            )}
           </div>
 
           <Link href="/cart" className="relative p-2">
@@ -321,6 +285,48 @@ function HeaderContent() {
             </SheetContent>
           </Sheet>
         </div>
+
+        {isSearchOpen && (
+          <div
+            ref={mobileSearchPanelRef}
+            className="absolute left-1/2 top-full z-[90] mt-3 w-[min(calc(100vw-2rem),22rem)] -translate-x-1/2 bg-white p-3 border-[1.5px] border-black rounded-[var(--radius)] gumroad-shadow-sm md:hidden"
+          >
+            <div className="relative w-full">
+              <Input
+                autoFocus
+                className="booka-input-minimal pl-10 h-11 bg-[#F9F9F9] focus:bg-white text-sm"
+                placeholder="Search library..."
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setIsSearchOpen(true);
+                }}
+                onFocus={() => setIsSearchOpen(true)}
+                type="search"
+              />
+              <Search className={cn(
+                "absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 transition-colors",
+                isSearchOpen ? "text-black" : "text-gray-400"
+              )} />
+
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-black"
+                >
+                  <X size={16} />
+                </button>
+              )}
+            </div>
+
+            <SearchOverlay
+              query={searchQuery}
+              isOpen={isSearchOpen}
+              onClose={() => setIsSearchOpen(false)}
+            />
+          </div>
+        )}
       </div>
     </header>
   );
