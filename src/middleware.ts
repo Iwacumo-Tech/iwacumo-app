@@ -5,7 +5,7 @@ import type { NextRequest } from "next/server";
 const RESERVED_PREFIXES = [
   "api", "trpc", "app", "login", "register", "shop", "cart",
   "checkout", "settings", "admin", "auth", "store", "book", "shop",
-  "author", "sign-up", "verify-email", "forgot-password", "orders",
+  "author", "sign-up", "verify-email", "forgot-password", "author-setup", "orders",
   "reset-password", "staff-setup", "_next", "static", "payment", 
 ];
  
