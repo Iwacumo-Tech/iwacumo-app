@@ -7,10 +7,12 @@ import FeaturedSection from "@/components/home/FeaturedSection";
 import Marquee from "@/components/home/Marquee";
 import CategoryGrid from "@/components/home/CategoryGrid";
 import SellerCTA from "@/components/home/SellerCTA";
+import { TawkChat } from "@/components/shared/tawk-chat";
 
 export default function Home() {
   return (
     <main className="min-h-screen bg-background selection:bg-accent selection:text-black">
+      <TawkChat />
       <Header />
       
       {/* 1. Impactful Hero Section */}

@@ -34,7 +34,14 @@ const PATH_TITLES: Record<string, string> = {
   "/app/categories":       "Categories",
 };
 
-const ALWAYS_ALLOWED_PATH_PREFIXES = ["/app/kyc", "/app/kyc/pending"];
+const ALWAYS_ALLOWED_PATH_PREFIXES = [
+  "/app/kyc",
+  "/app/kyc/pending",
+  "/app/author/kyc",
+  "/app/author/kyc/pending",
+  "/app/authors/kyc",
+  "/app/authors/kyc/pending",
+];
 
 export default function DashboardShell({
   children,
@@ -97,32 +104,56 @@ export default function DashboardShell({
 
       {/* Main Content Area */}
       <div className="lg:pl-72 flex flex-col flex-1 w-full min-h-screen overflow-y-auto">
-        <header className="sticky top-0 z-40 bg-white border-b-4 border-black h-20 flex items-center justify-between px-4 md:px-8 shrink-0">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              className="lg:hidden p-2 border-2 border-black bg-accent hover:bg-accent/80"
-              onClick={() => setSidebarOpen(true)}
-            >
-              <FaBars className="w-5 h-5 text-black" />
-            </Button>
+        <header className="sticky top-0 z-40 shrink-0 border-b-4 border-black bg-white px-4 py-3 md:h-20 md:px-8 md:py-0">
+          <div className="flex min-h-[3.5rem] flex-col justify-center gap-3 md:min-h-0 md:flex-row md:items-center md:justify-between md:gap-4 md:h-full">
+            <div className="flex min-w-0 items-center justify-between gap-3 md:flex-1">
+              <div className="flex min-w-0 flex-1 items-center gap-3 md:gap-4">
+                <Button
+                  variant="ghost"
+                  className="lg:hidden shrink-0 border-2 border-black bg-accent p-2 hover:bg-accent/80"
+                  onClick={() => setSidebarOpen(true)}
+                >
+                  <FaBars className="h-5 w-5 text-black" />
+                </Button>
 
-            <h1 className="text-xl md:text-2xl font-black uppercase italic tracking-tighter truncate text-black">
-              {currentTitle}<span className="text-accent">.</span>
-            </h1>
-          </div>
+                <h1 className="min-w-0 truncate pr-2 text-base font-black uppercase italic tracking-tighter text-black sm:text-lg md:pr-0 md:text-2xl">
+                  {currentTitle}
+                  <span className="text-accent">.</span>
+                </h1>
+              </div>
 
-          <div className="flex items-center gap-3 md:gap-4">
-            {session?.activeProfile && <ProfileSwitcher />}
-            <Button
-              onClick={toggleCart}
-              className="bg-accent text-black border-2 border-black h-12 px-4 flex items-center gap-3 gumroad-shadow-sm hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-none transition-all"
-            >
-              <ShoppingBag className="w-5 h-5" />
-              <span className="hidden sm:inline font-black uppercase text-[10px] tracking-widest">
-                Bag
-              </span>
-            </Button>
+              <div className="flex shrink-0 items-center gap-2 md:hidden">
+                <Button
+                  onClick={toggleCart}
+                  className="flex h-11 items-center gap-2 border-2 border-black bg-accent px-3 text-black gumroad-shadow-sm transition-all hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-none"
+                >
+                  <ShoppingBag className="h-5 w-5" />
+                  <span className="font-black uppercase tracking-widest text-[10px]">
+                    Bag
+                  </span>
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 md:min-w-0 md:flex-1 md:justify-end md:gap-4">
+              {session?.activeProfile ? (
+                <div className="min-w-0 flex-1 md:flex-none">
+                  <ProfileSwitcher />
+                </div>
+              ) : (
+                <div className="flex-1 md:hidden" />
+              )}
+
+              <Button
+                onClick={toggleCart}
+                className="hidden h-12 items-center gap-3 border-2 border-black bg-accent px-4 text-black gumroad-shadow-sm transition-all hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-none md:flex"
+              >
+                <ShoppingBag className="h-5 w-5" />
+                <span className="font-black uppercase tracking-widest text-[10px]">
+                  Bag
+                </span>
+              </Button>
+            </div>
           </div>
         </header>
 

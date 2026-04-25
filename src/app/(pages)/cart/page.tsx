@@ -41,6 +41,10 @@ function isPhysical(bookType: string) {
   return t.includes("paper") || t.includes("hard");
 }
 
+function isEbook(bookType: string) {
+  return bookType.toLowerCase().includes("ebook");
+}
+
 // Default weight fallback when BookVariant.weight_grams is unknown at client time.
 // The server will recompute from real variant data anyway.
 const DEFAULT_WEIGHT_GRAMS_PER_ITEM = 400;
@@ -225,8 +229,13 @@ export default function CartPage() {
   };
 
   const updateQuantity = (id: string, newQty: number) => {
-    const qty     = Math.max(1, newQty);
-    const updated = cartItems.map(item => item.id === id ? { ...item, quantity: qty } : item);
+    const updated = cartItems.map((item) => {
+      if (item.id !== id) return item;
+      if (isEbook(item.book_type)) return { ...item, quantity: 1 };
+
+      const qty = Math.max(1, newQty);
+      return { ...item, quantity: qty };
+    });
     setCartItems(updated);
     if (!isAuthenticated) {
       localStorage.setItem(GUEST_CART_KEY, JSON.stringify(updated));
@@ -361,14 +370,19 @@ export default function CartPage() {
                 <div className="flex items-center border-2 border-black bg-gray-50">
                   <button
                     onClick={() => updateQuantity(item.id, (item.quantity ?? 1) - 1)}
-                    className="px-4 py-2 font-black border-r-2 border-black hover:bg-white"
+                    disabled={isEbook(item.book_type)}
+                    className="px-4 py-2 font-black border-r-2 border-black hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 disabled:bg-black disabled:text-white"
                   >
                     −
                   </button>
-                  <span className="px-6 font-black text-sm">{item.quantity ?? 1}</span>
+                  <span className="px-6 font-black text-sm">
+                    {item.quantity ?? 1}
+                    {isEbook(item.book_type) ? " (digital)" : ""}
+                  </span>
                   <button
                     onClick={() => updateQuantity(item.id, (item.quantity ?? 1) + 1)}
-                    className="px-4 py-2 font-black border-l-2 border-black hover:bg-white"
+                    disabled={isEbook(item.book_type)}
+                    className="px-4 py-2 font-black border-l-2 border-black hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 disabled:bg-black disabled:text-white"
                   >
                     +
                   </button>

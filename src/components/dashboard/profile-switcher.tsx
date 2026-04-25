@@ -56,11 +56,16 @@ export function ProfileSwitcher() {
 
   if (!canSwitch) {
     return (
-      <div className="flex items-center gap-2 rounded-none border-2 border-black bg-white px-3 py-2">
+      <div className="flex w-full items-center justify-between gap-2 rounded-none border-2 border-black bg-white px-2.5 py-2 sm:w-auto sm:justify-start sm:px-3">
         <ActiveIcon className="size-4 text-black" />
-        <span className="text-[10px] font-black uppercase tracking-widest text-black sm:text-[11px]">
-          {activeLabel}
-        </span>
+        <div className="min-w-0 flex-1">
+          <span className="block truncate text-[10px] font-black uppercase tracking-widest text-black sm:hidden">
+            {activeLabel.replace(" Profile", "")}
+          </span>
+          <span className="hidden truncate text-[11px] font-black uppercase tracking-widest text-black sm:block">
+            {activeLabel}
+          </span>
+        </div>
       </div>
     );
   }
@@ -70,7 +75,7 @@ export function ProfileSwitcher() {
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="flex items-center gap-2 rounded-none border-2 border-black bg-white px-3 py-2 text-black transition-colors hover:bg-accent"
+          className="flex w-full items-center gap-2 rounded-none border-2 border-black bg-white px-2.5 py-2 text-black transition-colors hover:bg-accent sm:w-auto sm:px-3"
           disabled={isPending}
         >
           {isPending ? (
@@ -78,9 +83,14 @@ export function ProfileSwitcher() {
           ) : (
             <ActiveIcon className="size-4" />
           )}
-          <span className="max-w-[132px] truncate text-[10px] font-black uppercase tracking-widest sm:max-w-[170px] sm:text-[11px]">
-            {activeLabel}
-          </span>
+          <div className="min-w-0 flex-1">
+            <span className="block truncate text-[10px] font-black uppercase tracking-widest sm:hidden">
+              {activeLabel.replace(" Profile", "")}
+            </span>
+            <span className="hidden max-w-[170px] truncate text-[11px] font-black uppercase tracking-widest sm:block">
+              {activeLabel}
+            </span>
+          </div>
           <ChevronDown className="size-4 opacity-60" />
         </button>
       </DropdownMenuTrigger>

@@ -26,6 +26,10 @@ export default function AppPage() {
     !session?.user?.email_verified
     && userRoles.some((r) => r.name === "author" || r.name === "publisher")
     && !availableProfiles.some((profile) => profile === "author" || profile === "publisher");
+  const greetingName =
+    session?.user?.username
+    || session?.user?.first_name
+    || "Reader";
   const activePortalLabel =
     isStaff
       ? "Platform"
@@ -98,6 +102,11 @@ export default function AppPage() {
       {/* 1. Dynamic Header */}
       <div className="flex flex-col md:flex-row justify-between items-end gap-6 border-b-4 border-primary pb-8">
         <div>
+          {(isCustomer || isAuthor || isPublisher || isStaff) && (
+            <p className="font-black uppercase text-[10px] tracking-[0.3em] opacity-40 mb-3">
+              Welcome {greetingName}
+            </p>
+          )}
           <h1 className="text-4xl md:text-6xl font-black uppercase italic tracking-tighter">
             {activePortalLabel} Portal<span className="text-accent">.</span>
           </h1>
