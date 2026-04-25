@@ -203,7 +203,7 @@ function HeaderContent() {
             </Button>
 
             {isSearchOpen && (
-              <div className="absolute right-0 top-full mt-3 w-[min(88vw,22rem)] bg-white border-[1.5px] border-black rounded-[var(--radius)] gumroad-shadow-sm p-3 z-[90]">
+              <div className="absolute left-1/2 top-full z-[90] mt-3 w-[min(calc(100vw-2rem),22rem)] -translate-x-1/2 bg-white p-3 border-[1.5px] border-black rounded-[var(--radius)] gumroad-shadow-sm">
                 <div className="relative w-full">
                   <Input
                     autoFocus

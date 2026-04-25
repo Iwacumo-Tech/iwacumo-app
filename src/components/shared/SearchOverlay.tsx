@@ -28,7 +28,7 @@ export function SearchOverlay({ query, isOpen, onClose }: { query: string; isOpe
             {results.map((book) => (
               <Link
                 key={book.id}
-                href={`/book/${book.id}`}
+                href={`/shop/${book.id}`}
                 onClick={onClose}
                 className="flex items-center gap-3 p-3 hover:bg-accent rounded-[calc(var(--radius)-4px)] transition-colors group"
               >
