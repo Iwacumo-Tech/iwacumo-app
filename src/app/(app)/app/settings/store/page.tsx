@@ -31,6 +31,13 @@ import {
 } from "@/components/ui/select";
 
 import { uploadImage } from "@/lib/server";
+import {
+  STOREFRONT_CARD_STYLES,
+  STOREFRONT_HEADING_STYLES,
+  STOREFRONT_NAV_STYLES,
+  STOREFRONT_PAGE_SURFACES,
+  STOREFRONT_THEME_PRESETS,
+} from "@/lib/storefront-theme";
 
 // ─── Form schema (mirrors server schema) ─────────────────────────────────────
 
@@ -48,6 +55,11 @@ const formSchema = z.object({
   instagram:       z.string().url().nullable().optional().or(z.literal("")),
   facebook:        z.string().url().nullable().optional().or(z.literal("")),
   website:         z.string().url().nullable().optional().or(z.literal("")),
+  themePreset:     z.enum(["editorial", "modern", "minimal", "bold"]).optional(),
+  pageSurface:     z.enum(["paper", "studio", "contrast"]).optional(),
+  navStyle:        z.enum(["solid", "framed", "floating"]).optional(),
+  cardStyle:       z.enum(["shadow", "bordered", "soft"]).optional(),
+  headingStyle:    z.enum(["italic", "serif", "caps"]).optional(),
   heroLayout:      z.enum(["split", "full", "minimal"]).optional(),
   accentStyle:     z.enum(["bold", "outline", "soft"]).optional(),
   showCategories:  z.boolean().optional(),
@@ -291,6 +303,11 @@ export default function PublisherStoreSettingsPage() {
       instagram:       "",
       facebook:        "",
       website:         "",
+      themePreset:     "editorial",
+      pageSurface:     "paper",
+      navStyle:        "solid",
+      cardStyle:       "shadow",
+      headingStyle:    "italic",
       heroLayout:      "split",
       accentStyle:     "bold",
       showCategories:  true,
@@ -320,6 +337,11 @@ export default function PublisherStoreSettingsPage() {
       instagram:       social.instagram ?? "",
       facebook:        social.facebook  ?? "",
       website:         social.website   ?? "",
+      themePreset:     settings.themePreset     ?? "editorial",
+      pageSurface:     settings.pageSurface     ?? "paper",
+      navStyle:        settings.navStyle        ?? "solid",
+      cardStyle:       settings.cardStyle       ?? "shadow",
+      headingStyle:    settings.headingStyle    ?? "italic",
       heroLayout:      settings.heroLayout      ?? "split",
       accentStyle:     settings.accentStyle     ?? "bold",
       showCategories:  settings.showCategories  ?? true,
@@ -346,6 +368,11 @@ export default function PublisherStoreSettingsPage() {
         website:   values.website   || null,
       },
       store_settings: {
+        themePreset:     values.themePreset,
+        pageSurface:     values.pageSurface,
+        navStyle:        values.navStyle,
+        cardStyle:       values.cardStyle,
+        headingStyle:    values.headingStyle,
         heroLayout:      values.heroLayout,
         accentStyle:     values.accentStyle,
         showCategories:  values.showCategories,
@@ -712,6 +739,180 @@ export default function PublisherStoreSettingsPage() {
                     </FormItem>
                   )}
                 />
+
+                <div className="space-y-6 border-[1.5px] border-black/10 p-5">
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-black uppercase tracking-widest">Storefront Direction</p>
+                    <p className="text-[10px] text-gray-500 font-medium">
+                      Shape how different your publisher store feels from the main platform experience.
+                    </p>
+                  </div>
+
+                  <FormField
+                    control={form.control}
+                    name="themePreset"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-[10px] font-black uppercase tracking-widest">
+                          Theme Preset
+                        </FormLabel>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {STOREFRONT_THEME_PRESETS.map((preset) => (
+                            <button
+                              key={preset.value}
+                              type="button"
+                              onClick={() => field.onChange(preset.value)}
+                              className={`border-[1.5px] px-4 py-4 text-left transition-all ${
+                                field.value === preset.value
+                                  ? "border-black bg-black text-white"
+                                  : "border-black/15 bg-white hover:border-black"
+                              }`}
+                            >
+                              <p className="text-[11px] font-black uppercase tracking-widest">{preset.label}</p>
+                              <p className={`mt-1 text-[10px] font-medium ${field.value === preset.value ? "text-white/70" : "text-gray-500"}`}>
+                                {preset.description}
+                              </p>
+                            </button>
+                          ))}
+                        </div>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <FormField
+                      control={form.control}
+                      name="pageSurface"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-[10px] font-black uppercase tracking-widest">
+                            Page Surface
+                          </FormLabel>
+                          <Select value={field.value ?? "paper"} onValueChange={field.onChange}>
+                            <FormControl>
+                              <SelectTrigger className="input-gumroad">
+                                <SelectValue placeholder="Select a surface" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent className="bg-white text-black border-[1.5px] border-black rounded-none">
+                              {STOREFRONT_PAGE_SURFACES.map((option) => (
+                                <SelectItem key={option.value} value={option.value}>
+                                  {option.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <p className="text-[10px] text-gray-500 font-medium">
+                            {STOREFRONT_PAGE_SURFACES.find((option) => option.value === field.value)?.description ?? "Choose the general backdrop for your store."}
+                          </p>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="navStyle"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-[10px] font-black uppercase tracking-widest">
+                            Navigation Style
+                          </FormLabel>
+                          <Select value={field.value ?? "solid"} onValueChange={field.onChange}>
+                            <FormControl>
+                              <SelectTrigger className="input-gumroad">
+                                <SelectValue placeholder="Select navigation style" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent className="bg-white text-black border-[1.5px] border-black rounded-none">
+                              {STOREFRONT_NAV_STYLES.map((option) => (
+                                <SelectItem key={option.value} value={option.value}>
+                                  {option.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <p className="text-[10px] text-gray-500 font-medium">
+                            {STOREFRONT_NAV_STYLES.find((option) => option.value === field.value)?.description ?? "Choose how the header sits in the store."}
+                          </p>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="cardStyle"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-[10px] font-black uppercase tracking-widest">
+                            Product Card Shell
+                          </FormLabel>
+                          <Select value={field.value ?? "shadow"} onValueChange={field.onChange}>
+                            <FormControl>
+                              <SelectTrigger className="input-gumroad">
+                                <SelectValue placeholder="Select card style" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent className="bg-white text-black border-[1.5px] border-black rounded-none">
+                              {STOREFRONT_CARD_STYLES.map((option) => (
+                                <SelectItem key={option.value} value={option.value}>
+                                  {option.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <p className="text-[10px] text-gray-500 font-medium">
+                            {STOREFRONT_CARD_STYLES.find((option) => option.value === field.value)?.description ?? "Choose how product cards feel in the catalog."}
+                          </p>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="headingStyle"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-[10px] font-black uppercase tracking-widest">
+                            Heading Treatment
+                          </FormLabel>
+                          <Select value={field.value ?? "italic"} onValueChange={field.onChange}>
+                            <FormControl>
+                              <SelectTrigger className="input-gumroad">
+                                <SelectValue placeholder="Select heading treatment" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent className="bg-white text-black border-[1.5px] border-black rounded-none">
+                              {STOREFRONT_HEADING_STYLES.map((option) => (
+                                <SelectItem key={option.value} value={option.value}>
+                                  {option.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <p className="text-[10px] text-gray-500 font-medium">
+                            {STOREFRONT_HEADING_STYLES.find((option) => option.value === field.value)?.description ?? "Choose how section headings should feel."}
+                          </p>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <div className="border-[1.5px] border-black bg-[#FAF9F6] p-4 gumroad-shadow-sm">
+                    <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Live Theme Summary</p>
+                    <div className="mt-3 grid gap-2 text-[11px] font-bold">
+                      <p>Preset: {STOREFRONT_THEME_PRESETS.find((option) => option.value === form.watch("themePreset"))?.label ?? "Editorial"}</p>
+                      <p>Surface: {STOREFRONT_PAGE_SURFACES.find((option) => option.value === form.watch("pageSurface"))?.label ?? "Paper"}</p>
+                      <p>Navigation: {STOREFRONT_NAV_STYLES.find((option) => option.value === form.watch("navStyle"))?.label ?? "Solid"}</p>
+                      <p>Cards: {STOREFRONT_CARD_STYLES.find((option) => option.value === form.watch("cardStyle"))?.label ?? "Shadow"}</p>
+                      <p>Headings: {STOREFRONT_HEADING_STYLES.find((option) => option.value === form.watch("headingStyle"))?.label ?? "Italic"}</p>
+                    </div>
+                  </div>
+                </div>
 
                 {/* Section toggles */}
                 <div className="space-y-4 border-[1.5px] border-black/10 p-5">

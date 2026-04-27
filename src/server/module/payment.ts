@@ -7,7 +7,6 @@ import {
   createTransactionSchema,
 } from "../dtos";
 import axios from "axios";
-import { getShippingZone } from "@/lib/constants";
 import { sendOrderConfirmationEmail } from "@/lib/email";
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || "";
@@ -27,6 +26,40 @@ export const initializePayment = publicProcedure
     if (!order) throw new Error("Order not found");
     if (order.payment_status !== "pending")
       throw new Error(`Order payment status is ${order.payment_status}, cannot initialize payment`);
+
+    if (amount <= 0) {
+      await prisma.$transaction(async (tx) => {
+        await tx.transactionHistory.create({
+          data: {
+            order_id: order.id,
+            type: "capture",
+            amount: 0,
+            currency: currency || "NGN",
+            payment_provider: "free",
+            provider_reference: `free_${order.order_number}`,
+            status: "succeeded",
+            processor_response: {
+              mode: "free_claim",
+              order_number: order.order_number,
+            },
+          },
+        });
+
+        await tx.order.update({
+          where: { id: order.id },
+          data: {
+            payment_status: "captured",
+            status: "paid",
+          },
+        });
+      });
+
+      return {
+        authorization_url: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/orders/${order.id}`,
+        access_code: null,
+        reference: `free_${order.order_number}`,
+      };
+    }
 
     const amountInKobo = Math.round(amount * 100);
 
@@ -199,7 +232,7 @@ export const verifyPayment = publicProcedure
                     .split(" ")
                     .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
                     .join(" ");
-                  shippingZone = getShippingZone(parsed.delivery_address.state);
+                  shippingZone = parsed.shipping_zone ?? parsed.shipping_group ?? undefined;
                 }
               } catch { /* notes might not be JSON */ }
             }

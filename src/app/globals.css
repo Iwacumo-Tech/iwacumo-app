@@ -20,6 +20,15 @@
     /* Gumroad's Signature Pink/Red or sticking with your Yellow Accent */
     --accent: 53 100% 50%;         
     --accent-foreground: 0 0% 0%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --ring: 0 0% 15%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 10%;
     
     --border: 0 0% 89.8%;          /* Light, subtle borders for layout */
     --input: 0 0% 89.8%;

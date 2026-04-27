@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import { ArrowLeft, CheckCircle2, Clock, CreditCard, Package, Download } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Clock, CreditCard, Package } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 
 export default function OrderDetailsPage() {
@@ -113,6 +113,25 @@ export default function OrderDetailsPage() {
                       {(order as any).delivery_address.city}, 
                       {(order as any).delivery_address.state}
                     </p>
+                    {((order as any).shipping_provider || (order as any).shipping_zone || (order as any).shipping_group) && (
+                      <div className="mt-4 space-y-1">
+                        {(order as any).shipping_provider && (
+                          <p className="text-[10px] font-black uppercase tracking-widest opacity-60">
+                            Courier: {(order as any).shipping_provider}
+                          </p>
+                        )}
+                        {(order as any).shipping_zone && (
+                          <p className="text-[10px] font-black uppercase tracking-widest opacity-60">
+                            Zone: {(order as any).shipping_zone}
+                          </p>
+                        )}
+                        {(order as any).shipping_group && (
+                          <p className="text-[10px] font-black uppercase tracking-widest opacity-60">
+                            Group: {(order as any).shipping_group}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
             </div>
@@ -141,12 +160,11 @@ export default function OrderDetailsPage() {
                         <CheckCircle2 className="mx-auto text-primary mb-2" />
                         <p className="text-primary font-black uppercase italic text-[10px] tracking-widest">Transaction Verified</p>
                     </div>
-                    <Button className="w-full booka-button-secondary h-14 uppercase text-xs tracking-widest font-black">Download Digital Copies <Download className="ml-2" size={14} /></Button>
                   </div>
                 )}
             </Card>
             <div className="p-6 bg-accent border-2 border-black text-[10px] font-black uppercase italic leading-tight -rotate-1">
-                A copy of this invoice has been sent to your registered email.
+                A confirmation email of your order has also been sent.
             </div>
           </aside>
         </div>

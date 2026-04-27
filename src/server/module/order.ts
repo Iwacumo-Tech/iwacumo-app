@@ -14,7 +14,17 @@ import {
   getDeliveriesByOrderSchema,
   getOrdersNeedingShippingSchema,
 } from "../dtos";
-import { getShippingZone, calcShippingCost } from "@/lib/constants";
+import {
+  calcShippingCostForProvider,
+  DEFAULT_FEZ_SHIPPING_RATES,
+  DEFAULT_SHIPPING_PROVIDER_OPTIONS,
+  DEFAULT_SPEEDAF_SHIPPING_RATES,
+  FezShippingRates,
+  ShippingProvider,
+  ShippingProviderOptions,
+  SHIPPING_PROVIDERS,
+  SpeedafShippingRates,
+} from "@/lib/constants";
 import { sendOrderConfirmationEmail } from "@/lib/email";
 import { resolveUserContext } from "@/lib/is-super-admin";
 
@@ -45,6 +55,16 @@ const mapBookTypeToFormat = (bookType: string): string => {
 const isPhysicalFormat = (format: string) =>
   format === "paperback" || format === "hardcover";
 
+function parseOrderNotes(notes: string | null | undefined) {
+  if (!notes) return null;
+
+  try {
+    return JSON.parse(notes);
+  } catch {
+    return null;
+  }
+}
+
 // ─── createOrderFromCart ──────────────────────────────────────────────────────
 
 export const createOrderFromCart = publicProcedure
@@ -53,7 +73,7 @@ export const createOrderFromCart = publicProcedure
     const {
       user_id, shipping_address_id, billing_address_id,
       tax_amount = 0, shipping_amount = 0, discount_amount = 0,
-      currency, channel, notes, delivery_address, requires_delivery,
+      currency, channel, notes, delivery_address, requires_delivery, shipping_provider,
     } = opts.input;
 
     const user = await prisma.user.findUnique({
@@ -89,7 +109,11 @@ export const createOrderFromCart = publicProcedure
     const platformFeeSetting = settings["platform_fee"] as
       | { type: "percentage" | "flat"; value: number } | undefined;
     const shippingRates = (settings["shipping_rates"] as
-      | Record<string, { constant: number; variable: number }> | undefined) ?? {};
+      | SpeedafShippingRates | undefined) ?? DEFAULT_SPEEDAF_SHIPPING_RATES;
+    const shippingProviderOptions = (settings["shipping_provider_options"] as
+      | ShippingProviderOptions | undefined) ?? DEFAULT_SHIPPING_PROVIDER_OPTIONS;
+    const fezShippingRates = (settings["fez_shipping_rates"] as
+      | FezShippingRates | undefined) ?? DEFAULT_FEZ_SHIPPING_RATES;
 
     type LineItemData = {
       book_variant_id: string; quantity: number;
@@ -188,11 +212,50 @@ export const createOrderFromCart = publicProcedure
     if (errors.length > 0)
       throw new TRPCError({ code: "BAD_REQUEST", message: errors.join(", ") });
 
+    const enabledProviders = (Object.entries(shippingProviderOptions) as Array<[ShippingProvider, { enabled: boolean }]>)
+      .filter(([, config]) => config?.enabled)
+      .map(([provider]) => provider);
+
+    const resolvedShippingProvider: ShippingProvider | undefined =
+      shipping_provider
+      ?? (enabledProviders.length === 1 ? enabledProviders[0] : undefined);
+
+    if (requires_delivery) {
+      if (!enabledProviders.length) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "No shipping provider is currently enabled. Please contact support.",
+        });
+      }
+
+      if (!resolvedShippingProvider) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Please select a shipping provider before continuing.",
+        });
+      }
+
+      if (!enabledProviders.includes(resolvedShippingProvider)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "The selected shipping provider is not currently available.",
+        });
+      }
+    }
+
     // Server-side shipping validation
     let verifiedShippingAmount = shipping_amount;
+    let shippingLabel: string | null = null;
     if (requires_delivery && delivery_address?.state && totalWeightGrams > 0) {
-      const zone           = getShippingZone(delivery_address.state);
-      const serverComputed = calcShippingCost(totalWeightGrams, zone, shippingRates);
+      const shippingQuote = calcShippingCostForProvider({
+        provider: resolvedShippingProvider ?? SHIPPING_PROVIDERS.SPEEDAF,
+        state: delivery_address.state,
+        weightGrams: totalWeightGrams,
+        speedafRates: shippingRates,
+        fezRates: fezShippingRates,
+      });
+      const serverComputed = shippingQuote.amount;
+      shippingLabel = shippingQuote.label;
       if (shipping_amount === 0) {
         verifiedShippingAmount = serverComputed;
       } else if (Math.abs(shipping_amount - serverComputed) > 200) {
@@ -203,13 +266,16 @@ export const createOrderFromCart = publicProcedure
 
     const totalAmount = subtotal + tax_amount + verifiedShippingAmount - discount_amount;
     const orderNumber = generateOrderNumber();
+    const isFreeOrder = totalAmount <= 0;
     let orderNotes = notes || null;
     if (requires_delivery && delivery_address) {
       orderNotes = JSON.stringify({
         delivery_address,
         delivery_required: true,
         requires_physical_delivery: true,
-        shipping_zone: delivery_address.state ? getShippingZone(delivery_address.state) : null,
+        shipping_provider: resolvedShippingProvider,
+        shipping_zone: resolvedShippingProvider === SHIPPING_PROVIDERS.SPEEDAF ? shippingLabel : null,
+        shipping_group: resolvedShippingProvider === SHIPPING_PROVIDERS.FEZ ? shippingLabel : null,
         total_weight_grams: totalWeightGrams,
       });
     }
@@ -221,11 +287,32 @@ export const createOrderFromCart = publicProcedure
           publisher_id: targetPublisherId, total_amount: totalAmount,
           currency: currency || "NGN", subtotal_amount: subtotal,
           tax_amount, shipping_amount: verifiedShippingAmount, discount_amount,
-          status: "draft", payment_status: "pending", channel: channel || "web",
+          status: isFreeOrder ? "paid" : "draft",
+          payment_status: isFreeOrder ? "captured" : "pending",
+          channel: channel || "web",
           notes: orderNotes, shipping_address_id: shipping_address_id || null,
           billing_address_id: billing_address_id || null,
         },
       });
+
+      if (isFreeOrder) {
+        await tx.transactionHistory.create({
+          data: {
+            order_id: newOrder.id,
+            type: "capture",
+            amount: 0,
+            currency: currency || "NGN",
+            payment_provider: "free",
+            provider_reference: `free_${newOrder.order_number}`,
+            status: "succeeded",
+            processor_response: {
+              mode: "free_claim",
+              order_number: newOrder.order_number,
+            },
+          },
+        });
+      }
+
       for (const itemData of orderLineItemsData) {
         await tx.orderLineItem.create({
           data: {
@@ -246,7 +333,7 @@ export const createOrderFromCart = publicProcedure
       return newOrder;
     });
 
-    return await prisma.order.findUnique({
+    const createdOrder = await prisma.order.findUnique({
       where:   { id: order.id },
       include: {
         line_items: { include: { book_variant: { include: { book: true } } } },
@@ -254,12 +341,60 @@ export const createOrderFromCart = publicProcedure
         publisher:  true,
       },
     });
+
+    if (isFreeOrder && createdOrder?.customer?.user?.email) {
+      void (async () => {
+        try {
+          let deliveryState: string | undefined;
+          let shippingZone: string | undefined;
+          let shippingGroup: string | undefined;
+
+          const parsed = parseOrderNotes(createdOrder.notes);
+          if (parsed?.delivery_address?.state) {
+            deliveryState = parsed.delivery_address.state
+              .split(" ")
+              .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
+              .join(" ");
+            shippingZone = parsed.shipping_zone ?? undefined;
+            shippingGroup = parsed.shipping_group ?? undefined;
+          }
+
+          const isDigitalOnly = createdOrder.line_items.every((item) => {
+            const format = item.book_variant.format.toLowerCase();
+            return format !== "paperback" && format !== "hardcover";
+          });
+
+          await sendOrderConfirmationEmail({
+            to: createdOrder.customer.user.email,
+            firstName: createdOrder.customer.user.first_name,
+            orderNumber: createdOrder.order_number,
+            orderDate: createdOrder.created_at,
+            items: createdOrder.line_items.map((item) => ({
+              title: item.book_variant.book?.title ?? "Book",
+              type: item.book_variant.format,
+              quantity: item.quantity,
+              price: item.unit_price,
+            })),
+            subtotal: createdOrder.subtotal_amount,
+            shippingCost: createdOrder.shipping_amount,
+            total: createdOrder.total_amount,
+            isDigitalOnly,
+            deliveryState,
+            shippingZone: shippingZone ?? shippingGroup,
+          });
+        } catch (mailErr) {
+          console.error("[createOrderFromCart] Free order confirmation email failed:", mailErr);
+        }
+      })();
+    }
+
+    return createdOrder;
   });
 
 // ─── getOrderById ─────────────────────────────────────────────────────────────
 
 export const getOrderById = publicProcedure.input(getOrderByIdSchema).query(async (opts) => {
-  return await prisma.order.findUnique({
+  const order = await prisma.order.findUnique({
     where: { id: opts.input.id },
     include: {
       line_items: { include: { book_variant: { include: { book: { include: { publisher: true, primary_author: true } } } } } },
@@ -268,6 +403,17 @@ export const getOrderById = publicProcedure.input(getOrderByIdSchema).query(asyn
       deliveries:   { orderBy: { created_at: "desc" } },
     },
   });
+
+  if (!order) return order;
+
+  const parsedNotes = parseOrderNotes(order.notes);
+  return {
+    ...order,
+    delivery_address: parsedNotes?.delivery_address ?? null,
+    shipping_provider: parsedNotes?.shipping_provider ?? null,
+    shipping_zone: parsedNotes?.shipping_zone ?? null,
+    shipping_group: parsedNotes?.shipping_group ?? null,
+  };
 });
 
 // ─── getOrdersByCustomer ──────────────────────────────────────────────────────

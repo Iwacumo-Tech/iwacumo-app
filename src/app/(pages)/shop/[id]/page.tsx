@@ -19,6 +19,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { useCartStore } from "@/store/use-cart-store";
 import { GUEST_CART_KEY, notifyCartUpdate } from "@/lib/cart-utils";
 import { formatDimensionsInches, getBookLanguageLabel, normalizeBookCustomFields } from "@/lib/book-config";
+import { getFriendlyErrorMessage } from "@/lib/error-message";
 
 // ─── Format metadata (module level — hard rule #4) ────────────────────────────
 
@@ -34,18 +35,7 @@ const FORMAT_META: Record<string, {
 };
 
 function getFriendlyIssueReportError(message?: string) {
-  if (!message) return "Please check the form and try again.";
-
-  try {
-    const parsed = JSON.parse(message);
-    if (Array.isArray(parsed) && typeof parsed[0]?.message === "string") {
-      return parsed[0].message;
-    }
-  } catch {
-    // Ignore JSON parse failure and fall back to plain text handling.
-  }
-
-  return message.length > 180 ? "Please check the form and try again." : message;
+  return getFriendlyErrorMessage(message);
 }
 
 // ─── FormatCard (module level) ────────────────────────────────────────────────
@@ -279,7 +269,11 @@ export default function ProductDetails() {
       toast({ title: "Added to bag!", description: `${book?.title} · ${FORMAT_META[selectedFormat]?.label ?? selectedFormat}${quantity > 1 ? ` × ${quantity}` : ""}` });
       openCart();
     } catch (error: any) {
-      toast({ title: "Error", variant: "destructive", description: error.message || "Could not add to cart." });
+      toast({
+        title: "Could not add to bag",
+        variant: "destructive",
+        description: getFriendlyErrorMessage(error.message, "Could not add this book to your bag."),
+      });
     }
   };
 

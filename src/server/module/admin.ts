@@ -3,6 +3,9 @@ import { hash } from "bcryptjs";
 import { z } from "zod";
 import prisma from "@/lib/prisma";
 import {
+  DEFAULT_FEZ_SHIPPING_RATES,
+  DEFAULT_SHIPPING_PROVIDER_OPTIONS,
+  DEFAULT_SPEEDAF_SHIPPING_RATES,
   DEFAULT_BOOK_LIVE_PRICING_ENABLED,
   DEFAULT_BOOK_FEATURE_TOGGLES,
   DEFAULT_BOOK_FLAP_COSTS,
@@ -495,7 +498,9 @@ export const getSystemSettings = publicProcedure.query(async () => {
     platform_fee: { type: settingsMap.platform_fee?.type ?? "percentage", value: normalisePrimitive(settingsMap.platform_fee?.value, 30) },
     default_markup: normalisePrimitive(settingsMap.default_markup, 20),
     isbn_cost: normalisePrimitive(settingsMap.isbn_cost, 0),
-    shipping_rates: settingsMap.shipping_rates ?? { Z1: { constant: 1500, variable: 200 }, Z2: { constant: 2000, variable: 250 }, Z3: { constant: 1200, variable: 180 }, Z4: { constant: 1000, variable: 150 } },
+    shipping_rates: settingsMap.shipping_rates ?? DEFAULT_SPEEDAF_SHIPPING_RATES,
+    shipping_provider_options: settingsMap.shipping_provider_options ?? DEFAULT_SHIPPING_PROVIDER_OPTIONS,
+    fez_shipping_rates: settingsMap.fez_shipping_rates ?? DEFAULT_FEZ_SHIPPING_RATES,
     book_weights: settingsMap.book_weights ?? { paperback: { A6: { cover: 50, page: 3 }, A5: { cover: 70, page: 4 }, A4: { cover: 90, page: 6 } }, hardcover: { A6: { cover: 120, page: 3 }, A5: { cover: 160, page: 4 }, A4: { cover: 200, page: 6 } } },
     kyc_requirements: settingsMap.kyc_requirements ?? {
       require_id:               true,

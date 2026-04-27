@@ -11,6 +11,7 @@ import Link from "next/link";
 
 type HeroLayout  = "split" | "full" | "minimal";
 type AccentStyle = "bold" | "outline" | "soft";
+type ThemePreset = "editorial" | "modern" | "minimal" | "bold";
 
 interface Slide {
   id: number | string;
@@ -28,6 +29,7 @@ interface StoreHeroCarouselProps {
   accentColor?:    string;
   secondaryColor?: string;
   accentStyle?:    AccentStyle;
+  themePreset?:    ThemePreset;
 }
 
 // ─── Button styles ────────────────────────────────────────────────────────────
@@ -96,11 +98,13 @@ function SplitSlide({
   accentColor,
   secondaryColor,
   accentStyle,
+  themePreset,
 }: {
   slide:          Slide;
   accentColor:    string;
   secondaryColor: string;
   accentStyle:    AccentStyle;
+  themePreset:    ThemePreset;
 }) {
   return (
     <div className="absolute inset-0 grid lg:grid-cols-2">
@@ -110,7 +114,13 @@ function SplitSlide({
         <div className="absolute inset-0 bg-black/5" />
       </div>
       {/* Content */}
-      <div className="p-8 lg:p-16 flex flex-col justify-center order-2 lg:order-1 bg-white">
+      <div
+        className="p-8 lg:p-16 flex flex-col justify-center order-2 lg:order-1"
+        style={{
+          background: themePreset === "editorial" ? "#FFF9F1" : themePreset === "modern" ? "#F7FAFF" : themePreset === "bold" ? secondaryColor : "#ffffff",
+          color: themePreset === "bold" ? accentColor : "#111111",
+        }}
+      >
         <span
           className="text-[10px] font-black uppercase tracking-[0.3em] w-fit px-3 py-1 rounded-full mb-6"
           style={{ background: secondaryColor, color: accentColor }}
@@ -120,7 +130,7 @@ function SplitSlide({
         <h2 className="text-4xl md:text-6xl font-black uppercase italic leading-none tracking-tighter mb-6 text-black">
           {slide.title}
         </h2>
-        <p className="text-sm md:text-lg font-medium text-gray-600 mb-10 max-w-md leading-relaxed">
+        <p className="text-sm md:text-lg font-medium mb-10 max-w-md leading-relaxed" style={{ color: themePreset === "bold" ? "rgba(255,255,255,0.78)" : "#5f5f5f" }}>
           {slide.description}
         </p>
         <HeroButton
@@ -180,14 +190,21 @@ function MinimalSlide({
   accentColor,
   secondaryColor,
   accentStyle,
+  themePreset,
 }: {
   slide:          Slide;
   accentColor:    string;
   secondaryColor: string;
   accentStyle:    AccentStyle;
+  themePreset:    ThemePreset;
 }) {
   return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center px-8 text-center bg-white">
+    <div
+      className="absolute inset-0 flex flex-col items-center justify-center px-8 text-center"
+      style={{
+        background: themePreset === "editorial" ? "#FFF8EC" : themePreset === "modern" ? "#F6FAFF" : themePreset === "bold" ? secondaryColor : "#ffffff",
+      }}
+    >
       <span
         className="text-[10px] font-black uppercase tracking-[0.3em] w-fit px-3 py-1 rounded-full mb-6"
         style={{ background: secondaryColor, color: accentColor }}
@@ -200,7 +217,7 @@ function MinimalSlide({
       >
         {slide.title}
       </h2>
-      <p className="text-base md:text-xl font-medium text-gray-500 mb-10 max-w-xl leading-relaxed">
+      <p className="text-base md:text-xl font-medium mb-10 max-w-xl leading-relaxed" style={{ color: themePreset === "bold" ? "rgba(255,255,255,0.76)" : "#737373" }}>
         {slide.description}
       </p>
       <HeroButton
@@ -222,6 +239,7 @@ export default function StoreHeroCarousel({
   accentColor    = "#FFD700",
   secondaryColor = "#000000",
   accentStyle    = "bold",
+  themePreset    = "editorial",
 }: StoreHeroCarouselProps) {
   const [index, setIndex] = useState(0);
 
@@ -257,9 +275,9 @@ export default function StoreHeroCarousel({
             transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
             className="absolute inset-0"
           >
-            {layout === "split"   && <SplitSlide   slide={current} accentColor={accentColor} secondaryColor={secondaryColor} accentStyle={accentStyle} />}
+            {layout === "split"   && <SplitSlide   slide={current} accentColor={accentColor} secondaryColor={secondaryColor} accentStyle={accentStyle} themePreset={themePreset} />}
             {layout === "full"    && <FullSlide    slide={current} accentColor={accentColor} secondaryColor={secondaryColor} accentStyle={accentStyle} />}
-            {layout === "minimal" && <MinimalSlide slide={current} accentColor={accentColor} secondaryColor={secondaryColor} accentStyle={accentStyle} />}
+            {layout === "minimal" && <MinimalSlide slide={current} accentColor={accentColor} secondaryColor={secondaryColor} accentStyle={accentStyle} themePreset={themePreset} />}
           </motion.div>
         </AnimatePresence>
 

@@ -25,6 +25,9 @@ import { useFieldArray, useForm, Control } from "react-hook-form";
 
 import { Checkbox } from "@/components/ui/checkbox";
 import {
+  DEFAULT_FEZ_SHIPPING_RATES,
+  DEFAULT_SHIPPING_PROVIDER_OPTIONS,
+  DEFAULT_SPEEDAF_SHIPPING_RATES,
   DEFAULT_BOOK_LIVE_PRICING_ENABLED,
   DEFAULT_BOOK_FEATURE_TOGGLES,
   DEFAULT_BOOK_FLAP_COSTS,
@@ -52,6 +55,19 @@ type SettingsFormValues = {
     Z2: { constant: number; variable: number };
     Z3: { constant: number; variable: number };
     Z4: { constant: number; variable: number };
+  };
+  shipping_provider_options: {
+    speedaf: { enabled: boolean };
+    fez: { enabled: boolean };
+  };
+  fez_shipping_rates: {
+    kg_cutoff: number;
+    G1: { constant: number; variable: number };
+    G2: { constant: number; variable: number };
+    G3: { constant: number; variable: number };
+    G4: { constant: number; variable: number };
+    G5: { constant: number; variable: number };
+    G6: { constant: number; variable: number };
   };
   book_weights: {
     paperback: { A6: { cover: number; page: number }; A5: { cover: number; page: number }; A4: { cover: number; page: number } };
@@ -110,12 +126,9 @@ const DEFAULTS: SettingsFormValues = {
       A4: { cover: 5000, page: 15 },
     },
   },
-  shipping_rates: {
-    Z1: { constant: 1500, variable: 200 },
-    Z2: { constant: 2000, variable: 250 },
-    Z3: { constant: 1200, variable: 180 },
-    Z4: { constant: 1000, variable: 150 },
-  },
+  shipping_rates: DEFAULT_SPEEDAF_SHIPPING_RATES,
+  shipping_provider_options: DEFAULT_SHIPPING_PROVIDER_OPTIONS,
+  fez_shipping_rates: DEFAULT_FEZ_SHIPPING_RATES,
   book_weights: {
     paperback: {
       A6: { cover: 50, page: 3 },
@@ -277,6 +290,8 @@ export default function SystemSettingsPage() {
       isbn_cost: flatNumber((settings as any).isbn_cost, 0),
       printing_costs: settings.printing_costs ?? DEFAULTS.printing_costs,
       shipping_rates: (settings as any).shipping_rates ?? DEFAULTS.shipping_rates,
+      shipping_provider_options: (settings as any).shipping_provider_options ?? DEFAULTS.shipping_provider_options,
+      fez_shipping_rates: (settings as any).fez_shipping_rates ?? DEFAULTS.fez_shipping_rates,
       book_weights:   (settings as any).book_weights   ?? DEFAULTS.book_weights,
       kyc_requirements: (settings as any).kyc_requirements ?? DEFAULTS.kyc_requirements,
       author_kyc_requirements: (settings as any).author_kyc_requirements ?? DEFAULTS.author_kyc_requirements,
@@ -297,6 +312,8 @@ export default function SystemSettingsPage() {
     updateSettings({ key: "isbn_cost",      value: { v: data.isbn_cost } });
     updateSettings({ key: "printing_costs", value: data.printing_costs });
     updateSettings({ key: "shipping_rates", value: data.shipping_rates });
+    updateSettings({ key: "shipping_provider_options", value: data.shipping_provider_options });
+    updateSettings({ key: "fez_shipping_rates", value: data.fez_shipping_rates });
     updateSettings({ key: "book_weights",   value: data.book_weights });
       updateSettings({ key: "kyc_requirements", value: data.kyc_requirements });
       updateSettings({ key: "author_kyc_requirements", value: data.author_kyc_requirements });
@@ -332,6 +349,35 @@ export default function SystemSettingsPage() {
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-10">
 
             {/* ── Platform Fee ─────────────────────────────────────────── */}
+            {false && (
+            <section className="bg-white border-4 border-black gumroad-shadow p-6 space-y-8">
+              <h2 className="text-2xl font-black uppercase italic">Fez Shipping Rates</h2>
+              <p className="text-xs opacity-50 font-medium -mt-4">
+                Fez uses group-based rates. Up to the kg cut-off, the customer pays a fixed amount.
+                Above the cut-off, cost = Group Constant + (Group Variable Ã— (Rounded Weight kg âˆ’ Cut-off)).
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <NumberField
+                  control={form.control}
+                  name="fez_shipping_rates.kg_cutoff"
+                  label="KG Cut Off"
+                  placeholder="e.g. 3"
+                />
+              </div>
+
+              <div className="space-y-6">
+                <h3 className="text-lg font-black uppercase italic border-b-2 border-black pb-2">Group Rates (â‚¦)</h3>
+                {(["G1","G2","G3","G4","G5","G6"] as const).map((group) => (
+                  <div key={group} className="grid grid-cols-2 gap-4">
+                    <NumberField control={form.control} name={`fez_shipping_rates.${group}.constant`} label={`${group} Constant`} placeholder="e.g. 1500" />
+                    <NumberField control={form.control} name={`fez_shipping_rates.${group}.variable`} label={`${group} Variable`} placeholder="e.g. 200" />
+                  </div>
+                ))}
+              </div>
+            </section>
+            )}
+
             <section className="bg-white border-4 border-black gumroad-shadow p-6 space-y-6">
               <h2 className="text-2xl font-black uppercase italic">Platform Fee</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -423,8 +469,39 @@ export default function SystemSettingsPage() {
             </section>
 
             {/* ── Shipping Rates (Speedaf) ─────────────────────────────── */}
+            <section className="bg-white border-4 border-black gumroad-shadow p-6 space-y-6">
+              <h2 className="text-2xl font-black uppercase italic">Shipping Providers</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {([
+                  { key: "speedaf", label: "Enable Speedaf" },
+                  { key: "fez", label: "Enable Fez" },
+                ] as const).map((provider) => (
+                  <FormField
+                    key={provider.key}
+                    control={form.control}
+                    name={`shipping_provider_options.${provider.key}.enabled`}
+                    render={({ field }) => (
+                      <FormItem className="flex items-center justify-between rounded-none border-2 border-black px-4 py-4">
+                        <div>
+                          <FormLabel className="font-black text-xs uppercase tracking-widest">
+                            {provider.label}
+                          </FormLabel>
+                          <p className="text-[10px] font-medium opacity-50 mt-1">
+                            Allow this courier to appear as a checkout option.
+                          </p>
+                        </div>
+                        <FormControl>
+                          <Checkbox checked={!!field.value} onCheckedChange={field.onChange} />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                ))}
+              </div>
+            </section>
+
             <section className="bg-white border-4 border-black gumroad-shadow p-6 space-y-8">
-              <h2 className="text-2xl font-black uppercase italic">Shipping Rates</h2>
+              <h2 className="text-2xl font-black uppercase italic">Speedaf Shipping Rates</h2>
               <p className="text-xs opacity-50 font-medium -mt-4">
                 Speedaf zone-based rates. Cost = Zone Constant + (Zone Variable × (Weight kg − 1)).
                 Weights are computed from book size/page count using the weight constants below.
@@ -465,6 +542,33 @@ export default function SystemSettingsPage() {
             </section>
 
             {/* ── KYC Requirements ─────────────────────────────────────── */}
+            <section className="bg-white border-4 border-black gumroad-shadow p-6 space-y-8">
+              <h2 className="text-2xl font-black uppercase italic">Fez Shipping Rates</h2>
+              <p className="text-xs opacity-50 font-medium -mt-4">
+                Fez uses group-based rates. Up to the kg cut-off, the customer pays a fixed amount.
+                Above the cut-off, cost = Group Constant + (Group Variable Ã— (Rounded Weight kg âˆ’ Cut-off)).
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <NumberField
+                  control={form.control}
+                  name="fez_shipping_rates.kg_cutoff"
+                  label="KG Cut Off"
+                  placeholder="e.g. 3"
+                />
+              </div>
+
+              <div className="space-y-6">
+                <h3 className="text-lg font-black uppercase italic border-b-2 border-black pb-2">Group Rates (â‚¦)</h3>
+                {(["G1","G2","G3","G4","G5","G6"] as const).map((group) => (
+                  <div key={group} className="grid grid-cols-2 gap-4">
+                    <NumberField control={form.control} name={`fez_shipping_rates.${group}.constant`} label={`${group} Constant`} placeholder="e.g. 1500" />
+                    <NumberField control={form.control} name={`fez_shipping_rates.${group}.variable`} label={`${group} Variable`} placeholder="e.g. 200" />
+                  </div>
+                ))}
+              </div>
+            </section>
+
             <section className="bg-white border-4 border-black gumroad-shadow p-6 space-y-6">
               <div>
                 <h2 className="text-2xl font-black uppercase italic">Publisher KYC Requirements</h2>

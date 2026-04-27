@@ -25,6 +25,11 @@ export const updateStoreSettingsSchema = z.object({
     website:   z.string().url().nullable().optional(),
   }).nullable().optional(),
   store_settings: z.object({
+    themePreset:     z.enum(["editorial", "modern", "minimal", "bold"]).optional(),
+    pageSurface:     z.enum(["paper", "studio", "contrast"]).optional(),
+    navStyle:        z.enum(["solid", "framed", "floating"]).optional(),
+    cardStyle:       z.enum(["shadow", "bordered", "soft"]).optional(),
+    headingStyle:    z.enum(["italic", "serif", "caps"]).optional(),
     heroLayout:      z.enum(["split", "full", "minimal"]).optional(),
     accentStyle:     z.enum(["bold", "outline", "soft"]).optional(),
     showCategories:  z.boolean().optional(),

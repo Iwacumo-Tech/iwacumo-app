@@ -339,9 +339,9 @@ export const CartSchema = z.object({
   book_image: z.string(),
   book_title: z.string(),
   book_type: z.string(), 
-  price: z.number().positive(),
+  price: z.number().min(0, "Price cannot be negative"),
   quantity: z.number().int().positive().optional(), 
-  total: z.number().positive(), 
+  total: z.number().min(0, "Total cannot be negative"), 
   userId: z.string().optional(), 
 });
 
@@ -519,6 +519,7 @@ export const createOrderFromCartSchema = z.object({
   currency: z.string().default("USD"),
   channel: z.string().optional(),
   notes: z.string().optional(),
+  shipping_provider: z.enum(["speedaf", "fez"]).optional(),
   delivery_address: deliveryAddressSchema.optional(), // Delivery info for physical items
   requires_delivery: z.boolean().default(false), // Whether order contains physical items
 });
@@ -553,7 +554,7 @@ export type TCancelOrderSchema = z.infer<typeof cancelOrderSchema>;
 export const initializePaymentSchema = z.object({
   order_id: z.string(),
   email: z.string().email(),
-  amount: z.number().positive(),
+  amount: z.number().min(0, "Amount cannot be negative"),
   currency: z.string().default("NGN"),
   callback_url: z.string().url().optional(),
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
@@ -21,7 +21,17 @@ import DeliveryForm         from "@/components/checkout/delivery-form";
 import GuestRegistrationForm from "@/components/checkout/guest-registration-form";
 import { TDeliveryAddressSchema, TCreateCustomerSchema } from "@/server/dtos";
 import { GUEST_CART_KEY, notifyCartUpdate } from "@/lib/cart-utils";
-import { getShippingZone, calcShippingCost, SHIPPING_ZONES } from "@/lib/constants";
+import {
+  calcShippingCostForProvider,
+  DEFAULT_FEZ_SHIPPING_RATES,
+  DEFAULT_SHIPPING_PROVIDER_OPTIONS,
+  DEFAULT_SPEEDAF_SHIPPING_RATES,
+  FezShippingRates,
+  ShippingProvider,
+  ShippingProviderOptions,
+  SHIPPING_PROVIDERS,
+  SpeedafShippingRates,
+} from "@/lib/constants";
 import Link from "next/link";
 
 type CartItem = {
@@ -32,6 +42,11 @@ type CartItem = {
   price:      number;
   quantity?:  number | null;
   total?:     number;
+};
+
+const SHIPPING_PROVIDER_LABELS: Record<ShippingProvider, string> = {
+  speedaf: "Speedaf",
+  fez: "Fez",
 };
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -55,6 +70,7 @@ export default function CartPage() {
   const { data: session, status, update } = useSession();
   const { toast }  = useToast();
   const utils       = trpc.useUtils();
+  const router      = useRouter();
 
   const userId          = session?.user?.id as string;
   const isAuthenticated = status === "authenticated";
@@ -81,6 +97,7 @@ export default function CartPage() {
   const [registrationPassword,   setRegistrationPassword]   = useState("");
   // The state the customer selected in the delivery form — drives live shipping cost.
   const [selectedState,          setSelectedState]          = useState<string>("");
+  const [selectedShippingProvider, setSelectedShippingProvider] = useState<ShippingProvider | null>(null);
 
   // ── cart sync effects ────────────────────────────────────────────────────
 
@@ -120,42 +137,78 @@ export default function CartPage() {
   // At the client we don't have weight_grams per item from the Cart model
   // (Cart is a lightweight table), so we use a per-item fallback of 400 g.
   // The server recomputes from real BookVariant.weight_grams before charging.
-
-  const computeShipping = useCallback((): number => {
-    if (!requiresDelivery) return 0;
-
-    // If no state selected yet, show 0 and prompt via the UI hint below.
-    if (!selectedState) return 0;
-
+  const estimatedWeightGrams = useMemo(() => {
     const physicalItems = cartItems.filter(item => isPhysical(item.book_type));
-    if (physicalItems.length === 0) return 0;
-
-    const totalWeightGrams = physicalItems.reduce(
+    return physicalItems.reduce(
       (sum, item) => sum + DEFAULT_WEIGHT_GRAMS_PER_ITEM * (item.quantity ?? 1),
       0
     );
+  }, [cartItems]);
 
-    const zone         = getShippingZone(selectedState);
-    const shippingRates = (systemSettings?.shipping_rates as Record<string, { constant: number; variable: number }>) ?? {};
+  const shippingProviderOptions = (systemSettings?.shipping_provider_options as ShippingProviderOptions | undefined)
+    ?? DEFAULT_SHIPPING_PROVIDER_OPTIONS;
+  const speedafRates = (systemSettings?.shipping_rates as SpeedafShippingRates | undefined)
+    ?? DEFAULT_SPEEDAF_SHIPPING_RATES;
+  const fezRates = (systemSettings?.fez_shipping_rates as FezShippingRates | undefined)
+    ?? DEFAULT_FEZ_SHIPPING_RATES;
 
-    // Fallback rates if SystemSettings aren't loaded yet (matches typical Speedaf NGN pricing)
-    const fallbackRates: Record<string, { constant: number; variable: number }> = {
-      Z1: { constant: 1500, variable: 500 },
-      Z2: { constant: 2000, variable: 700 },
-      Z3: { constant: 1800, variable: 600 },
-      Z4: { constant: 1200, variable: 400 },
-    };
+  const enabledShippingProviders = useMemo(
+    () =>
+      (Object.entries(shippingProviderOptions) as Array<[ShippingProvider, { enabled: boolean }]>)
+        .filter(([, config]) => config?.enabled)
+        .map(([provider]) => provider),
+    [shippingProviderOptions]
+  );
 
-    const rates = Object.keys(shippingRates).length > 0 ? shippingRates : fallbackRates;
-    return calcShippingCost(totalWeightGrams, zone, rates);
-  }, [requiresDelivery, selectedState, cartItems, systemSettings]);
+  useEffect(() => {
+    if (!requiresDelivery) {
+      setSelectedShippingProvider(null);
+      return;
+    }
 
-  const shipping = computeShipping();
+    if (!enabledShippingProviders.length) {
+      setSelectedShippingProvider(null);
+      return;
+    }
+
+    if (
+      selectedShippingProvider
+      && enabledShippingProviders.includes(selectedShippingProvider)
+    ) {
+      return;
+    }
+
+    if (enabledShippingProviders.length === 1) {
+      setSelectedShippingProvider(enabledShippingProviders[0]);
+      return;
+    }
+
+    setSelectedShippingProvider(null);
+  }, [enabledShippingProviders, requiresDelivery, selectedShippingProvider]);
+
+  const shippingQuotes = useMemo(() => {
+    if (!requiresDelivery || !selectedState || estimatedWeightGrams <= 0) {
+      return [] as Array<{ provider: ShippingProvider; label: string; amount: number }>;
+    }
+
+    return enabledShippingProviders.map((provider) =>
+      calcShippingCostForProvider({
+        provider,
+        state: selectedState,
+        weightGrams: estimatedWeightGrams,
+        speedafRates,
+        fezRates,
+      })
+    );
+  }, [enabledShippingProviders, estimatedWeightGrams, fezRates, requiresDelivery, selectedState, speedafRates]);
+
+  const activeShippingQuote = shippingQuotes.find(
+    (quote) => quote.provider === selectedShippingProvider
+  ) ?? null;
+  const shipping = activeShippingQuote?.amount ?? 0;
   const subtotal = cartItems.reduce((sum, item) => sum + item.price * (item.quantity ?? 1), 0);
   const total    = subtotal + shipping;
-
-  // Zone badge for UI feedback
-  const shippingZone = selectedState ? getShippingZone(selectedState) : null;
+  const shippingLabel = activeShippingQuote?.label ?? null;
 
   // ── mutations ────────────────────────────────────────────────────────────
 
@@ -174,14 +227,22 @@ export default function CartPage() {
         toast({ title: "Order Error", variant: "destructive", description: "Order was created but could not be retrieved." });
         return;
       }
+
+      localStorage.removeItem(GUEST_CART_KEY);
+      utils.getCartsByUser.invalidate();
+
+      if (order.payment_status === "captured" || order.total_amount <= 0) {
+        toast({ title: "Book added to your library", description: "Your free order is complete." });
+        router.push(`/orders/${order.id}`);
+        return;
+      }
+
       initializePayment.mutate({
         order_id: order.id,
         email:    session?.user?.email || (order as any).customer?.user?.email,
         amount:   order.total_amount,
         currency: "NGN",
       });
-      localStorage.removeItem(GUEST_CART_KEY);
-      utils.getCartsByUser.invalidate();
     },
     onError: (err) => {
       toast({ title: "Order Failed", variant: "destructive", description: err.message });
@@ -246,6 +307,14 @@ export default function CartPage() {
   const handleCheckout = () => {
     if (!cartItems.length) return;
     if (!isAuthenticated) return setShowRegistrationDialog(true);
+    if (requiresDelivery && !enabledShippingProviders.length) {
+      toast({
+        title: "Shipping unavailable",
+        variant: "destructive",
+        description: "No shipping provider is enabled right now for physical delivery.",
+      });
+      return;
+    }
     if (requiresDelivery) return setShowCheckoutDialog(true);
     proceedWithCheckout();
   };
@@ -269,6 +338,14 @@ export default function CartPage() {
     // State from the form is the authoritative source — update selectedState
     // in case the user typed fast and onStateChange fired slightly late.
     if (data.state) setSelectedState(data.state);
+    if (!selectedShippingProvider) {
+      toast({
+        title: "Select a shipping provider",
+        variant: "destructive",
+        description: "Choose one of the available couriers before continuing.",
+      });
+      return;
+    }
     setShowCheckoutDialog(false);
     proceedWithCheckout(data);
   };
@@ -282,7 +359,7 @@ export default function CartPage() {
     // otherwise fall back to the live-updated selectedState.
     const stateForShipping = deliveryData?.state || selectedState;
     const finalShipping    = requiresDelivery && stateForShipping
-      ? computeShipping()
+      ? shipping
       : 0;
 
     createOrderMutation.mutate({
@@ -292,6 +369,7 @@ export default function CartPage() {
       discount_amount:  0,
       currency:         "NGN",
       channel:          "web",
+      shipping_provider: selectedShippingProvider ?? undefined,
       requires_delivery: requiresDelivery,
       delivery_address:  deliveryData || undefined,
     });
@@ -421,9 +499,9 @@ export default function CartPage() {
                 <div className="flex justify-between font-bold uppercase text-xs">
                   <span className="opacity-50 flex items-center gap-1">
                     Shipping
-                    {shippingZone && (
+                    {shippingLabel && (
                       <span className="bg-black text-accent text-[8px] font-black px-1.5 py-0.5 tracking-widest">
-                        {shippingZone}
+                        {shippingLabel}
                       </span>
                     )}
                   </span>
@@ -436,7 +514,9 @@ export default function CartPage() {
                         <MapPin size={10} /> Select state
                       </span>
                     )}
-                    {requiresDelivery && selectedState && `₦${shipping.toLocaleString()}`}
+                    {requiresDelivery && selectedState && !enabledShippingProviders.length && "No courier available"}
+                    {requiresDelivery && selectedState && enabledShippingProviders.length > 0 && !selectedShippingProvider && "Choose courier"}
+                    {requiresDelivery && selectedState && selectedShippingProvider && `${SHIPPING_PROVIDER_LABELS[selectedShippingProvider]} · ₦${shipping.toLocaleString()}`}
                   </span>
                 </div>
 
@@ -446,12 +526,22 @@ export default function CartPage() {
                     Enter your delivery state in the shipping form to see the exact cost.
                   </p>
                 )}
+                {requiresDelivery && selectedState && enabledShippingProviders.length === 0 && (
+                  <p className="text-[9px] font-medium text-red-600 border-l-2 border-red-500 pl-2">
+                    No shipping provider is enabled right now for physical checkout.
+                  </p>
+                )}
+                {requiresDelivery && selectedState && enabledShippingProviders.length > 1 && !selectedShippingProvider && (
+                  <p className="text-[9px] font-medium text-amber-600 border-l-2 border-amber-500 pl-2">
+                    Choose a courier in the shipping dialog to continue.
+                  </p>
+                )}
 
                 <div className="pt-4 border-t-2 border-black flex justify-between items-end">
                   <span className="font-black uppercase text-xs">Total</span>
                   <div className="text-right">
                     <p className="text-4xl font-black italic">₦{total.toLocaleString()}</p>
-                    {requiresDelivery && !selectedState && (
+                    {requiresDelivery && (!selectedState || !selectedShippingProvider) && (
                       <p className="text-[9px] text-gray-400 font-medium">+ shipping</p>
                     )}
                   </div>
@@ -535,10 +625,10 @@ export default function CartPage() {
                   Shipping Cost
                 </div>
                 <div className="text-right">
-                  {selectedState ? (
+                  {selectedState && selectedShippingProvider && activeShippingQuote ? (
                     <div className="flex items-center gap-2">
                       <span className="text-[9px] font-black uppercase tracking-widest opacity-40">
-                        {shippingZone} ·{" "}
+                        {SHIPPING_PROVIDER_LABELS[selectedShippingProvider]} · {shippingLabel} ·{" "}
                         {selectedState
                           .split(" ")
                           .map(w => w.charAt(0).toUpperCase() + w.slice(1))
@@ -548,6 +638,14 @@ export default function CartPage() {
                         ₦{shipping.toLocaleString()}
                       </span>
                     </div>
+                  ) : selectedState && enabledShippingProviders.length === 0 ? (
+                    <span className="text-[10px] font-medium text-red-600 flex items-center gap-1">
+                      <MapPin size={10} /> No courier available
+                    </span>
+                  ) : selectedState ? (
+                    <span className="text-[10px] font-medium text-amber-600 flex items-center gap-1 animate-pulse">
+                      <Truck size={10} /> Choose a courier below
+                    </span>
                   ) : (
                     <span className="text-[10px] font-medium text-amber-600 flex items-center gap-1 animate-pulse">
                       <MapPin size={10} /> Select your state below
@@ -559,6 +657,52 @@ export default function CartPage() {
           )}
 
           <div className="flex-1 overflow-y-auto p-6 bg-white">
+            {requiresDelivery && (
+              <div className="mb-6 space-y-3">
+                <h3 className="text-sm font-black uppercase tracking-widest">Choose Courier</h3>
+                <div className="grid gap-3">
+                  {enabledShippingProviders.map((provider) => {
+                    const quote = shippingQuotes.find((item) => item.provider === provider);
+                    const isSelected = selectedShippingProvider === provider;
+
+                    return (
+                      <button
+                        key={provider}
+                        type="button"
+                        onClick={() => setSelectedShippingProvider(provider)}
+                        disabled={!selectedState}
+                        className={cn(
+                          "flex items-center justify-between border-2 border-black px-4 py-3 text-left transition-colors",
+                          isSelected ? "bg-accent" : "bg-white hover:bg-black/5",
+                          !selectedState && "opacity-60 cursor-not-allowed"
+                        )}
+                      >
+                        <div>
+                          <p className="text-sm font-black uppercase italic">
+                            {SHIPPING_PROVIDER_LABELS[provider]}
+                          </p>
+                          <p className="text-[10px] font-bold uppercase tracking-widest opacity-50">
+                            {quote?.label ?? "Select state first"}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-black">
+                            {quote ? `₦${quote.amount.toLocaleString()}` : "Pending"}
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })}
+
+                  {enabledShippingProviders.length === 0 && (
+                    <div className="border-2 border-red-500 bg-red-50 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-red-700">
+                      No shipping provider is enabled right now.
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             <DeliveryForm
               onSubmit={handleDeliverySubmit}
               onStateChange={setSelectedState}   // ← live shipping update
@@ -581,13 +725,15 @@ export default function CartPage() {
             <Button
               type="submit"
               form="delivery-form"
-              disabled={createOrderMutation.isPending}
+              disabled={createOrderMutation.isPending || !selectedShippingProvider || enabledShippingProviders.length === 0}
               className="booka-button-primary h-12 px-8 text-xs"
             >
               {createOrderMutation.isPending
                 ? "Processing…"
-                : selectedState
+                : selectedState && selectedShippingProvider
                   ? `Continue — ₦${total.toLocaleString()}`
+                  : selectedState && enabledShippingProviders.length === 0
+                    ? "Shipping Unavailable"
                   : "Continue to Payment"
               }
             </Button>

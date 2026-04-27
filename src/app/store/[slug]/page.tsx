@@ -2,15 +2,18 @@ import prisma from "@/lib/prisma";
 import { notFound } from "next/navigation";
 import ProductCard from "@/components/shared/ProductCard";
 import StoreHeroCarousel from "./_components/StoreHeroCarousel";
-import { Star } from "lucide-react";
+import { Sparkles, Star } from "lucide-react";
 import Link from "next/link";
+import { getStorefrontThemeTokens, normalizeStorefrontThemeSettings, withAlpha } from "@/lib/storefront-theme";
 
 interface StorePageProps {
   params: { slug: string };
+  searchParams?: { category?: string };
 }
 
-export default async function StorePage({ params }: StorePageProps) {
+export default async function StorePage({ params, searchParams }: StorePageProps) {
   const { slug } = params;
+  const selectedCategorySlug = searchParams?.category?.trim().toLowerCase() ?? "";
 
   const store = await prisma.tenant.findUnique({
     where: { slug },
@@ -24,233 +27,318 @@ export default async function StorePage({ params }: StorePageProps) {
           },
         },
       },
-      banners:    { where: { isShow: true, deleted_at: null } },
+      banners: { where: { isShow: true, deleted_at: null } },
       hero_slides: { where: { deleted_at: null } },
     },
   });
 
   if (!store) notFound();
 
-  const isWhiteLabel   = store.publishers?.white_label ?? false;
-  const storeSettings  = ((store as any).store_settings as Record<string, any> | null) ?? {};
-  const accentColor    = (isWhiteLabel && store.brand_color)    ? store.brand_color    : "#FFD700";
-  const secondaryColor = (isWhiteLabel && store.secondary_color) ? store.secondary_color : "#000000";
+  const isWhiteLabel = store.publishers?.white_label ?? false;
+  const storeSettings = normalizeStorefrontThemeSettings(((store as any).store_settings as Record<string, any> | null) ?? null);
+  const accentColor = isWhiteLabel && store.brand_color ? store.brand_color : "#FFD700";
+  const secondaryColor = isWhiteLabel && store.secondary_color ? store.secondary_color : "#000000";
+  const themeTokens = getStorefrontThemeTokens({
+    isWhiteLabel,
+    accentColor,
+    secondaryColor,
+    settings: storeSettings,
+  });
 
-  // Hero slides: tenant-specific → fall back to global
   let heroSlides = store.hero_slides;
   if (heroSlides.length === 0) {
     heroSlides = await prisma.heroSlide.findMany({ where: { tenant_id: null, deleted_at: null } });
   }
 
-  const books       = store.publishers?.books ?? [];
-  const heroLayout  = storeSettings.heroLayout  ?? "split";
-  const accentStyle = storeSettings.accentStyle ?? "bold";
-
-  // Section visibility (only meaningful for white-label, default all true)
-  const showFeatured    = isWhiteLabel ? (storeSettings.showFeatured    ?? true) : true;
-  const showNewArrivals = isWhiteLabel ? (storeSettings.showNewArrivals ?? true) : true;
-  const showCategories  = isWhiteLabel ? (storeSettings.showCategories  ?? true) : true;
-
-  // Derived book lists
-  const featuredBooks    = books.filter((b) => b.featured_shop);
-  const newArrivalBooks  = books.slice(0, 8);  // newest first (ordered above)
-
-  // All unique categories across the store's books
-  const allCategories = showCategories
-    ? Array.from(
-        new Map(
-          books.flatMap((b) => b.categories).map((c) => [c.id, c])
-        ).values()
+  const books = store.publishers?.books ?? [];
+  const filteredBooks = selectedCategorySlug
+    ? books.filter((book) =>
+        book.categories.some((category) => category.slug.toLowerCase() === selectedCategorySlug)
       )
+    : books;
+  const featuredBooks = filteredBooks.filter((book) => book.featured_shop);
+  const newArrivalBooks = filteredBooks.slice(0, 8);
+  const showFeatured = isWhiteLabel ? storeSettings.showFeatured : true;
+  const showNewArrivals = isWhiteLabel ? storeSettings.showNewArrivals : true;
+  const showCategories = isWhiteLabel ? storeSettings.showCategories : true;
+  const allCategories = showCategories
+    ? Array.from(new Map(books.flatMap((book) => book.categories).map((category) => [category.id, category])).values())
     : [];
 
-  // Marquee text
   const marqueeText = isWhiteLabel && (store as any).tagline
     ? (store as any).tagline
     : `Direct from ${store.name ?? "this store"}`;
+  const activeCategory = selectedCategorySlug
+    ? allCategories.find((category) => category.slug.toLowerCase() === selectedCategorySlug) ?? null
+    : null;
+  const storeBio = store.publishers?.bio ?? "";
+  const supportEmail = store.contact_email?.trim() || null;
+  const supportWebsite = (() => {
+    const website = typeof store.social_links === "object" && store.social_links
+      ? (store.social_links as Record<string, string | null>).website
+      : null;
+    return website?.trim() || null;
+  })();
+  const isBoldPreset = isWhiteLabel && storeSettings.themePreset === "bold";
+  const sectionToneStyle = isBoldPreset
+    ? { background: secondaryColor, color: accentColor, borderColor: withAlpha(accentColor, 0.28) }
+    : undefined;
+  const cardShellStyle = isBoldPreset
+    ? { background: "#ffffff", color: "#111111" }
+    : undefined;
 
   return (
-    <main className="pb-20">
-      {/* ── Hero carousel ── */}
+    <main className="pb-20" style={{ background: themeTokens.mainBg }}>
       <StoreHeroCarousel
         slides={heroSlides}
-        layout={heroLayout}
+        layout={storeSettings.heroLayout}
         accentColor={accentColor}
         secondaryColor={secondaryColor}
-        accentStyle={accentStyle}
+        accentStyle={storeSettings.accentStyle}
+        themePreset={storeSettings.themePreset}
       />
 
-      {/* ── Marquee strip ── */}
       <div
-        className="py-3 overflow-hidden border-y-[1.5px]"
-        style={{ background: secondaryColor, borderColor: secondaryColor, color: accentColor }}
+        className="overflow-hidden border-y-[1.5px] py-3"
+        style={{ background: themeTokens.marqueeBg, borderColor: secondaryColor, color: themeTokens.marqueeText }}
       >
-        <div className="flex items-center justify-center gap-12 whitespace-nowrap animate-marquee">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="flex items-center gap-4 text-[9px] font-black uppercase tracking-[0.25em]">
+        <div className="animate-marquee flex items-center justify-center gap-12 whitespace-nowrap">
+          {[...Array(4)].map((_, index) => (
+            <div key={index} className="flex items-center gap-4 text-[9px] font-black uppercase tracking-[0.25em]">
               <Star size={10} className="fill-current" style={{ color: accentColor }} />
               {marqueeText}
               <Star size={10} className="fill-current" style={{ color: accentColor }} />
-              Secure Digital Library
+              Curated Publishing Storefront
             </div>
           ))}
         </div>
       </div>
 
-      <div className="max-w-[1440px] mx-auto px-6 md:px-12">
-
-        {/* ── Featured Books (optional section) ── */}
-        {showFeatured && featuredBooks.length > 0 && (
-          <section className="py-16 lg:py-20">
-            <SectionHeading
-              title="Featured"
-              subtitle={`${featuredBooks.length} Picks`}
-              accentColor={accentColor}
-              isWhiteLabel={isWhiteLabel}
-            />
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 md:gap-8">
-              {featuredBooks.map((book) => (
-                <ProductCard key={book.id} book={book} />
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* ── Browse by Category (optional section, white-label) ── */}
-        {showCategories && allCategories.length > 0 && (
-          <section className="py-10 border-t-[1.5px] border-black/10">
-            <SectionHeading
-              title="Browse by Category"
-              subtitle={`${allCategories.length} Categories`}
-              accentColor={accentColor}
-              isWhiteLabel={isWhiteLabel}
-            />
-            <div className="flex flex-wrap gap-3">
-              {allCategories.map((cat) => (
-                <Link
-                  key={cat.id}
-                  href={`/${slug}?category=${cat.slug}`}
-                  className="px-4 py-2 border-[1.5px] border-black text-[10px] font-black uppercase tracking-widest transition-all"
-                  style={{ 
-                    // We use a CSS variable for the hover color if it's dynamic
-                    ['--hover-bg' as any]: secondaryColor,
-                    ['--hover-text' as any]: accentColor 
-                  }}
-                  // Use Tailwind's hover: utilities or a global style
-                  // To use the dynamic variables, you'd need a small CSS tweak:
-                  // className="... hover:bg-[var(--hover-bg)] hover:text-[var(--hover-text)]"
+      <div className="mx-auto max-w-[1440px] px-6 py-10 md:px-12 md:py-12">
+        <div className={themeTokens.contentShellClassName}>
+          {(storeBio || isWhiteLabel) && (
+            <section
+              className={`mb-10 ${themeTokens.sectionShellClassName}`}
+              style={sectionToneStyle ?? { background: withAlpha(accentColor, 0.08), borderColor: themeTokens.subduedBorder }}
+            >
+              <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+                <div className="max-w-3xl space-y-3">
+                  <p className="text-[10px] font-black uppercase tracking-[0.28em] opacity-50">Publisher Storefront</p>
+                  <h1 className={`text-3xl md:text-5xl ${themeTokens.headingTitleClassName}`}>
+                    {store.name}
+                    <span style={{ color: accentColor }}>.</span>
+                  </h1>
+                  <p className={`max-w-2xl text-sm md:text-base ${isBoldPreset ? "text-white/80" : "text-gray-600"}`}>
+                    {storeBio || "A curated publishing storefront designed to feel distinct from the main marketplace and shaped around this publisher's own brand."}
+                  </p>
+                </div>
+                <div
+                  className={`inline-flex items-center gap-2 self-start border px-4 py-2 text-[10px] font-black uppercase tracking-[0.22em] md:self-auto ${isBoldPreset ? "border-white/20 bg-white/10 text-white" : "border-black/10 bg-white/70 text-black"}`}
                 >
-                  {cat.name}
-                </Link>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* ── New Arrivals (optional section) ── */}
-        {showNewArrivals && newArrivalBooks.length > 0 && showFeatured && featuredBooks.length > 0 && (
-          <section className="py-16 border-t-[1.5px] border-black/10">
-            <SectionHeading
-              title="New Arrivals"
-              subtitle="Just Added"
-              accentColor={accentColor}
-              isWhiteLabel={isWhiteLabel}
-            />
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6 md:gap-8">
-              {newArrivalBooks.slice(0, 4).map((book) => (
-                <ProductCard key={book.id} book={book} />
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* ── Full Collection ── */}
-        <section className="py-16 border-t-[1.5px] border-black/10">
-          <div className="flex justify-between items-end mb-10 border-b-[1.5px] border-black pb-5">
-            <div className="space-y-1">
-              <h2 className="text-3xl md:text-5xl font-black uppercase italic tracking-tighter text-black">
-                The Collection<span style={{ color: accentColor }}>.</span>
-              </h2>
-              <p className="text-[9px] font-bold uppercase tracking-[0.15em] text-gray-400">
-                Curated Selection / {books.length} Titles
-              </p>
-            </div>
-            <div className="hidden sm:flex items-center gap-2">
-              <div className="h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: accentColor }} />
-              <span className="text-[9px] font-black uppercase tracking-widest">Live Now</span>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 md:gap-8">
-            {books.map((book) => (
-              <ProductCard key={book.id} book={book} />
-            ))}
-          </div>
-
-          {books.length === 0 && (
-            <div className="py-32 flex flex-col items-center justify-center border-[1.5px] border-dashed border-black/10">
-              <p className="font-black uppercase italic opacity-20 text-xl tracking-tighter">
-                Library is being updated
-              </p>
-            </div>
+                  <Sparkles size={12} style={{ color: accentColor }} />
+                  {storeSettings.themePreset} theme
+                </div>
+              </div>
+            </section>
           )}
-        </section>
 
+          {activeCategory && (
+            <section
+              className={`mb-10 flex flex-col gap-4 md:flex-row md:items-center md:justify-between ${themeTokens.sectionShellClassName}`}
+              style={sectionToneStyle ?? { background: withAlpha(accentColor, 0.06), borderColor: themeTokens.subduedBorder }}
+            >
+              <div className="space-y-1">
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] opacity-50">Filtering Collection</p>
+                <p className={`text-lg font-black uppercase tracking-tight ${isBoldPreset ? "text-white" : "text-black"}`}>
+                  {activeCategory.name}
+                </p>
+                <p className={`text-xs ${isBoldPreset ? "text-white/75" : "text-gray-500"}`}>
+                  Showing {filteredBooks.length} book{filteredBooks.length === 1 ? "" : "s"} in this category.
+                </p>
+              </div>
+              <Link
+                href={`/store/${slug}`}
+                className="inline-flex w-fit items-center border px-4 py-2 text-[10px] font-black uppercase tracking-[0.2em] transition-opacity hover:opacity-80"
+                style={{
+                  borderColor: isBoldPreset ? withAlpha(accentColor, 0.32) : secondaryColor,
+                  background: isBoldPreset ? withAlpha("#ffffff", 0.08) : "#ffffff",
+                  color: isBoldPreset ? accentColor : "#111111",
+                }}
+              >
+                Clear Filter
+              </Link>
+            </section>
+          )}
+
+          {showFeatured && featuredBooks.length > 0 && (
+            <section className={`mb-10 ${themeTokens.sectionShellClassName}`} style={sectionToneStyle ?? undefined}>
+              <SectionHeading
+                title="Featured"
+                subtitle={`${featuredBooks.length} Picks`}
+                accentColor={accentColor}
+                headingTitleClassName={themeTokens.headingTitleClassName}
+                headingMetaClassName={themeTokens.headingMetaClassName}
+              />
+              <div className="grid grid-cols-2 gap-6 md:gap-8 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                {featuredBooks.map((book) => (
+                  <div key={book.id} className={themeTokens.cardShellClassName} style={cardShellStyle}>
+                    <ProductCard book={book} />
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {showCategories && allCategories.length > 0 && (
+            <section className={`mb-10 ${themeTokens.sectionShellClassName}`} style={sectionToneStyle ?? undefined}>
+              <SectionHeading
+                title="Browse by Category"
+                subtitle={`${allCategories.length} Categories`}
+                accentColor={accentColor}
+                headingTitleClassName={themeTokens.headingTitleClassName}
+                headingMetaClassName={themeTokens.headingMetaClassName}
+              />
+              <div className="flex flex-wrap gap-3">
+                {allCategories.map((category) => (
+                  <Link
+                    key={category.id}
+                    href={`/store/${slug}?category=${category.slug}`}
+                    className="border px-4 py-2 text-[10px] font-black uppercase tracking-widest transition-opacity hover:opacity-80"
+                    style={{
+                      borderColor:
+                        selectedCategorySlug === category.slug.toLowerCase()
+                          ? accentColor
+                          : isBoldPreset
+                          ? withAlpha(accentColor, 0.3)
+                          : secondaryColor,
+                      background:
+                        selectedCategorySlug === category.slug.toLowerCase()
+                          ? accentColor
+                          : isBoldPreset
+                          ? withAlpha("#ffffff", 0.08)
+                          : "#ffffff",
+                      color:
+                        selectedCategorySlug === category.slug.toLowerCase()
+                          ? secondaryColor
+                          : isBoldPreset
+                          ? accentColor
+                          : "#111111",
+                    }}
+                  >
+                    {category.name}
+                  </Link>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {showNewArrivals && newArrivalBooks.length > 0 && showFeatured && featuredBooks.length > 0 && (
+            <section className={`mb-10 ${themeTokens.sectionShellClassName}`} style={sectionToneStyle ?? undefined}>
+              <SectionHeading
+                title="New Arrivals"
+                subtitle="Just Added"
+                accentColor={accentColor}
+                headingTitleClassName={themeTokens.headingTitleClassName}
+                headingMetaClassName={themeTokens.headingMetaClassName}
+              />
+              <div className="grid grid-cols-2 gap-6 md:gap-8 sm:grid-cols-3 lg:grid-cols-4">
+                {newArrivalBooks.slice(0, 4).map((book) => (
+                  <div key={book.id} className={themeTokens.cardShellClassName} style={cardShellStyle}>
+                    <ProductCard book={book} />
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          <section className={themeTokens.sectionShellClassName} style={sectionToneStyle ?? undefined}>
+            <div className="mb-10 flex items-end justify-between border-b-[1.5px] border-black/10 pb-5">
+              <div className="space-y-1">
+                <h2 className={`text-3xl md:text-5xl ${themeTokens.headingTitleClassName}`}>
+                  The Collection
+                  <span style={{ color: accentColor }}>.</span>
+                </h2>
+                <p className={themeTokens.headingMetaClassName}>
+                  Curated Selection / {filteredBooks.length} Titles
+                </p>
+              </div>
+              <div className="hidden items-center gap-2 sm:flex">
+                <div className="h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: accentColor }} />
+                <span className={`text-[9px] font-black uppercase tracking-widest ${isBoldPreset ? "text-white/80" : ""}`}>Live Now</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-6 md:gap-8 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+              {filteredBooks.map((book) => (
+                <div key={book.id} className={themeTokens.cardShellClassName} style={cardShellStyle}>
+                  <ProductCard book={book} />
+                </div>
+              ))}
+            </div>
+
+            {filteredBooks.length === 0 && (
+              <div className="flex flex-col items-center justify-center border-[1.5px] border-dashed border-black/10 py-32">
+                <p className={`text-xl font-black uppercase tracking-tighter opacity-30 ${storeSettings.headingStyle === "serif" ? "font-serif normal-case" : "italic"}`}>
+                  {activeCategory ? "No books in this category yet" : "Library is being updated"}
+                </p>
+              </div>
+            )}
+          </section>
+        </div>
       </div>
 
-      {/* ── Footer ── */}
-      <footer className="max-w-[1440px] mx-auto px-6 md:px-12 pt-10 border-t-[1.5px] border-black flex flex-col md:flex-row justify-between items-center gap-6">
+      <footer
+        className="mx-auto flex max-w-[1440px] flex-col items-center justify-between gap-6 border-t-[1.5px] px-6 pt-10 md:flex-row md:px-12"
+        style={{ borderColor: themeTokens.subduedBorder, color: themeTokens.footerText }}
+      >
         <div className="flex items-center gap-4">
           {!isWhiteLabel && (
             <Link href="/" className="text-[9px] font-black uppercase tracking-widest opacity-30">
               Built with Booka.
             </Link>
           )}
-          <p className="text-[9px] font-black uppercase tracking-widest opacity-30">
+          <p className="text-[9px] font-black uppercase tracking-widest opacity-50">
             © {new Date().getFullYear()} {store.name}
           </p>
         </div>
         <div className="flex gap-6">
-          <Link
-            href={`/${slug}/contact`}
-            className="text-[9px] font-black uppercase tracking-widest hover:opacity-70"
-            style={{ color: "inherit" }}
-          >
-            Support
-          </Link>
-          <Link
-            href={`/${slug}/terms`}
-            className="text-[9px] font-black uppercase tracking-widest hover:opacity-70"
-            style={{ color: "inherit" }}
-          >
-            Terms
-          </Link>
+          {supportEmail && (
+            <a href={`mailto:${supportEmail}`} className="text-[9px] font-black uppercase tracking-widest hover:opacity-70" style={{ color: "inherit" }}>
+              Support
+            </a>
+          )}
+          {supportWebsite && (
+            <a href={supportWebsite} target="_blank" rel="noopener noreferrer" className="text-[9px] font-black uppercase tracking-widest hover:opacity-70" style={{ color: "inherit" }}>
+              Website
+            </a>
+          )}
         </div>
       </footer>
     </main>
   );
 }
 
-// ─── Section heading component (defined at module level — hard rule #4) ───────
-
 function SectionHeading({
   title,
   subtitle,
   accentColor,
-  isWhiteLabel,
+  headingTitleClassName,
+  headingMetaClassName,
 }: {
   title: string;
   subtitle: string;
   accentColor: string;
-  isWhiteLabel: boolean;
+  headingTitleClassName: string;
+  headingMetaClassName: string;
 }) {
   return (
-    <div className="flex justify-between items-end mb-10 border-b-[1.5px] border-black pb-5">
+    <div className="mb-10 flex justify-between border-b-[1.5px] border-black/10 pb-5">
       <div className="space-y-1">
-        <h2 className="text-2xl md:text-4xl font-black uppercase italic tracking-tighter text-black">
-          {title}<span style={{ color: accentColor }}>.</span>
+        <h2 className={`text-2xl md:text-4xl ${headingTitleClassName}`}>
+          {title}
+          <span style={{ color: accentColor }}>.</span>
         </h2>
-        <p className="text-[9px] font-bold uppercase tracking-[0.15em] text-gray-400">{subtitle}</p>
+        <p className={headingMetaClassName}>{subtitle}</p>
       </div>
     </div>
   );
