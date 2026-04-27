@@ -14,7 +14,6 @@ import {
   DEFAULT_PAYMENT_GATEWAY_SETTINGS,
   formatMoney,
   getGatewayDisplayName,
-  getPaymentMethodLabel,
   normalizePaymentGatewaySettings,
 } from "@/lib/payment-config";
 
@@ -72,9 +71,10 @@ export default function OrderDetailsPage() {
   const checkoutSubtotal = (order as any).checkout_subtotal_amount ?? order.subtotal_amount;
   const checkoutShipping = (order as any).checkout_shipping_amount ?? order.shipping_amount;
   const checkoutTotal = (order as any).checkout_total_amount ?? order.total_amount;
-  const paymentGateway = (order as any).payment_gateway || "paystack";
-  const paymentMethod = (order as any).payment_method || "card";
-  const paymentGatewayLabel = getGatewayDisplayName(paymentGateway as any, paymentGatewaySettings);
+  const paymentGateway = (order as any).payment_gateway || null;
+  const paymentGatewayLabel = paymentGateway
+    ? getGatewayDisplayName(paymentGateway as any, paymentGatewaySettings)
+    : (order.total_amount <= 0 ? "Free Claim" : "Pending Gateway");
 
   return (
     <div className="min-h-screen bg-[#FCFAEE] py-12 lg:py-20">
@@ -160,7 +160,7 @@ export default function OrderDetailsPage() {
                 <div className="text-[10px] font-black uppercase tracking-widest opacity-50">Payment Route</div>
                 <div className="font-black uppercase italic text-lg">{paymentGatewayLabel}</div>
                 <div className="text-[10px] font-bold uppercase tracking-widest opacity-60">
-                  {getPaymentMethodLabel(paymentMethod as any)} · {checkoutCurrency}
+                  {checkoutCurrency}
                 </div>
               </div>
 

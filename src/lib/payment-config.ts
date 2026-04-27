@@ -60,6 +60,11 @@ export type PaymentRouteOption = {
   method_label: string;
 };
 
+export type PaymentGatewayOption = {
+  gateway: PaymentGateway;
+  gateway_label: string;
+};
+
 export type CreatePaymentSessionInput = {
   orderId: string;
   orderNumber: string;
@@ -286,7 +291,14 @@ export function getCurrencyRate(currency: string, settings: CurrencySettings) {
     return 1;
   }
 
-  return settings.conversion_rates[normalizedCurrency]?.rate ?? 0;
+  const baseToNgn = settings.conversion_rates[normalizedBase]?.rate;
+  const targetToNgn = settings.conversion_rates[normalizedCurrency]?.rate;
+
+  if (!baseToNgn || baseToNgn <= 0 || !targetToNgn || targetToNgn <= 0) {
+    return 0;
+  }
+
+  return baseToNgn / targetToNgn;
 }
 
 export function getCurrencyMinorUnit(currency: string, settings: CurrencySettings) {
@@ -315,6 +327,10 @@ export function convertBaseAmount(amount: number, targetCurrency: string, settin
   }
 
   return roundCurrencyAmount(amount * rate, normalizedTarget, settings);
+}
+
+export function hasValidCheckoutCurrencyRate(currency: string, settings: CurrencySettings) {
+  return getCurrencyRate(currency, settings) > 0;
 }
 
 export function formatMoney(amount: number, currency: string) {
@@ -563,4 +579,24 @@ export function getAvailablePaymentRoutes(params: {
   }
 
   return routes;
+}
+
+export function getAvailablePaymentGateways(params: {
+  currency: string;
+  settings: PaymentGatewaySettings;
+  health: Record<PaymentGateway, PaymentGatewayHealth>;
+}) {
+  const routes = getAvailablePaymentRoutes(params);
+  const gateways = new Map<PaymentGateway, PaymentGatewayOption>();
+
+  for (const route of routes) {
+    if (!gateways.has(route.gateway)) {
+      gateways.set(route.gateway, {
+        gateway: route.gateway,
+        gateway_label: route.gateway_label,
+      });
+    }
+  }
+
+  return Array.from(gateways.values());
 }

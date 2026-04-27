@@ -8,8 +8,8 @@ export type OrderCheckoutQuote = {
   checkout_subtotal_amount: number;
   checkout_shipping_amount: number;
   checkout_total_amount: number;
-  payment_gateway: string;
-  payment_method: string;
+  payment_gateway: string | null;
+  payment_method: string | null;
 };
 
 export type OrderNotesData = {

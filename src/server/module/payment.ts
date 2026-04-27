@@ -1,5 +1,7 @@
 import prisma from "@/lib/prisma";
 import { z } from "zod";
+import axios from "axios";
+import { TRPCError } from "@trpc/server";
 import { publicProcedure } from "@/server/trpc";
 import {
   initializePaymentSchema,
@@ -10,11 +12,11 @@ import {
   DEFAULT_CURRENCY_SETTINGS,
   DEFAULT_PAYMENT_GATEWAY_SETTINGS,
   getPaymentGatewayAdapter,
+  getCurrencyRate,
   getPaymentGatewayHealthMap,
+  hasValidCheckoutCurrencyRate,
   PAYMENT_GATEWAYS,
-  PAYMENT_METHODS,
   PaymentGateway,
-  PaymentMethod,
   normalizeCurrencySettings,
   normalizePaymentGatewaySettings,
 } from "@/lib/payment-config";
@@ -61,7 +63,6 @@ export const initializePayment = publicProcedure
       currency,
       callback_url,
       payment_gateway,
-      payment_method,
     } = opts.input;
 
     const order = await prisma.order.findUnique({
@@ -82,9 +83,6 @@ export const initializePayment = publicProcedure
     const resolvedGateway = (payment_gateway
       ?? savedQuote?.payment_gateway
       ?? PAYMENT_GATEWAYS.PAYSTACK) as PaymentGateway;
-    const resolvedMethod = (payment_method
-      ?? savedQuote?.payment_method
-      ?? PAYMENT_METHODS.CARD) as PaymentMethod;
     const resolvedCurrency = savedQuote?.checkout_currency
       ?? currency
       ?? order.currency
@@ -120,29 +118,60 @@ export const initializePayment = publicProcedure
     const gatewaySettings = paymentGatewaySettings[resolvedGateway];
 
     if (!gatewayHealth?.checkout_ready) {
-      throw new Error(`${gatewaySettings.display_name || resolvedGateway} is not currently available.`);
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `${gatewaySettings.display_name || resolvedGateway} is not currently available.`,
+      });
     }
 
     if (!adapter.supportsCurrency(resolvedCurrency, gatewaySettings)) {
-      throw new Error(`${gatewaySettings.display_name || resolvedGateway} does not support ${resolvedCurrency}.`);
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `${gatewaySettings.display_name || resolvedGateway} does not support ${resolvedCurrency}.`,
+      });
     }
 
-    if (!adapter.supportsMethod(resolvedMethod, gatewaySettings)) {
-      throw new Error(`${gatewaySettings.display_name || resolvedGateway} does not support the selected payment method.`);
+    if (!hasValidCheckoutCurrencyRate(resolvedCurrency, currencySettings)) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `Please configure a valid NGN conversion rate for ${resolvedCurrency} before using it at checkout.`,
+      });
     }
 
-    const session = await adapter.createPaymentSession({
-      orderId: order.id,
-      orderNumber: order.order_number,
-      email,
-      amount: resolvedAmount,
-      currency: resolvedCurrency,
-      callbackUrl: callback_url || `${APP_URL}/payment/verify?order_id=${order_id}&gateway=${resolvedGateway}`,
-      metadata: {
-        customer_id: order.customer_id,
-        payment_method: resolvedMethod,
-      },
-    });
+    let session;
+    try {
+      session = await adapter.createPaymentSession({
+        orderId: order.id,
+        orderNumber: order.order_number,
+        email,
+        amount: resolvedAmount,
+        currency: resolvedCurrency,
+        callbackUrl: callback_url || `${APP_URL}/payment/verify?order_id=${order_id}&gateway=${resolvedGateway}`,
+        metadata: {
+          customer_id: order.customer_id,
+        },
+      });
+    } catch (error: any) {
+      if (axios.isAxiosError(error)) {
+        if (error.response?.status === 403) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `${gatewaySettings.display_name || resolvedGateway} could not initialize ${resolvedCurrency}. Confirm that this gateway account supports that currency in the current environment.`,
+          });
+        }
+
+        const gatewayMessage = error.response?.data?.message
+          || error.response?.data?.error
+          || error.message;
+
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `${gatewaySettings.display_name || resolvedGateway} could not initialize payment: ${gatewayMessage}`,
+        });
+      }
+
+      throw error;
+    }
 
     await prisma.transactionHistory.create({
       data: {
@@ -154,7 +183,6 @@ export const initializePayment = publicProcedure
         provider_reference: session.reference,
         status: "pending",
         processor_response: {
-          payment_method: resolvedMethod,
           checkout_quote: savedQuote,
           session: session.processor_response,
         } as any,
@@ -169,7 +197,7 @@ export const initializePayment = publicProcedure
             checkout_quote: {
               base_currency: order.currency,
               checkout_currency: resolvedCurrency,
-              fx_rate_to_base: resolvedCurrency === order.currency ? 1 : 0,
+              fx_rate_to_base: getCurrencyRate(resolvedCurrency, currencySettings),
               base_subtotal_amount: order.subtotal_amount,
               base_shipping_amount: order.shipping_amount,
               base_total_amount: order.total_amount,
@@ -177,7 +205,7 @@ export const initializePayment = publicProcedure
               checkout_shipping_amount: order.shipping_amount,
               checkout_total_amount: resolvedAmount,
               payment_gateway: resolvedGateway,
-              payment_method: resolvedMethod,
+              payment_method: null,
             },
           }),
         },

@@ -372,7 +372,7 @@ export default function SystemSettingsPage() {
           code,
           {
             ...config,
-            updated_at: code === data.currency_settings.base_currency ? config.updated_at : rateTimestamp,
+            updated_at: code === "NGN" ? config.updated_at : rateTimestamp,
           },
         ])
       ),
@@ -455,7 +455,7 @@ export default function SystemSettingsPage() {
               <div>
                 <h2 className="text-2xl font-black uppercase italic">Currency Settings</h2>
                 <p className="text-xs opacity-50 font-medium mt-2">
-                  Orders and reporting stay in the base currency. Checkout currencies use the manual rates below.
+                  Orders and reporting stay in the base currency. Set each foreign currency as its NGN equivalent.
                 </p>
               </div>
 
@@ -556,14 +556,14 @@ export default function SystemSettingsPage() {
                     <div>
                       <p className="font-black uppercase text-xs">{currencyCode}</p>
                       <p className="text-[10px] font-medium opacity-50 mt-1">
-                        1 {form.watch("currency_settings.base_currency")} = rate in {currencyCode}
+                        {currencyCode === "NGN" ? "Base currency anchor" : `1 ${currencyCode} = rate in NGN`}
                       </p>
                     </div>
                     <NumberField
                       control={form.control}
                       name={`currency_settings.conversion_rates.${currencyCode}.rate`}
                       label="Rate"
-                      placeholder={currencyCode === "NGN" ? "1" : "e.g. 0.001"}
+                      placeholder={currencyCode === "NGN" ? "1" : "e.g. 1400"}
                     />
                     <FormField
                       control={form.control}

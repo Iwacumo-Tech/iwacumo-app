@@ -38,13 +38,11 @@ import {
   DEFAULT_CURRENCY_SETTINGS,
   DEFAULT_PAYMENT_GATEWAY_SETTINGS,
   formatMoney,
-  getAvailablePaymentRoutes,
-  getGatewayDisplayName,
-  getPaymentMethodLabel,
+  getAvailablePaymentGateways,
+  hasValidCheckoutCurrencyRate,
   normalizeCurrencySettings,
   normalizePaymentGatewaySettings,
   PaymentGateway,
-  PaymentMethod,
 } from "@/lib/payment-config";
 
 type CartItem = {
@@ -101,7 +99,6 @@ export default function CartPage() {
   const [selectedShippingProvider, setSelectedShippingProvider] = useState<ShippingProvider | null>(null);
   const [selectedCheckoutCurrency, setSelectedCheckoutCurrency] = useState<string>("");
   const [selectedPaymentGateway, setSelectedPaymentGateway] = useState<PaymentGateway | null>(null);
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod | null>(null);
 
   useEffect(() => {
     if (isAuthenticated && userCartItems) {
@@ -226,14 +223,29 @@ export default function CartPage() {
 
   const subtotal = cartItems.reduce((sum, item) => sum + item.price * (item.quantity ?? 1), 0);
   const total = subtotal + shipping;
+  const isFreeCheckout = total <= 0;
 
-  const availablePaymentRoutes = useMemo(() => {
-    return getAvailablePaymentRoutes({
+  const hasValidCheckoutRate = useMemo(() => {
+    return hasValidCheckoutCurrencyRate(
+      selectedCheckoutCurrency || currencySettings.default_checkout_currency,
+      currencySettings
+    );
+  }, [
+    currencySettings,
+    currencySettings.default_checkout_currency,
+    selectedCheckoutCurrency,
+  ]);
+
+  const availablePaymentGateways = useMemo(() => {
+    if (!hasValidCheckoutRate) return [];
+
+    return getAvailablePaymentGateways({
       currency: selectedCheckoutCurrency || currencySettings.default_checkout_currency,
       settings: paymentGatewaySettings,
       health: paymentGatewayHealth as any,
     });
   }, [
+    hasValidCheckoutRate,
     currencySettings.default_checkout_currency,
     paymentGatewayHealth,
     paymentGatewaySettings,
@@ -241,24 +253,22 @@ export default function CartPage() {
   ]);
 
   useEffect(() => {
-    const matchingRoute = availablePaymentRoutes.find((route) =>
-      route.gateway === selectedPaymentGateway && route.method === selectedPaymentMethod
+    const matchingGateway = availablePaymentGateways.find((gateway) =>
+      gateway.gateway === selectedPaymentGateway
     );
 
-    if (matchingRoute) return;
+    if (matchingGateway) return;
 
-    if (availablePaymentRoutes.length === 1) {
-      setSelectedPaymentGateway(availablePaymentRoutes[0].gateway);
-      setSelectedPaymentMethod(availablePaymentRoutes[0].method);
+    if (availablePaymentGateways.length === 1) {
+      setSelectedPaymentGateway(availablePaymentGateways[0].gateway);
       return;
     }
 
     setSelectedPaymentGateway(null);
-    setSelectedPaymentMethod(null);
-  }, [availablePaymentRoutes, selectedPaymentGateway, selectedPaymentMethod]);
+  }, [availablePaymentGateways, selectedPaymentGateway]);
 
-  const selectedPaymentRoute = availablePaymentRoutes.find((route) =>
-    route.gateway === selectedPaymentGateway && route.method === selectedPaymentMethod
+  const selectedPaymentOption = availablePaymentGateways.find((gateway) =>
+    gateway.gateway === selectedPaymentGateway
   ) ?? null;
 
   const checkoutSubtotal = convertBaseAmount(
@@ -306,7 +316,6 @@ export default function CartPage() {
         order_id: order.id,
         email: session?.user?.email || (order as any).customer?.user?.email,
         payment_gateway: (order as any).payment_gateway || selectedPaymentGateway || undefined,
-        payment_method: (order as any).payment_method || selectedPaymentMethod || undefined,
       });
     },
     onError: (err) => {
@@ -382,11 +391,20 @@ export default function CartPage() {
     if (!cartItems.length) return;
     if (!isAuthenticated) return setShowRegistrationDialog(true);
 
-    if (!selectedPaymentRoute) {
+    if (!hasValidCheckoutRate) {
       toast({
-        title: "Payment route unavailable",
+        title: "Invalid currency rate",
         variant: "destructive",
-        description: "Choose a supported checkout currency and payment option before continuing.",
+        description: `Please configure a valid NGN conversion rate for ${selectedCheckoutCurrency || currencySettings.default_checkout_currency} before continuing.`,
+      });
+      return;
+    }
+
+    if (!isFreeCheckout && !selectedPaymentOption) {
+      toast({
+        title: "Payment gateway unavailable",
+        variant: "destructive",
+        description: "Choose a supported checkout currency and payment gateway before continuing.",
       });
       return;
     }
@@ -435,7 +453,7 @@ export default function CartPage() {
 
   const proceedWithCheckout = (deliveryData?: TDeliveryAddressSchema) => {
     if (!isAuthenticated || !userId) return;
-    if (!selectedPaymentRoute) return;
+    if (!isFreeCheckout && !selectedPaymentOption) return;
 
     const stateForShipping = deliveryData?.state || selectedState;
     const shippingQuote = requiresDelivery
@@ -450,8 +468,7 @@ export default function CartPage() {
       discount_amount: 0,
       currency: currencySettings.base_currency,
       checkout_currency: selectedCheckoutCurrency || currencySettings.default_checkout_currency,
-      payment_gateway: selectedPaymentRoute.gateway,
-      payment_method: selectedPaymentRoute.method,
+      payment_gateway: selectedPaymentOption?.gateway,
       channel: "web",
       shipping_provider: selectedShippingProvider ?? undefined,
       requires_delivery: requiresDelivery,
@@ -476,7 +493,7 @@ export default function CartPage() {
             Securing Your <br /> Masterpiece<span className="text-accent">.</span>
           </h2>
           <p className="mt-6 font-bold uppercase tracking-[0.3em] text-xs animate-pulse">
-            Redirecting to {selectedPaymentRoute?.gateway_label || "checkout"}…
+            Redirecting to {selectedPaymentOption?.gateway_label || "checkout"}…
           </p>
         </div>
       )}
@@ -589,25 +606,30 @@ export default function CartPage() {
                 <div>
                   <p className="font-black uppercase text-[10px] opacity-50 mb-2">Payment Option</p>
                   <div className="space-y-2">
-                    {availablePaymentRoutes.length > 0 ? availablePaymentRoutes.map((route) => {
-                      const selected = route.gateway === selectedPaymentGateway && route.method === selectedPaymentMethod;
+                    {isFreeCheckout ? (
+                      <div className="border-2 border-black bg-[#FCFAEE] px-4 py-3 text-[10px] font-black uppercase tracking-widest text-black">
+                        No payment required for this order.
+                      </div>
+                    ) : !hasValidCheckoutRate ? (
+                      <div className="border-2 border-red-500 bg-red-50 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-red-700">
+                        Set a valid NGN rate for {selectedCheckoutCurrency || currencySettings.default_checkout_currency} before enabling checkout.
+                      </div>
+                    ) : availablePaymentGateways.length > 0 ? availablePaymentGateways.map((gatewayOption) => {
+                      const selected = gatewayOption.gateway === selectedPaymentGateway;
 
                       return (
                         <button
-                          key={`${route.gateway}-${route.method}`}
+                          key={gatewayOption.gateway}
                           type="button"
-                          onClick={() => {
-                            setSelectedPaymentGateway(route.gateway);
-                            setSelectedPaymentMethod(route.method);
-                          }}
+                          onClick={() => setSelectedPaymentGateway(gatewayOption.gateway)}
                           className={cn(
                             "w-full border-2 border-black px-4 py-3 text-left transition-colors",
                             selected ? "bg-accent" : "bg-white hover:bg-black/5"
                           )}
                         >
-                          <p className="text-sm font-black uppercase italic">{route.gateway_label}</p>
+                          <p className="text-sm font-black uppercase italic">{gatewayOption.gateway_label}</p>
                           <p className="text-[10px] font-bold uppercase tracking-widest opacity-50">
-                            {route.method_label}
+                            Choose your method on the gateway page
                           </p>
                         </button>
                       );
@@ -688,8 +710,7 @@ export default function CartPage() {
               </Button>
               <div className="flex items-center justify-center gap-2 opacity-30 text-[8px] font-black uppercase tracking-widest text-center">
                 <ShieldCheck size={12} />
-                Secure Checkout by {selectedPaymentRoute?.gateway_label || "Configured Gateway"}
-                {selectedPaymentRoute ? ` · ${selectedPaymentRoute.method_label}` : ""}
+                {isFreeCheckout ? "No payment gateway required" : `Secure Checkout by ${selectedPaymentOption?.gateway_label || "Configured Gateway"}`}
               </div>
             </CardFooter>
           </Card>

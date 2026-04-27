@@ -11,7 +11,6 @@ import {
   DEFAULT_PAYMENT_GATEWAY_SETTINGS,
   formatMoney,
   getGatewayDisplayName,
-  getPaymentMethodLabel,
   normalizePaymentGatewaySettings,
 } from "@/lib/payment-config";
 
@@ -62,9 +61,10 @@ export default function PaymentPage() {
   const checkoutSubtotal = (order as any)?.checkout_subtotal_amount ?? order?.subtotal_amount ?? 0;
   const checkoutShipping = (order as any)?.checkout_shipping_amount ?? order?.shipping_amount ?? 0;
   const checkoutTotal = (order as any)?.checkout_total_amount ?? order?.total_amount ?? 0;
-  const paymentGateway = (order as any)?.payment_gateway || "paystack";
-  const paymentMethod = (order as any)?.payment_method || "card";
-  const paymentGatewayLabel = getGatewayDisplayName(paymentGateway as any, paymentGatewaySettings);
+  const paymentGateway = (order as any)?.payment_gateway || null;
+  const paymentGatewayLabel = paymentGateway
+    ? getGatewayDisplayName(paymentGateway as any, paymentGatewaySettings)
+    : "Configured Gateway";
 
   const handlePayNow = () => {
     if (!order || status !== "authenticated") return;
@@ -73,7 +73,6 @@ export default function PaymentPage() {
       order_id: orderId,
       email: session?.user?.email as string,
       payment_gateway: (order as any)?.payment_gateway || undefined,
-      payment_method: (order as any)?.payment_method || undefined,
     });
   };
 
@@ -105,7 +104,7 @@ export default function PaymentPage() {
             <p className="text-[10px] font-black uppercase tracking-widest opacity-50">Payment Route</p>
             <p className="font-black uppercase italic text-lg">{paymentGatewayLabel}</p>
             <p className="text-[10px] font-bold uppercase tracking-widest opacity-60">
-              {getPaymentMethodLabel(paymentMethod as any)} · {checkoutCurrency}
+              {checkoutCurrency}
             </p>
           </div>
 

@@ -27,19 +27,14 @@ import {
 } from "@/lib/constants";
 import {
   convertBaseAmount,
-  CurrencySettings,
   DEFAULT_CURRENCY_SETTINGS,
   DEFAULT_PAYMENT_GATEWAY_SETTINGS,
-  formatMoney,
-  getAvailablePaymentRoutes,
+  getAvailablePaymentGateways,
   getCurrencyRate,
+  hasValidCheckoutCurrencyRate,
   getPaymentGatewayHealthMap,
   normalizeCurrencySettings,
   normalizePaymentGatewaySettings,
-  PaymentGateway,
-  PaymentGatewayHealth,
-  PaymentGatewaySettings,
-  PaymentMethod,
 } from "@/lib/payment-config";
 import {
   appendCancellationReason,
@@ -84,7 +79,7 @@ export const createOrderFromCart = publicProcedure
     const {
       user_id, shipping_address_id, billing_address_id,
       tax_amount = 0, shipping_amount = 0, discount_amount = 0,
-      currency, checkout_currency, payment_gateway, payment_method,
+      currency, checkout_currency, payment_gateway,
       channel, notes, delivery_address, requires_delivery, shipping_provider,
     } = opts.input;
 
@@ -268,35 +263,6 @@ export const createOrderFromCart = publicProcedure
       ? checkout_currency
       : currencySettings.default_checkout_currency;
 
-    const availablePaymentRoutes = getAvailablePaymentRoutes({
-      currency: resolvedCheckoutCurrency,
-      settings: paymentGatewaySettings,
-      health: paymentGatewayHealth,
-    });
-
-    if (!availablePaymentRoutes.length && totalWeightGrams >= 0) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: `No payment gateway is currently available for ${resolvedCheckoutCurrency}.`,
-      });
-    }
-
-    const matchingRoute = availablePaymentRoutes.find((route) => (
-      (!payment_gateway || route.gateway === payment_gateway)
-      && (!payment_method || route.method === payment_method)
-    ));
-
-    const autoRoute = availablePaymentRoutes.length === 1 ? availablePaymentRoutes[0] : null;
-    const resolvedPaymentGateway = matchingRoute?.gateway ?? autoRoute?.gateway;
-    const resolvedPaymentMethod = matchingRoute?.method ?? autoRoute?.method;
-
-    if (!resolvedPaymentGateway || !resolvedPaymentMethod) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: "Please select a valid payment gateway and payment method before continuing.",
-      });
-    }
-
     // Server-side shipping validation
     let verifiedShippingAmount = shipping_amount;
     let shippingLabel: string | null = null;
@@ -325,6 +291,43 @@ export const createOrderFromCart = publicProcedure
     const checkoutTotalAmount = convertBaseAmount(totalAmount, resolvedCheckoutCurrency, currencySettings);
     const orderNumber = generateOrderNumber();
     const isFreeOrder = totalAmount <= 0;
+
+    if (!isFreeOrder && !hasValidCheckoutCurrencyRate(resolvedCheckoutCurrency, currencySettings)) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `Please configure a valid NGN conversion rate for ${resolvedCheckoutCurrency} before using it at checkout.`,
+      });
+    }
+
+    const availablePaymentGateways = isFreeOrder
+      ? []
+      : getAvailablePaymentGateways({
+          currency: resolvedCheckoutCurrency,
+          settings: paymentGatewaySettings,
+          health: paymentGatewayHealth,
+        });
+
+    if (!isFreeOrder && !availablePaymentGateways.length) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `No payment gateway is currently available for ${resolvedCheckoutCurrency}.`,
+      });
+    }
+
+    const autoGateway = availablePaymentGateways.length === 1 ? availablePaymentGateways[0].gateway : null;
+    const resolvedPaymentGateway = isFreeOrder
+      ? null
+      : (payment_gateway && availablePaymentGateways.some((gateway) => gateway.gateway === payment_gateway)
+          ? payment_gateway
+          : autoGateway);
+
+    if (!isFreeOrder && !resolvedPaymentGateway) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Please select a valid payment gateway before continuing.",
+      });
+    }
+
     const orderNotes = mergeOrderNotes(notes || null, {
       notes_text: notes || null,
       delivery_address: requires_delivery ? (delivery_address ?? null) : null,
@@ -345,7 +348,7 @@ export const createOrderFromCart = publicProcedure
         checkout_shipping_amount: checkoutShippingAmount,
         checkout_total_amount: checkoutTotalAmount,
         payment_gateway: resolvedPaymentGateway,
-        payment_method: resolvedPaymentMethod,
+        payment_method: null,
       },
     });
 
