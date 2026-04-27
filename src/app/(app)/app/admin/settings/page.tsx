@@ -35,6 +35,15 @@ import {
   normalizeBookLivePricingEnabled,
   type BookCustomFieldDefinition,
 } from "@/lib/book-config";
+import {
+  DEFAULT_CURRENCY_SETTINGS,
+  DEFAULT_PAYMENT_GATEWAY_SETTINGS,
+  CurrencySettings,
+  PAYMENT_GATEWAYS,
+  PAYMENT_METHODS,
+  PaymentGateway,
+  PaymentMethod,
+} from "@/lib/payment-config";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -46,6 +55,41 @@ type SettingsFormValues = {
   platform_fee: { type: "percentage" | "flat"; value: number };
   default_markup: number;
   isbn_cost: number;
+  currency_settings: CurrencySettings;
+  payment_gateway_settings: {
+    paystack: {
+      enabled: boolean;
+      sort_order: number;
+      supported_currencies: string[];
+      supported_methods: PaymentMethod[];
+      display_name?: string;
+      mode?: "test" | "live";
+    };
+    stripe: {
+      enabled: boolean;
+      sort_order: number;
+      supported_currencies: string[];
+      supported_methods: PaymentMethod[];
+      display_name?: string;
+      mode?: "test" | "live";
+    };
+    paypal: {
+      enabled: boolean;
+      sort_order: number;
+      supported_currencies: string[];
+      supported_methods: PaymentMethod[];
+      display_name?: string;
+      mode?: "test" | "live";
+    };
+    flutterwave: {
+      enabled: boolean;
+      sort_order: number;
+      supported_currencies: string[];
+      supported_methods: PaymentMethod[];
+      display_name?: string;
+      mode?: "test" | "live";
+    };
+  };
   printing_costs: {
     paperback: { A6: PrintSizeConfig; A5: PrintSizeConfig; A4: PrintSizeConfig };
     hardcover: { A6: PrintSizeConfig; A5: PrintSizeConfig; A4: PrintSizeConfig };
@@ -114,6 +158,8 @@ const DEFAULTS: SettingsFormValues = {
   platform_fee: { type: "percentage", value: 30 },
   default_markup: 20,
   isbn_cost: 0,
+  currency_settings: DEFAULT_CURRENCY_SETTINGS,
+  payment_gateway_settings: DEFAULT_PAYMENT_GATEWAY_SETTINGS,
   printing_costs: {
     paperback: {
       A6: { cover: 1500, page: 5 },
@@ -157,6 +203,14 @@ const DEFAULTS: SettingsFormValues = {
   book_live_pricing_enabled: DEFAULT_BOOK_LIVE_PRICING_ENABLED,
   book_custom_fields: [],
 };
+
+const CHECKOUT_CURRENCIES = ["NGN", "USD", "GBP", "EUR"] as const;
+const PAYMENT_METHOD_OPTIONS = [
+  { value: PAYMENT_METHODS.CARD, label: "Card" },
+  { value: PAYMENT_METHODS.BANK_TRANSFER, label: "Bank Transfer" },
+  { value: PAYMENT_METHODS.PAYPAL, label: "PayPal" },
+  { value: PAYMENT_METHODS.MOBILE_MONEY, label: "Mobile Money" },
+] as const;
 
 // ---------------------------------------------------------------------------
 // Sub-components defined OUTSIDE the page component.
@@ -276,6 +330,7 @@ export default function SystemSettingsPage() {
     control: form.control,
     name: "book_custom_fields",
   });
+  const paymentGatewayHealth = ((settings as any)?.payment_gateway_health ?? {}) as Record<string, any>;
 
   // Hydrate the form once the server response arrives.
   // flatNumber handles both clean data and the previously-nested broken data.
@@ -288,6 +343,8 @@ export default function SystemSettingsPage() {
       },
       default_markup: flatNumber((settings as any).default_markup, 20),
       isbn_cost: flatNumber((settings as any).isbn_cost, 0),
+      currency_settings: (settings as any).currency_settings ?? DEFAULTS.currency_settings,
+      payment_gateway_settings: (settings as any).payment_gateway_settings ?? DEFAULTS.payment_gateway_settings,
       printing_costs: settings.printing_costs ?? DEFAULTS.printing_costs,
       shipping_rates: (settings as any).shipping_rates ?? DEFAULTS.shipping_rates,
       shipping_provider_options: (settings as any).shipping_provider_options ?? DEFAULTS.shipping_provider_options,
@@ -307,9 +364,25 @@ export default function SystemSettingsPage() {
   // Scalars are stored as { v: N } — a flat single-key object — so they satisfy
   // the Record<string, any> requirement without risk of further nesting.
   const onSubmit = (data: SettingsFormValues) => {
+    const rateTimestamp = new Date().toISOString();
+    const nextCurrencySettings = {
+      ...data.currency_settings,
+      conversion_rates: Object.fromEntries(
+        Object.entries(data.currency_settings.conversion_rates).map(([code, config]) => [
+          code,
+          {
+            ...config,
+            updated_at: code === data.currency_settings.base_currency ? config.updated_at : rateTimestamp,
+          },
+        ])
+      ),
+    };
+
     updateSettings({ key: "platform_fee",   value: data.platform_fee });
     updateSettings({ key: "default_markup", value: { v: data.default_markup } });
     updateSettings({ key: "isbn_cost",      value: { v: data.isbn_cost } });
+    updateSettings({ key: "currency_settings", value: nextCurrencySettings });
+    updateSettings({ key: "payment_gateway_settings", value: data.payment_gateway_settings });
     updateSettings({ key: "printing_costs", value: data.printing_costs });
     updateSettings({ key: "shipping_rates", value: data.shipping_rates });
     updateSettings({ key: "shipping_provider_options", value: data.shipping_provider_options });
@@ -377,6 +450,304 @@ export default function SystemSettingsPage() {
               </div>
             </section>
             )}
+
+            <section className="bg-white border-4 border-black gumroad-shadow p-6 space-y-8">
+              <div>
+                <h2 className="text-2xl font-black uppercase italic">Currency Settings</h2>
+                <p className="text-xs opacity-50 font-medium mt-2">
+                  Orders and reporting stay in the base currency. Checkout currencies use the manual rates below.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <FormField
+                  control={form.control}
+                  name="currency_settings.base_currency"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="font-bold text-xs uppercase">Base Currency</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger className="input-gumroad">
+                            <SelectValue placeholder="Select Base Currency" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent className="rounded-none border-2 border-black bg-white text-black">
+                          {CHECKOUT_CURRENCIES.map((currencyCode) => (
+                            <SelectItem key={currencyCode} value={currencyCode}>{currencyCode}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="currency_settings.default_checkout_currency"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="font-bold text-xs uppercase">Default Checkout Currency</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger className="input-gumroad">
+                            <SelectValue placeholder="Select Default Currency" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent className="rounded-none border-2 border-black bg-white text-black">
+                          {CHECKOUT_CURRENCIES.map((currencyCode) => (
+                            <SelectItem key={currencyCode} value={currencyCode}>{currencyCode}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="text-lg font-black uppercase italic border-b-2 border-black pb-2">
+                  Supported Checkout Currencies
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {CHECKOUT_CURRENCIES.map((currencyCode) => (
+                    <FormField
+                      key={currencyCode}
+                      control={form.control}
+                      name="currency_settings.supported_checkout_currencies"
+                      render={({ field }) => {
+                        const currentValues = Array.isArray(field.value) ? field.value : [];
+                        const checked = currentValues.includes(currencyCode);
+
+                        return (
+                          <FormItem className="flex items-center justify-between rounded-none border-2 border-black px-4 py-4">
+                            <div>
+                              <FormLabel className="font-black text-xs uppercase tracking-widest">
+                                {currencyCode}
+                              </FormLabel>
+                              <p className="text-[10px] font-medium opacity-50 mt-1">
+                                Let customers pay in {currencyCode}.
+                              </p>
+                            </div>
+                            <FormControl>
+                              <Checkbox
+                                checked={checked}
+                                onCheckedChange={(nextChecked) => {
+                                  const nextValues = nextChecked
+                                    ? Array.from(new Set([...currentValues, currencyCode]))
+                                    : currentValues.filter((value) => value !== currencyCode);
+                                  field.onChange(nextValues);
+                                }}
+                              />
+                            </FormControl>
+                          </FormItem>
+                        );
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                <h3 className="text-lg font-black uppercase italic border-b-2 border-black pb-2">
+                  Manual Conversion Rates
+                </h3>
+                {CHECKOUT_CURRENCIES.map((currencyCode) => (
+                  <div key={currencyCode} className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                    <div>
+                      <p className="font-black uppercase text-xs">{currencyCode}</p>
+                      <p className="text-[10px] font-medium opacity-50 mt-1">
+                        1 {form.watch("currency_settings.base_currency")} = rate in {currencyCode}
+                      </p>
+                    </div>
+                    <NumberField
+                      control={form.control}
+                      name={`currency_settings.conversion_rates.${currencyCode}.rate`}
+                      label="Rate"
+                      placeholder={currencyCode === "NGN" ? "1" : "e.g. 0.001"}
+                    />
+                    <FormField
+                      control={form.control}
+                      name={`currency_settings.conversion_rates.${currencyCode}.updated_at`}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="font-bold text-xs uppercase">Last Updated</FormLabel>
+                          <FormControl>
+                            <Input
+                              className="input-gumroad"
+                              value={field.value ?? ""}
+                              disabled
+                              placeholder="Auto-set on save"
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="bg-white border-4 border-black gumroad-shadow p-6 space-y-8">
+              <div>
+                <h2 className="text-2xl font-black uppercase italic">Payment Gateways</h2>
+                <p className="text-xs opacity-50 font-medium mt-2">
+                  Enable gateways, set their order, and define which currencies and methods they can serve.
+                </p>
+              </div>
+
+              {(Object.values(PAYMENT_GATEWAYS) as PaymentGateway[]).map((gateway) => {
+                const health = paymentGatewayHealth[gateway];
+
+                return (
+                  <div key={gateway} className="border-2 border-black p-5 space-y-5">
+                    <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+                      <div>
+                        <h3 className="text-lg font-black uppercase italic">
+                          {form.watch(`payment_gateway_settings.${gateway}.display_name`) || gateway}
+                        </h3>
+                        <p className="text-[10px] font-bold uppercase tracking-widest opacity-50 mt-1">
+                          {gateway}
+                        </p>
+                      </div>
+                      <div className="text-[10px] font-black uppercase tracking-widest">
+                        <span className="opacity-50 mr-2">Health</span>
+                        <span className="border-2 border-black px-2 py-1 inline-block">
+                          {health?.status || "disabled"}
+                        </span>
+                        {health?.missing_credentials?.length > 0 && (
+                          <p className="text-[9px] font-medium opacity-60 mt-2 normal-case">
+                            Missing: {health.missing_credentials.join(", ")}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <FormField
+                        control={form.control}
+                        name={`payment_gateway_settings.${gateway}.enabled`}
+                        render={({ field }) => (
+                          <FormItem className="flex items-center justify-between rounded-none border-2 border-black px-4 py-4">
+                            <div>
+                              <FormLabel className="font-black text-xs uppercase tracking-widest">
+                                Enable Gateway
+                              </FormLabel>
+                              <p className="text-[10px] font-medium opacity-50 mt-1">
+                                Show this gateway when it is configured and supported.
+                              </p>
+                            </div>
+                            <FormControl>
+                              <Checkbox checked={!!field.value} onCheckedChange={field.onChange} />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name={`payment_gateway_settings.${gateway}.display_name`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="font-bold text-xs uppercase">Display Name</FormLabel>
+                            <FormControl>
+                              <Input className="input-gumroad" {...field} value={field.value ?? ""} />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+
+                      <NumberField
+                        control={form.control}
+                        name={`payment_gateway_settings.${gateway}.sort_order`}
+                        label="Sort Order"
+                        placeholder="e.g. 1"
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name={`payment_gateway_settings.${gateway}.mode`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="font-bold text-xs uppercase">Mode</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value ?? "test"}>
+                              <FormControl>
+                                <SelectTrigger className="input-gumroad">
+                                  <SelectValue placeholder="Select Mode" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent className="rounded-none border-2 border-black bg-white text-black">
+                                <SelectItem value="test">Test</SelectItem>
+                                <SelectItem value="live">Live</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name={`payment_gateway_settings.${gateway}.supported_currencies`}
+                        render={({ field }) => (
+                          <FormItem className="md:col-span-2">
+                            <FormLabel className="font-bold text-xs uppercase">Supported Currencies</FormLabel>
+                            <FormControl>
+                              <Input
+                                className="input-gumroad"
+                                value={Array.isArray(field.value) ? field.value.join(", ") : ""}
+                                onChange={(e) => {
+                                  const currencies = e.target.value
+                                    .split(",")
+                                    .map((value) => value.trim().toUpperCase())
+                                    .filter(Boolean);
+                                  field.onChange(currencies);
+                                }}
+                                placeholder="NGN, USD, GBP"
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    <div className="space-y-3">
+                      <h4 className="font-black uppercase text-xs tracking-widest">Supported Methods</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {PAYMENT_METHOD_OPTIONS.map((methodOption) => (
+                          <FormField
+                            key={`${gateway}-${methodOption.value}`}
+                            control={form.control}
+                            name={`payment_gateway_settings.${gateway}.supported_methods`}
+                            render={({ field }) => {
+                              const currentValues = Array.isArray(field.value) ? field.value : [];
+                              const checked = currentValues.includes(methodOption.value);
+
+                              return (
+                                <FormItem className="flex items-center justify-between rounded-none border-2 border-black px-4 py-4">
+                                  <FormLabel className="font-black text-xs uppercase tracking-widest">
+                                    {methodOption.label}
+                                  </FormLabel>
+                                  <FormControl>
+                                    <Checkbox
+                                      checked={checked}
+                                      onCheckedChange={(nextChecked) => {
+                                        const nextValues = nextChecked
+                                          ? Array.from(new Set([...currentValues, methodOption.value]))
+                                          : currentValues.filter((value) => value !== methodOption.value);
+                                        field.onChange(nextValues);
+                                      }}
+                                    />
+                                  </FormControl>
+                                </FormItem>
+                              );
+                            }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </section>
 
             <section className="bg-white border-4 border-black gumroad-shadow p-6 space-y-6">
               <h2 className="text-2xl font-black uppercase italic">Platform Fee</h2>

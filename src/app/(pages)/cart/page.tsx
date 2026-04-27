@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
-  Trash2, ArrowLeft, CreditCard, ShoppingBag,
-  Truck, Download, ShieldCheck, MapPin, Loader2,
+  Trash2, ArrowLeft, CreditCard, Truck, Download,
+  ShieldCheck, MapPin,
 } from "lucide-react";
-import { Button }   from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogHeader,
   DialogTitle, DialogDescription,
@@ -17,10 +17,10 @@ import { useSession, signIn } from "next-auth/react";
 import { trpc } from "@/app/_providers/trpc-provider";
 import { useToast } from "@/components/ui/use-toast";
 import { cn } from "@/lib/utils";
-import DeliveryForm         from "@/components/checkout/delivery-form";
+import DeliveryForm from "@/components/checkout/delivery-form";
 import GuestRegistrationForm from "@/components/checkout/guest-registration-form";
 import { TDeliveryAddressSchema, TCreateCustomerSchema } from "@/server/dtos";
-import { GUEST_CART_KEY, notifyCartUpdate } from "@/lib/cart-utils";
+import { GUEST_CART_KEY } from "@/lib/cart-utils";
 import {
   calcShippingCostForProvider,
   DEFAULT_FEZ_SHIPPING_RATES,
@@ -33,15 +33,28 @@ import {
   SpeedafShippingRates,
 } from "@/lib/constants";
 import Link from "next/link";
+import {
+  convertBaseAmount,
+  DEFAULT_CURRENCY_SETTINGS,
+  DEFAULT_PAYMENT_GATEWAY_SETTINGS,
+  formatMoney,
+  getAvailablePaymentRoutes,
+  getGatewayDisplayName,
+  getPaymentMethodLabel,
+  normalizeCurrencySettings,
+  normalizePaymentGatewaySettings,
+  PaymentGateway,
+  PaymentMethod,
+} from "@/lib/payment-config";
 
 type CartItem = {
-  id:         string;
+  id: string;
   book_image: string;
   book_title: string;
-  book_type:  string;
-  price:      number;
-  quantity?:  number | null;
-  total?:     number;
+  book_type: string;
+  price: number;
+  quantity?: number | null;
+  total?: number;
 };
 
 const SHIPPING_PROVIDER_LABELS: Record<ShippingProvider, string> = {
@@ -49,7 +62,7 @@ const SHIPPING_PROVIDER_LABELS: Record<ShippingProvider, string> = {
   fez: "Fez",
 };
 
-// ─── helpers ─────────────────────────────────────────────────────────────────
+const DEFAULT_WEIGHT_GRAMS_PER_ITEM = 400;
 
 function isPhysical(bookType: string) {
   const t = bookType.toLowerCase();
@@ -60,22 +73,14 @@ function isEbook(bookType: string) {
   return bookType.toLowerCase().includes("ebook");
 }
 
-// Default weight fallback when BookVariant.weight_grams is unknown at client time.
-// The server will recompute from real variant data anyway.
-const DEFAULT_WEIGHT_GRAMS_PER_ITEM = 400;
-
-// ─── component ───────────────────────────────────────────────────────────────
-
 export default function CartPage() {
   const { data: session, status, update } = useSession();
-  const { toast }  = useToast();
-  const utils       = trpc.useUtils();
-  const router      = useRouter();
+  const { toast } = useToast();
+  const utils = trpc.useUtils();
+  const router = useRouter();
 
-  const userId          = session?.user?.id as string;
+  const userId = session?.user?.id as string;
   const isAuthenticated = status === "authenticated";
-
-  // ── server data ──────────────────────────────────────────────────────────
 
   const { data: userCartItems, isLoading: cartLoading } =
     trpc.getCartsByUser.useQuery(
@@ -83,23 +88,20 @@ export default function CartPage() {
       { enabled: !!userId && isAuthenticated }
     );
 
-  // Fetch system settings once so we can calculate real shipping rates client-side.
   const { data: systemSettings } = trpc.getSystemSettings.useQuery(undefined, {
-    staleTime: 5 * 60 * 1000, // cache for 5 min — these change rarely
+    staleTime: 5 * 60 * 1000,
   });
 
-  // ── state ────────────────────────────────────────────────────────────────
-
-  const [cartItems,              setCartItems]              = useState<CartItem[]>([]);
-  const [showCheckoutDialog,     setShowCheckoutDialog]     = useState(false);
+  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [showCheckoutDialog, setShowCheckoutDialog] = useState(false);
   const [showRegistrationDialog, setShowRegistrationDialog] = useState(false);
-  const [requiresDelivery,       setRequiresDelivery]       = useState(false);
-  const [registrationPassword,   setRegistrationPassword]   = useState("");
-  // The state the customer selected in the delivery form — drives live shipping cost.
-  const [selectedState,          setSelectedState]          = useState<string>("");
+  const [requiresDelivery, setRequiresDelivery] = useState(false);
+  const [registrationPassword, setRegistrationPassword] = useState("");
+  const [selectedState, setSelectedState] = useState<string>("");
   const [selectedShippingProvider, setSelectedShippingProvider] = useState<ShippingProvider | null>(null);
-
-  // ── cart sync effects ────────────────────────────────────────────────────
+  const [selectedCheckoutCurrency, setSelectedCheckoutCurrency] = useState<string>("");
+  const [selectedPaymentGateway, setSelectedPaymentGateway] = useState<PaymentGateway | null>(null);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod | null>(null);
 
   useEffect(() => {
     if (isAuthenticated && userCartItems) {
@@ -107,7 +109,11 @@ export default function CartPage() {
     } else if (!isAuthenticated) {
       const stored = localStorage.getItem(GUEST_CART_KEY);
       if (stored) {
-        try { setCartItems(JSON.parse(stored)); } catch { localStorage.removeItem(GUEST_CART_KEY); }
+        try {
+          setCartItems(JSON.parse(stored));
+        } catch {
+          localStorage.removeItem(GUEST_CART_KEY);
+        }
       }
     }
   }, [isAuthenticated, userCartItems]);
@@ -123,20 +129,11 @@ export default function CartPage() {
         setCartItems(stored ? JSON.parse(stored) : []);
       }
     };
+
     window.addEventListener("cart-updated", sync);
     return () => window.removeEventListener("cart-updated", sync);
   }, [isAuthenticated]);
 
-  // ── shipping calculation ─────────────────────────────────────────────────
-  //
-  // Uses the Speedaf formula from lib/constants.ts:
-  //   total weight = sum of (item.weight_grams * qty) for physical items only
-  //   zone         = getShippingZone(selectedState)
-  //   cost         = calcShippingCost(totalWeightGrams, zone, shippingRates)
-  //
-  // At the client we don't have weight_grams per item from the Cart model
-  // (Cart is a lightweight table), so we use a per-item fallback of 400 g.
-  // The server recomputes from real BookVariant.weight_grams before charging.
   const estimatedWeightGrams = useMemo(() => {
     const physicalItems = cartItems.filter(item => isPhysical(item.book_type));
     return physicalItems.reduce(
@@ -151,6 +148,13 @@ export default function CartPage() {
     ?? DEFAULT_SPEEDAF_SHIPPING_RATES;
   const fezRates = (systemSettings?.fez_shipping_rates as FezShippingRates | undefined)
     ?? DEFAULT_FEZ_SHIPPING_RATES;
+  const currencySettings = normalizeCurrencySettings(
+    (systemSettings as any)?.currency_settings ?? DEFAULT_CURRENCY_SETTINGS
+  );
+  const paymentGatewaySettings = normalizePaymentGatewaySettings(
+    (systemSettings as any)?.payment_gateway_settings ?? DEFAULT_PAYMENT_GATEWAY_SETTINGS
+  );
+  const paymentGatewayHealth = ((systemSettings as any)?.payment_gateway_health ?? {}) as Record<string, any>;
 
   const enabledShippingProviders = useMemo(
     () =>
@@ -171,10 +175,7 @@ export default function CartPage() {
       return;
     }
 
-    if (
-      selectedShippingProvider
-      && enabledShippingProviders.includes(selectedShippingProvider)
-    ) {
+    if (selectedShippingProvider && enabledShippingProviders.includes(selectedShippingProvider)) {
       return;
     }
 
@@ -185,6 +186,21 @@ export default function CartPage() {
 
     setSelectedShippingProvider(null);
   }, [enabledShippingProviders, requiresDelivery, selectedShippingProvider]);
+
+  useEffect(() => {
+    if (!selectedCheckoutCurrency) {
+      setSelectedCheckoutCurrency(currencySettings.default_checkout_currency);
+      return;
+    }
+
+    if (!currencySettings.supported_checkout_currencies.includes(selectedCheckoutCurrency)) {
+      setSelectedCheckoutCurrency(currencySettings.default_checkout_currency);
+    }
+  }, [
+    currencySettings.default_checkout_currency,
+    currencySettings.supported_checkout_currencies,
+    selectedCheckoutCurrency,
+  ]);
 
   const shippingQuotes = useMemo(() => {
     if (!requiresDelivery || !selectedState || estimatedWeightGrams <= 0) {
@@ -206,11 +222,60 @@ export default function CartPage() {
     (quote) => quote.provider === selectedShippingProvider
   ) ?? null;
   const shipping = activeShippingQuote?.amount ?? 0;
-  const subtotal = cartItems.reduce((sum, item) => sum + item.price * (item.quantity ?? 1), 0);
-  const total    = subtotal + shipping;
   const shippingLabel = activeShippingQuote?.label ?? null;
 
-  // ── mutations ────────────────────────────────────────────────────────────
+  const subtotal = cartItems.reduce((sum, item) => sum + item.price * (item.quantity ?? 1), 0);
+  const total = subtotal + shipping;
+
+  const availablePaymentRoutes = useMemo(() => {
+    return getAvailablePaymentRoutes({
+      currency: selectedCheckoutCurrency || currencySettings.default_checkout_currency,
+      settings: paymentGatewaySettings,
+      health: paymentGatewayHealth as any,
+    });
+  }, [
+    currencySettings.default_checkout_currency,
+    paymentGatewayHealth,
+    paymentGatewaySettings,
+    selectedCheckoutCurrency,
+  ]);
+
+  useEffect(() => {
+    const matchingRoute = availablePaymentRoutes.find((route) =>
+      route.gateway === selectedPaymentGateway && route.method === selectedPaymentMethod
+    );
+
+    if (matchingRoute) return;
+
+    if (availablePaymentRoutes.length === 1) {
+      setSelectedPaymentGateway(availablePaymentRoutes[0].gateway);
+      setSelectedPaymentMethod(availablePaymentRoutes[0].method);
+      return;
+    }
+
+    setSelectedPaymentGateway(null);
+    setSelectedPaymentMethod(null);
+  }, [availablePaymentRoutes, selectedPaymentGateway, selectedPaymentMethod]);
+
+  const selectedPaymentRoute = availablePaymentRoutes.find((route) =>
+    route.gateway === selectedPaymentGateway && route.method === selectedPaymentMethod
+  ) ?? null;
+
+  const checkoutSubtotal = convertBaseAmount(
+    subtotal,
+    selectedCheckoutCurrency || currencySettings.default_checkout_currency,
+    currencySettings
+  );
+  const checkoutShipping = convertBaseAmount(
+    shipping,
+    selectedCheckoutCurrency || currencySettings.default_checkout_currency,
+    currencySettings
+  );
+  const checkoutTotal = convertBaseAmount(
+    total,
+    selectedCheckoutCurrency || currencySettings.default_checkout_currency,
+    currencySettings
+  );
 
   const initializePayment = trpc.initializePayment.useMutation({
     onSuccess: (data) => {
@@ -239,9 +304,9 @@ export default function CartPage() {
 
       initializePayment.mutate({
         order_id: order.id,
-        email:    session?.user?.email || (order as any).customer?.user?.email,
-        amount:   order.total_amount,
-        currency: "NGN",
+        email: session?.user?.email || (order as any).customer?.user?.email,
+        payment_gateway: (order as any).payment_gateway || selectedPaymentGateway || undefined,
+        payment_method: (order as any).payment_method || selectedPaymentMethod || undefined,
       });
     },
     onError: (err) => {
@@ -259,7 +324,7 @@ export default function CartPage() {
   const registerGuestMutation = trpc.registerGuestAndTransferCart.useMutation({
     onSuccess: async (data) => {
       const username = data.user.username || data.user.email;
-      const result   = await signIn("credentials", { username, password: registrationPassword, redirect: false });
+      const result = await signIn("credentials", { username, password: registrationPassword, redirect: false });
       if (result?.ok) {
         setRegistrationPassword("");
         localStorage.removeItem(GUEST_CART_KEY);
@@ -273,8 +338,6 @@ export default function CartPage() {
       }
     },
   });
-
-  // ── handlers ─────────────────────────────────────────────────────────────
 
   const handleDeleteItem = (id: string) => {
     if (confirm("Remove this masterpiece from your bag?")) {
@@ -304,9 +367,30 @@ export default function CartPage() {
     }
   };
 
+  const getShippingQuoteForState = (state: string, provider: ShippingProvider | null) => {
+    if (!provider || !state || estimatedWeightGrams <= 0) return null;
+    return calcShippingCostForProvider({
+      provider,
+      state,
+      weightGrams: estimatedWeightGrams,
+      speedafRates,
+      fezRates,
+    });
+  };
+
   const handleCheckout = () => {
     if (!cartItems.length) return;
     if (!isAuthenticated) return setShowRegistrationDialog(true);
+
+    if (!selectedPaymentRoute) {
+      toast({
+        title: "Payment route unavailable",
+        variant: "destructive",
+        description: "Choose a supported checkout currency and payment option before continuing.",
+      });
+      return;
+    }
+
     if (requiresDelivery && !enabledShippingProviders.length) {
       toast({
         title: "Shipping unavailable",
@@ -315,6 +399,7 @@ export default function CartPage() {
       });
       return;
     }
+
     if (requiresDelivery) return setShowCheckoutDialog(true);
     proceedWithCheckout();
   };
@@ -326,17 +411,15 @@ export default function CartPage() {
       cart_items: cartItems.map(item => ({
         book_image: item.book_image,
         book_title: item.book_title,
-        book_type:  item.book_type,
-        price:      item.price,
-        quantity:   item.quantity ?? 1,
-        total:      (item.quantity ?? 1) * item.price,
+        book_type: item.book_type,
+        price: item.price,
+        quantity: item.quantity ?? 1,
+        total: (item.quantity ?? 1) * item.price,
       })),
     });
   };
 
   const handleDeliverySubmit = (data: TDeliveryAddressSchema) => {
-    // State from the form is the authoritative source — update selectedState
-    // in case the user typed fast and onStateChange fired slightly late.
     if (data.state) setSelectedState(data.state);
     if (!selectedShippingProvider) {
       toast({
@@ -350,32 +433,31 @@ export default function CartPage() {
     proceedWithCheckout(data);
   };
 
-  // The single source of truth for creating an order.
-  // shipping_amount is the computed real value — the server will verify it.
   const proceedWithCheckout = (deliveryData?: TDeliveryAddressSchema) => {
     if (!isAuthenticated || !userId) return;
+    if (!selectedPaymentRoute) return;
 
-    // Use the state from deliveryData if available (most accurate),
-    // otherwise fall back to the live-updated selectedState.
     const stateForShipping = deliveryData?.state || selectedState;
-    const finalShipping    = requiresDelivery && stateForShipping
-      ? shipping
-      : 0;
+    const shippingQuote = requiresDelivery
+      ? getShippingQuoteForState(stateForShipping, selectedShippingProvider)
+      : null;
+    const finalShipping = shippingQuote?.amount ?? 0;
 
     createOrderMutation.mutate({
-      user_id:          userId,
-      tax_amount:       0,
-      shipping_amount:  finalShipping,
-      discount_amount:  0,
-      currency:         "NGN",
-      channel:          "web",
+      user_id: userId,
+      tax_amount: 0,
+      shipping_amount: finalShipping,
+      discount_amount: 0,
+      currency: currencySettings.base_currency,
+      checkout_currency: selectedCheckoutCurrency || currencySettings.default_checkout_currency,
+      payment_gateway: selectedPaymentRoute.gateway,
+      payment_method: selectedPaymentRoute.method,
+      channel: "web",
       shipping_provider: selectedShippingProvider ?? undefined,
       requires_delivery: requiresDelivery,
-      delivery_address:  deliveryData || undefined,
+      delivery_address: deliveryData || undefined,
     });
   };
-
-  // ── render ────────────────────────────────────────────────────────────────
 
   if (cartLoading && isAuthenticated) {
     return (
@@ -387,8 +469,6 @@ export default function CartPage() {
 
   return (
     <div className="min-h-screen bg-[#FCFAEE] py-12 lg:py-20">
-
-      {/* Loading overlay */}
       {(createOrderMutation.isPending || initializePayment.isPending) && (
         <div className="fixed inset-0 z-[100] bg-primary flex flex-col items-center justify-center text-white p-6">
           <div className="w-24 h-24 border-8 border-white/20 border-t-accent animate-spin mb-8" />
@@ -396,14 +476,12 @@ export default function CartPage() {
             Securing Your <br /> Masterpiece<span className="text-accent">.</span>
           </h2>
           <p className="mt-6 font-bold uppercase tracking-[0.3em] text-xs animate-pulse">
-            Redirecting to Paystack…
+            Redirecting to {selectedPaymentRoute?.gateway_label || "checkout"}…
           </p>
         </div>
       )}
 
       <div className="max-w-[95%] lg:max-w-[85%] mx-auto grid lg:grid-cols-3 gap-12">
-
-        {/* ── Cart items ── */}
         <div className="lg:col-span-2 space-y-8">
           <div className="flex justify-between items-end border-b-4 border-black pb-6">
             <h1 className="text-4xl md:text-7xl font-black uppercase italic tracking-tighter">
@@ -465,9 +543,9 @@ export default function CartPage() {
                     +
                   </button>
                 </div>
-                <div className="text-right min-w-[100px]">
+                <div className="text-right min-w-[120px]">
                   <p className="text-xl font-black italic">
-                    ₦{(item.price * (item.quantity ?? 1)).toLocaleString()}
+                    {formatMoney(item.price * (item.quantity ?? 1), currencySettings.base_currency)}
                   </p>
                   <button
                     onClick={() => handleDeleteItem(item.id)}
@@ -481,7 +559,6 @@ export default function CartPage() {
           </div>
         </div>
 
-        {/* ── Order summary ── */}
         <div className="lg:sticky lg:top-28 h-fit">
           <Card className="bg-white border-4 border-black gumroad-shadow p-2 rounded-none">
             <CardContent className="p-6 space-y-6">
@@ -489,13 +566,66 @@ export default function CartPage() {
                 Order Summary
               </h3>
 
+              <div className="space-y-4">
+                <div>
+                  <p className="font-black uppercase text-[10px] opacity-50 mb-2">Checkout Currency</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {currencySettings.supported_checkout_currencies.map((currencyCode) => (
+                      <button
+                        key={currencyCode}
+                        type="button"
+                        onClick={() => setSelectedCheckoutCurrency(currencyCode)}
+                        className={cn(
+                          "border-2 border-black px-3 py-2 text-xs font-black uppercase transition-colors",
+                          selectedCheckoutCurrency === currencyCode ? "bg-accent" : "bg-white hover:bg-black/5"
+                        )}
+                      >
+                        {currencyCode}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="font-black uppercase text-[10px] opacity-50 mb-2">Payment Option</p>
+                  <div className="space-y-2">
+                    {availablePaymentRoutes.length > 0 ? availablePaymentRoutes.map((route) => {
+                      const selected = route.gateway === selectedPaymentGateway && route.method === selectedPaymentMethod;
+
+                      return (
+                        <button
+                          key={`${route.gateway}-${route.method}`}
+                          type="button"
+                          onClick={() => {
+                            setSelectedPaymentGateway(route.gateway);
+                            setSelectedPaymentMethod(route.method);
+                          }}
+                          className={cn(
+                            "w-full border-2 border-black px-4 py-3 text-left transition-colors",
+                            selected ? "bg-accent" : "bg-white hover:bg-black/5"
+                          )}
+                        >
+                          <p className="text-sm font-black uppercase italic">{route.gateway_label}</p>
+                          <p className="text-[10px] font-bold uppercase tracking-widest opacity-50">
+                            {route.method_label}
+                          </p>
+                        </button>
+                      );
+                    }) : (
+                      <div className="border-2 border-red-500 bg-red-50 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-red-700">
+                        No gateway available for {selectedCheckoutCurrency || currencySettings.default_checkout_currency}.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               <div className="space-y-3">
                 <div className="flex justify-between font-bold uppercase text-xs opacity-50">
                   <span>Subtotal</span>
-                  <span>₦{subtotal.toLocaleString()}</span>
+                  <span>{formatMoney(checkoutSubtotal, selectedCheckoutCurrency || currencySettings.default_checkout_currency)}</span>
                 </div>
 
-                {/* Shipping row — shows live cost or a prompt */}
                 <div className="flex justify-between font-bold uppercase text-xs">
                   <span className="opacity-50 flex items-center gap-1">
                     Shipping
@@ -505,9 +635,7 @@ export default function CartPage() {
                       </span>
                     )}
                   </span>
-                  <span className={cn(
-                    requiresDelivery ? "text-black" : "text-primary italic",
-                  )}>
+                  <span className={cn(requiresDelivery ? "text-black" : "text-primary italic")}>
                     {!requiresDelivery && "Instant Digital"}
                     {requiresDelivery && !selectedState && (
                       <span className="flex items-center gap-1 text-amber-600 animate-pulse">
@@ -516,11 +644,10 @@ export default function CartPage() {
                     )}
                     {requiresDelivery && selectedState && !enabledShippingProviders.length && "No courier available"}
                     {requiresDelivery && selectedState && enabledShippingProviders.length > 0 && !selectedShippingProvider && "Choose courier"}
-                    {requiresDelivery && selectedState && selectedShippingProvider && `${SHIPPING_PROVIDER_LABELS[selectedShippingProvider]} · ₦${shipping.toLocaleString()}`}
+                    {requiresDelivery && selectedState && selectedShippingProvider && `${SHIPPING_PROVIDER_LABELS[selectedShippingProvider]} · ${formatMoney(checkoutShipping, selectedCheckoutCurrency || currencySettings.default_checkout_currency)}`}
                   </span>
                 </div>
 
-                {/* Helpful hint for physical orders with no state yet */}
                 {requiresDelivery && !selectedState && (
                   <p className="text-[9px] font-medium text-gray-400 border-l-2 border-accent pl-2">
                     Enter your delivery state in the shipping form to see the exact cost.
@@ -540,10 +667,12 @@ export default function CartPage() {
                 <div className="pt-4 border-t-2 border-black flex justify-between items-end">
                   <span className="font-black uppercase text-xs">Total</span>
                   <div className="text-right">
-                    <p className="text-4xl font-black italic">₦{total.toLocaleString()}</p>
-                    {requiresDelivery && (!selectedState || !selectedShippingProvider) && (
-                      <p className="text-[9px] text-gray-400 font-medium">+ shipping</p>
-                    )}
+                    <p className="text-4xl font-black italic">
+                      {formatMoney(checkoutTotal, selectedCheckoutCurrency || currencySettings.default_checkout_currency)}
+                    </p>
+                    <p className="text-[9px] text-gray-400 font-medium">
+                      Base {formatMoney(total, currencySettings.base_currency)}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -557,15 +686,16 @@ export default function CartPage() {
               >
                 Checkout <CreditCard className="ml-3 group-hover:rotate-12 transition-transform" />
               </Button>
-              <div className="flex items-center justify-center gap-2 opacity-30 text-[8px] font-black uppercase tracking-widest">
-                <ShieldCheck size={12} /> Secure Checkout by Paystack
+              <div className="flex items-center justify-center gap-2 opacity-30 text-[8px] font-black uppercase tracking-widest text-center">
+                <ShieldCheck size={12} />
+                Secure Checkout by {selectedPaymentRoute?.gateway_label || "Configured Gateway"}
+                {selectedPaymentRoute ? ` · ${selectedPaymentRoute.method_label}` : ""}
               </div>
             </CardFooter>
           </Card>
         </div>
       </div>
 
-      {/* ── Guest registration dialog ── */}
       {!isAuthenticated && (
         <Dialog open={showRegistrationDialog} onOpenChange={setShowRegistrationDialog}>
           <DialogContent className="max-w-2xl border-4 border-black rounded-none gumroad-shadow p-0 overflow-hidden flex flex-col max-h-[90vh]">
@@ -604,7 +734,6 @@ export default function CartPage() {
         </Dialog>
       )}
 
-      {/* ── Shipping / delivery dialog ── */}
       <Dialog open={showCheckoutDialog} onOpenChange={setShowCheckoutDialog}>
         <DialogContent className="max-w-3xl border-4 border-black rounded-none gumroad-shadow p-0 overflow-hidden flex flex-col max-h-[90vh]">
           <DialogHeader className="p-6 border-b-2 border-black bg-[#FCFAEE]">
@@ -616,7 +745,6 @@ export default function CartPage() {
             </DialogDescription>
           </DialogHeader>
 
-          {/* Live shipping preview inside dialog */}
           {requiresDelivery && (
             <div className="px-6 pt-4 bg-white">
               <div className="flex items-center justify-between bg-black/[0.03] border-[1.5px] border-black/10 px-4 py-3">
@@ -635,7 +763,7 @@ export default function CartPage() {
                           .join(" ")}
                       </span>
                       <span className="font-black italic text-lg">
-                        ₦{shipping.toLocaleString()}
+                        {formatMoney(checkoutShipping, selectedCheckoutCurrency || currencySettings.default_checkout_currency)}
                       </span>
                     </div>
                   ) : selectedState && enabledShippingProviders.length === 0 ? (
@@ -687,7 +815,14 @@ export default function CartPage() {
                         </div>
                         <div className="text-right">
                           <p className="text-sm font-black">
-                            {quote ? `₦${quote.amount.toLocaleString()}` : "Pending"}
+                            {quote ? formatMoney(
+                              convertBaseAmount(
+                                quote.amount,
+                                selectedCheckoutCurrency || currencySettings.default_checkout_currency,
+                                currencySettings
+                              ),
+                              selectedCheckoutCurrency || currencySettings.default_checkout_currency
+                            ) : "Pending"}
                           </p>
                         </div>
                       </button>
@@ -705,10 +840,10 @@ export default function CartPage() {
 
             <DeliveryForm
               onSubmit={handleDeliverySubmit}
-              onStateChange={setSelectedState}   // ← live shipping update
+              onStateChange={setSelectedState}
               isLoading={createOrderMutation.isPending}
               defaultValues={session?.user?.email ? {
-                email:     session.user.email,
+                email: session.user.email,
                 full_name: `${session.user.first_name || ""} ${session.user.last_name || ""}`.trim(),
               } : undefined}
             />
@@ -731,10 +866,10 @@ export default function CartPage() {
               {createOrderMutation.isPending
                 ? "Processing…"
                 : selectedState && selectedShippingProvider
-                  ? `Continue — ₦${total.toLocaleString()}`
+                  ? `Continue — ${formatMoney(checkoutTotal, selectedCheckoutCurrency || currencySettings.default_checkout_currency)}`
                   : selectedState && enabledShippingProviders.length === 0
                     ? "Shipping Unavailable"
-                  : "Continue to Payment"
+                    : "Continue to Payment"
               }
             </Button>
           </div>

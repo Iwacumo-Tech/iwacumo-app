@@ -16,6 +16,13 @@ import {
   normalizeBookLivePricingEnabled,
   normalizeBookSizeRanges,
 } from "@/lib/book-config";
+import {
+  DEFAULT_CURRENCY_SETTINGS,
+  DEFAULT_PAYMENT_GATEWAY_SETTINGS,
+  getPaymentGatewayHealthMap,
+  normalizeCurrencySettings,
+  normalizePaymentGatewaySettings,
+} from "@/lib/payment-config";
 import { publicProcedure } from "@/server/trpc";
 import {
   createAdminUserSchema,
@@ -493,6 +500,11 @@ export const getSystemSettings = publicProcedure.query(async () => {
   const settings = await prisma.systemSettings.findMany({ orderBy: { created_at: "desc" } });
   const settingsMap: Record<string, any> = {};
   settings.forEach((s) => { settingsMap[s.key] = s.value; });
+  const currencySettings = normalizeCurrencySettings(settingsMap.currency_settings ?? DEFAULT_CURRENCY_SETTINGS);
+  const paymentGatewaySettings = normalizePaymentGatewaySettings(
+    settingsMap.payment_gateway_settings ?? DEFAULT_PAYMENT_GATEWAY_SETTINGS
+  );
+  const paymentGatewayHealth = getPaymentGatewayHealthMap(paymentGatewaySettings);
   return {
     printing_costs: settingsMap.printing_costs ?? { paperback: { A6: { cover: 1500, page: 5 }, A5: { cover: 2000, page: 10 }, A4: { cover: 3000, page: 15 } }, hardcover: { A6: { cover: 2500, page: 5 }, A5: { cover: 3500, page: 10 }, A4: { cover: 5000, page: 15 } } },
     platform_fee: { type: settingsMap.platform_fee?.type ?? "percentage", value: normalisePrimitive(settingsMap.platform_fee?.value, 30) },
@@ -512,6 +524,9 @@ export const getSystemSettings = publicProcedure.query(async () => {
     book_flap_costs: normalizeBookFlapCosts(settingsMap.book_flap_costs ?? DEFAULT_BOOK_FLAP_COSTS),
     book_live_pricing_enabled: normalizeBookLivePricingEnabled(settingsMap.book_live_pricing_enabled ?? DEFAULT_BOOK_LIVE_PRICING_ENABLED),
     book_custom_fields: normalizeBookCustomFields(settingsMap.book_custom_fields ?? []),
+    currency_settings: currencySettings,
+    payment_gateway_settings: paymentGatewaySettings,
+    payment_gateway_health: paymentGatewayHealth,
   };
 });
 

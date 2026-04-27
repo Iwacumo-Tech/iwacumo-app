@@ -6,8 +6,14 @@ import { trpc } from "@/app/_providers/trpc-provider";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { useSession } from "next-auth/react";
-import { Loader2, ShieldCheck, ArrowRight, CheckCircle2 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { ShieldCheck, ArrowRight } from "lucide-react";
+import {
+  DEFAULT_PAYMENT_GATEWAY_SETTINGS,
+  formatMoney,
+  getGatewayDisplayName,
+  getPaymentMethodLabel,
+  normalizePaymentGatewaySettings,
+} from "@/lib/payment-config";
 
 export default function PaymentPage() {
   const params = useParams();
@@ -16,11 +22,16 @@ export default function PaymentPage() {
   const { toast } = useToast();
   const { data: session, status } = useSession();
   const orderId = params?.orderId as string;
-  const reference = searchParams?.get("reference");
+  const reference = searchParams?.get("reference") || searchParams?.get("trxref");
 
   const [isProcessing, setIsProcessing] = useState(false);
 
   const { data: order, isLoading: orderLoading } = trpc.getOrderById.useQuery({ id: orderId });
+  const { data: systemSettings } = trpc.getSystemSettings.useQuery();
+
+  const paymentGatewaySettings = normalizePaymentGatewaySettings(
+    (systemSettings as any)?.payment_gateway_settings ?? DEFAULT_PAYMENT_GATEWAY_SETTINGS
+  );
 
   const initializePaymentMutation = trpc.initializePayment.useMutation({
     onSuccess: (data) => {
@@ -45,7 +56,15 @@ export default function PaymentPage() {
     if (reference && orderId) {
       verifyPaymentMutation.mutate({ reference, order_id: orderId });
     }
-  }, [reference, orderId]);
+  }, [reference, orderId, verifyPaymentMutation]);
+
+  const checkoutCurrency = (order as any)?.checkout_currency || order?.currency || "NGN";
+  const checkoutSubtotal = (order as any)?.checkout_subtotal_amount ?? order?.subtotal_amount ?? 0;
+  const checkoutShipping = (order as any)?.checkout_shipping_amount ?? order?.shipping_amount ?? 0;
+  const checkoutTotal = (order as any)?.checkout_total_amount ?? order?.total_amount ?? 0;
+  const paymentGateway = (order as any)?.payment_gateway || "paystack";
+  const paymentMethod = (order as any)?.payment_method || "card";
+  const paymentGatewayLabel = getGatewayDisplayName(paymentGateway as any, paymentGatewaySettings);
 
   const handlePayNow = () => {
     if (!order || status !== "authenticated") return;
@@ -53,8 +72,8 @@ export default function PaymentPage() {
     initializePaymentMutation.mutate({
       order_id: orderId,
       email: session?.user?.email as string,
-      amount: order.total_amount,
-      currency: "NGN",
+      payment_gateway: (order as any)?.payment_gateway || undefined,
+      payment_method: (order as any)?.payment_method || undefined,
     });
   };
 
@@ -73,8 +92,6 @@ export default function PaymentPage() {
     <div className="min-h-screen bg-[#FCFAEE] py-12 flex items-center justify-center p-4">
       <div className="max-w-xl w-full">
         <div className="bg-white border-4 border-black gumroad-shadow p-8 md:p-12 space-y-8 relative overflow-hidden">
-          
-          {/* Subtle branding element */}
           <div className="absolute -top-10 -right-10 w-32 h-32 bg-accent/20 rotate-45 border-4 border-black/5" />
 
           <div className="space-y-2">
@@ -84,40 +101,52 @@ export default function PaymentPage() {
             <p className="font-bold text-xs uppercase opacity-40 tracking-widest">Order Reference: {order?.order_number}</p>
           </div>
 
-          {/* Pricing Breakdown */}
+          <div className="border-2 border-black bg-[#FCFAEE] px-4 py-3 space-y-1">
+            <p className="text-[10px] font-black uppercase tracking-widest opacity-50">Payment Route</p>
+            <p className="font-black uppercase italic text-lg">{paymentGatewayLabel}</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest opacity-60">
+              {getPaymentMethodLabel(paymentMethod as any)} · {checkoutCurrency}
+            </p>
+          </div>
+
           <div className="space-y-4 py-6 border-y-2 border-black border-dashed">
             <div className="flex justify-between font-bold uppercase text-xs">
               <span>Item Total</span>
-              <span>₦{order?.subtotal_amount.toLocaleString()}</span>
+              <span>{formatMoney(checkoutSubtotal, checkoutCurrency)}</span>
             </div>
             <div className="flex justify-between font-bold uppercase text-xs">
               <span>Delivery</span>
-              <span>₦{order?.shipping_amount.toLocaleString()}</span>
+              <span>{formatMoney(checkoutShipping, checkoutCurrency)}</span>
             </div>
             <div className="flex justify-between items-end pt-2">
               <span className="font-black uppercase text-sm">Amount Due</span>
               <span className="text-4xl font-black italic text-primary">
-                ₦{order?.total_amount.toLocaleString()}
+                {formatMoney(checkoutTotal, checkoutCurrency)}
               </span>
             </div>
+            {(order as any)?.checkout_currency && (order as any)?.checkout_currency !== order?.currency && (
+              <p className="text-[10px] font-bold uppercase tracking-widest opacity-40 text-right">
+                Base Order Total {formatMoney(order?.total_amount ?? 0, order?.currency || "NGN")}
+              </p>
+            )}
           </div>
 
           <div className="space-y-4">
-            <Button 
+            <Button
               onClick={handlePayNow}
               disabled={isProcessing}
               className="w-full booka-button-primary h-20 text-2xl group"
             >
-              {isProcessing ? "Redirecting..." : "Pay via Paystack"}
+              {isProcessing ? "Redirecting..." : `Pay via ${paymentGatewayLabel}`}
               <ArrowRight className="ml-3 group-hover:translate-x-2 transition-transform" />
             </Button>
-            
+
             <p className="text-center text-[10px] font-black uppercase opacity-40 flex items-center justify-center gap-2">
               <ShieldCheck size={14} /> Secured by Industry Standard Encryption
             </p>
           </div>
 
-          <button 
+          <button
             onClick={() => router.push(`/orders/${orderId}`)}
             className="w-full text-center font-black uppercase text-[10px] tracking-widest hover:underline"
           >

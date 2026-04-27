@@ -4,27 +4,38 @@ import {
   Hr, Html, Preview, Section, Text, Row, Column,
 } from "@react-email/components";
 
-// No "use client" — email templates are server-only
-
 interface OrderItem {
-  title:    string;
-  type:     string;
+  title: string;
+  type: string;
   quantity: number;
-  price:    number;
+  price: number;
 }
 
 interface OrderConfirmationTemplateProps {
-  firstName:     string;
-  orderNumber:   string;
-  orderDate:     string;       // pre-formatted, e.g. "28 March 2026"
-  items:         OrderItem[];
-  subtotal:      number;
-  shippingCost:  number;
-  total:         number;
+  firstName: string;
+  orderNumber: string;
+  orderDate: string;
+  items: OrderItem[];
+  subtotal: number;
+  shippingCost: number;
+  total: number;
   isDigitalOnly: boolean;
-  deliveryState?: string;      // e.g. "Lagos" — only for physical orders
-  shippingZone?:  string;      // e.g. "Z4"
-  dashboardUrl:  string;
+  deliveryState?: string;
+  shippingZone?: string;
+  currency: string;
+  dashboardUrl: string;
+}
+
+function formatCurrency(amount: number, currency: string) {
+  try {
+    return new Intl.NumberFormat("en-NG", {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    return `${currency} ${amount.toFixed(2)}`;
+  }
 }
 
 export function OrderConfirmationTemplate({
@@ -38,16 +49,15 @@ export function OrderConfirmationTemplate({
   isDigitalOnly,
   deliveryState,
   shippingZone,
+  currency,
   dashboardUrl,
 }: OrderConfirmationTemplateProps) {
   return (
     <Html>
       <Head />
-      <Preview>Order confirmed — {orderNumber}. Your books are on their way!</Preview>
+      <Preview>Order confirmed - {orderNumber}. Your books are on their way!</Preview>
       <Body style={body}>
         <Container style={container}>
-
-          {/* Header */}
           <Section style={header}>
             <Heading style={logo}>IWACUMO.</Heading>
           </Section>
@@ -62,7 +72,6 @@ export function OrderConfirmationTemplate({
                 : " We'll get your physical copies dispatched shortly."}
             </Text>
 
-            {/* Order meta */}
             <Section style={metaBox}>
               <Row>
                 <Column style={metaCol}>
@@ -87,7 +96,6 @@ export function OrderConfirmationTemplate({
 
             <Hr style={hr} />
 
-            {/* Line items */}
             <Text style={sectionTitle}>ITEMS</Text>
             {items.map((item, i) => (
               <Row key={i} style={itemRow}>
@@ -98,20 +106,19 @@ export function OrderConfirmationTemplate({
                   </Text>
                 </Column>
                 <Column style={{ width: "40%", textAlign: "right" }}>
-                  <Text style={itemPrice}>₦{(item.price * item.quantity).toLocaleString()}</Text>
+                  <Text style={itemPrice}>{formatCurrency(item.price * item.quantity, currency)}</Text>
                 </Column>
               </Row>
             ))}
 
             <Hr style={hr} />
 
-            {/* Totals */}
             <Row style={totalRow}>
               <Column style={{ width: "60%" }}>
                 <Text style={totalLabel}>Subtotal</Text>
               </Column>
               <Column style={{ width: "40%", textAlign: "right" }}>
-                <Text style={totalValue}>₦{subtotal.toLocaleString()}</Text>
+                <Text style={totalValue}>{formatCurrency(subtotal, currency)}</Text>
               </Column>
             </Row>
 
@@ -121,7 +128,7 @@ export function OrderConfirmationTemplate({
               </Column>
               <Column style={{ width: "40%", textAlign: "right" }}>
                 <Text style={totalValue}>
-                  {isDigitalOnly ? "Free (digital)" : `₦${shippingCost.toLocaleString()}`}
+                  {isDigitalOnly ? "Free (digital)" : formatCurrency(shippingCost, currency)}
                 </Text>
               </Column>
             </Row>
@@ -132,14 +139,13 @@ export function OrderConfirmationTemplate({
               </Column>
               <Column style={{ width: "40%", textAlign: "right" }}>
                 <Text style={{ ...totalValue, fontWeight: "900", fontSize: "20px", fontStyle: "italic" }}>
-                  ₦{total.toLocaleString()}
+                  {formatCurrency(total, currency)}
                 </Text>
               </Column>
             </Row>
 
             <Hr style={hr} />
 
-            {/* CTA */}
             <Text style={paragraph}>
               {isDigitalOnly
                 ? "Head to your dashboard to start reading immediately."
@@ -159,14 +165,11 @@ export function OrderConfirmationTemplate({
               This confirmation was sent to you because you placed an order on IWACUMO.
             </Text>
           </Section>
-
         </Container>
       </Body>
     </Html>
   );
 }
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const body: React.CSSProperties = {
   backgroundColor: "#FAF9F6",

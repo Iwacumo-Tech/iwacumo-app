@@ -39,6 +39,7 @@ export const createUser = publicProcedure
       password,
       first_name,
       last_name,
+      pen_name,
       name,
       publisher_id,
       tenant_slug,
@@ -97,7 +98,8 @@ export const createUser = publicProcedure
  
         await tx.author.create({
           data: {
-            name: name || `${first_name} ${last_name}`,
+            name: pen_name?.trim() || name || `${first_name} ${last_name}`,
+            pen_name: pen_name?.trim() || null,
             user_id: user.id,
             publisher_id: publisher_id || defaultPublisher?.id || null,
           },

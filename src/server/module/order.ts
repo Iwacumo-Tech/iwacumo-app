@@ -25,6 +25,27 @@ import {
   SHIPPING_PROVIDERS,
   SpeedafShippingRates,
 } from "@/lib/constants";
+import {
+  convertBaseAmount,
+  CurrencySettings,
+  DEFAULT_CURRENCY_SETTINGS,
+  DEFAULT_PAYMENT_GATEWAY_SETTINGS,
+  formatMoney,
+  getAvailablePaymentRoutes,
+  getCurrencyRate,
+  getPaymentGatewayHealthMap,
+  normalizeCurrencySettings,
+  normalizePaymentGatewaySettings,
+  PaymentGateway,
+  PaymentGatewayHealth,
+  PaymentGatewaySettings,
+  PaymentMethod,
+} from "@/lib/payment-config";
+import {
+  appendCancellationReason,
+  mergeOrderNotes,
+  parseOrderNotes,
+} from "@/lib/order-notes";
 import { sendOrderConfirmationEmail } from "@/lib/email";
 import { resolveUserContext } from "@/lib/is-super-admin";
 
@@ -55,16 +76,6 @@ const mapBookTypeToFormat = (bookType: string): string => {
 const isPhysicalFormat = (format: string) =>
   format === "paperback" || format === "hardcover";
 
-function parseOrderNotes(notes: string | null | undefined) {
-  if (!notes) return null;
-
-  try {
-    return JSON.parse(notes);
-  } catch {
-    return null;
-  }
-}
-
 // ─── createOrderFromCart ──────────────────────────────────────────────────────
 
 export const createOrderFromCart = publicProcedure
@@ -73,7 +84,8 @@ export const createOrderFromCart = publicProcedure
     const {
       user_id, shipping_address_id, billing_address_id,
       tax_amount = 0, shipping_amount = 0, discount_amount = 0,
-      currency, channel, notes, delivery_address, requires_delivery, shipping_provider,
+      currency, checkout_currency, payment_gateway, payment_method,
+      channel, notes, delivery_address, requires_delivery, shipping_provider,
     } = opts.input;
 
     const user = await prisma.user.findUnique({
@@ -114,6 +126,14 @@ export const createOrderFromCart = publicProcedure
       | ShippingProviderOptions | undefined) ?? DEFAULT_SHIPPING_PROVIDER_OPTIONS;
     const fezShippingRates = (settings["fez_shipping_rates"] as
       | FezShippingRates | undefined) ?? DEFAULT_FEZ_SHIPPING_RATES;
+    const currencySettings = normalizeCurrencySettings(
+      settings["currency_settings"] ?? DEFAULT_CURRENCY_SETTINGS
+    );
+    const paymentGatewaySettings = normalizePaymentGatewaySettings(
+      settings["payment_gateway_settings"] ?? DEFAULT_PAYMENT_GATEWAY_SETTINGS
+    );
+    const paymentGatewayHealth = getPaymentGatewayHealthMap(paymentGatewaySettings);
+    const baseCurrency = currencySettings.base_currency;
 
     type LineItemData = {
       book_variant_id: string; quantity: number;
@@ -157,7 +177,7 @@ export const createOrderFromCart = publicProcedure
       }
       if (!variant) {
         variant = await prisma.bookVariant.create({
-          data: { book_id: book.id, format: variantFormat, list_price: cartItem.price, currency: "NGN", stock_quantity: 0, status: "active" },
+          data: { book_id: book.id, format: variantFormat, list_price: cartItem.price, currency: baseCurrency || "NGN", stock_quantity: 0, status: "active" },
         });
       }
 
@@ -243,6 +263,40 @@ export const createOrderFromCart = publicProcedure
       }
     }
 
+    const supportedCheckoutCurrencies = currencySettings.supported_checkout_currencies;
+    const resolvedCheckoutCurrency = supportedCheckoutCurrencies.includes(checkout_currency)
+      ? checkout_currency
+      : currencySettings.default_checkout_currency;
+
+    const availablePaymentRoutes = getAvailablePaymentRoutes({
+      currency: resolvedCheckoutCurrency,
+      settings: paymentGatewaySettings,
+      health: paymentGatewayHealth,
+    });
+
+    if (!availablePaymentRoutes.length && totalWeightGrams >= 0) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `No payment gateway is currently available for ${resolvedCheckoutCurrency}.`,
+      });
+    }
+
+    const matchingRoute = availablePaymentRoutes.find((route) => (
+      (!payment_gateway || route.gateway === payment_gateway)
+      && (!payment_method || route.method === payment_method)
+    ));
+
+    const autoRoute = availablePaymentRoutes.length === 1 ? availablePaymentRoutes[0] : null;
+    const resolvedPaymentGateway = matchingRoute?.gateway ?? autoRoute?.gateway;
+    const resolvedPaymentMethod = matchingRoute?.method ?? autoRoute?.method;
+
+    if (!resolvedPaymentGateway || !resolvedPaymentMethod) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Please select a valid payment gateway and payment method before continuing.",
+      });
+    }
+
     // Server-side shipping validation
     let verifiedShippingAmount = shipping_amount;
     let shippingLabel: string | null = null;
@@ -265,27 +319,42 @@ export const createOrderFromCart = publicProcedure
     }
 
     const totalAmount = subtotal + tax_amount + verifiedShippingAmount - discount_amount;
+    const fxRateToBase = getCurrencyRate(resolvedCheckoutCurrency, currencySettings);
+    const checkoutSubtotalAmount = convertBaseAmount(subtotal, resolvedCheckoutCurrency, currencySettings);
+    const checkoutShippingAmount = convertBaseAmount(verifiedShippingAmount, resolvedCheckoutCurrency, currencySettings);
+    const checkoutTotalAmount = convertBaseAmount(totalAmount, resolvedCheckoutCurrency, currencySettings);
     const orderNumber = generateOrderNumber();
     const isFreeOrder = totalAmount <= 0;
-    let orderNotes = notes || null;
-    if (requires_delivery && delivery_address) {
-      orderNotes = JSON.stringify({
-        delivery_address,
-        delivery_required: true,
-        requires_physical_delivery: true,
-        shipping_provider: resolvedShippingProvider,
-        shipping_zone: resolvedShippingProvider === SHIPPING_PROVIDERS.SPEEDAF ? shippingLabel : null,
-        shipping_group: resolvedShippingProvider === SHIPPING_PROVIDERS.FEZ ? shippingLabel : null,
-        total_weight_grams: totalWeightGrams,
-      });
-    }
+    const orderNotes = mergeOrderNotes(notes || null, {
+      notes_text: notes || null,
+      delivery_address: requires_delivery ? (delivery_address ?? null) : null,
+      delivery_required: requires_delivery,
+      requires_physical_delivery: requires_delivery,
+      shipping_provider: requires_delivery ? (resolvedShippingProvider ?? null) : null,
+      shipping_zone: requires_delivery && resolvedShippingProvider === SHIPPING_PROVIDERS.SPEEDAF ? shippingLabel : null,
+      shipping_group: requires_delivery && resolvedShippingProvider === SHIPPING_PROVIDERS.FEZ ? shippingLabel : null,
+      total_weight_grams: requires_delivery ? totalWeightGrams : 0,
+      checkout_quote: {
+        base_currency: baseCurrency,
+        checkout_currency: resolvedCheckoutCurrency,
+        fx_rate_to_base: resolvedCheckoutCurrency === baseCurrency ? 1 : fxRateToBase,
+        base_subtotal_amount: subtotal,
+        base_shipping_amount: verifiedShippingAmount,
+        base_total_amount: totalAmount,
+        checkout_subtotal_amount: checkoutSubtotalAmount,
+        checkout_shipping_amount: checkoutShippingAmount,
+        checkout_total_amount: checkoutTotalAmount,
+        payment_gateway: resolvedPaymentGateway,
+        payment_method: resolvedPaymentMethod,
+      },
+    });
 
     const order = await prisma.$transaction(async (tx) => {
       const newOrder = await tx.order.create({
         data: {
           order_number: orderNumber, customer_id: customer!.id,
           publisher_id: targetPublisherId, total_amount: totalAmount,
-          currency: currency || "NGN", subtotal_amount: subtotal,
+          currency: baseCurrency || currency || "NGN", subtotal_amount: subtotal,
           tax_amount, shipping_amount: verifiedShippingAmount, discount_amount,
           status: isFreeOrder ? "paid" : "draft",
           payment_status: isFreeOrder ? "captured" : "pending",
@@ -301,13 +370,14 @@ export const createOrderFromCart = publicProcedure
             order_id: newOrder.id,
             type: "capture",
             amount: 0,
-            currency: currency || "NGN",
+            currency: resolvedCheckoutCurrency || baseCurrency || currency || "NGN",
             payment_provider: "free",
             provider_reference: `free_${newOrder.order_number}`,
             status: "succeeded",
             processor_response: {
               mode: "free_claim",
               order_number: newOrder.order_number,
+              checkout_currency: resolvedCheckoutCurrency,
             },
           },
         });
@@ -318,7 +388,7 @@ export const createOrderFromCart = publicProcedure
           data: {
             order_id: newOrder.id, book_variant_id: itemData.book_variant_id,
             quantity: itemData.quantity, unit_price: itemData.unit_price,
-            currency: currency || "NGN", total_price: itemData.total_price,
+            currency: baseCurrency || currency || "NGN", total_price: itemData.total_price,
             platform_fee: itemData.platform_fee,
             publisher_earnings: itemData.publisher_earnings,
             author_earnings: itemData.author_earnings,
@@ -348,6 +418,10 @@ export const createOrderFromCart = publicProcedure
           let deliveryState: string | undefined;
           let shippingZone: string | undefined;
           let shippingGroup: string | undefined;
+          let chargedCurrency: string | undefined;
+          let chargedSubtotal: number | undefined;
+          let chargedShipping: number | undefined;
+          let chargedTotal: number | undefined;
 
           const parsed = parseOrderNotes(createdOrder.notes);
           if (parsed?.delivery_address?.state) {
@@ -357,6 +431,12 @@ export const createOrderFromCart = publicProcedure
               .join(" ");
             shippingZone = parsed.shipping_zone ?? undefined;
             shippingGroup = parsed.shipping_group ?? undefined;
+          }
+          if (parsed?.checkout_quote) {
+            chargedCurrency = parsed.checkout_quote.checkout_currency;
+            chargedSubtotal = parsed.checkout_quote.checkout_subtotal_amount;
+            chargedShipping = parsed.checkout_quote.checkout_shipping_amount;
+            chargedTotal = parsed.checkout_quote.checkout_total_amount;
           }
 
           const isDigitalOnly = createdOrder.line_items.every((item) => {
@@ -375,12 +455,13 @@ export const createOrderFromCart = publicProcedure
               quantity: item.quantity,
               price: item.unit_price,
             })),
-            subtotal: createdOrder.subtotal_amount,
-            shippingCost: createdOrder.shipping_amount,
-            total: createdOrder.total_amount,
+            subtotal: chargedSubtotal ?? createdOrder.subtotal_amount,
+            shippingCost: chargedShipping ?? createdOrder.shipping_amount,
+            total: chargedTotal ?? createdOrder.total_amount,
             isDigitalOnly,
             deliveryState,
             shippingZone: shippingZone ?? shippingGroup,
+            currency: chargedCurrency ?? createdOrder.currency,
           });
         } catch (mailErr) {
           console.error("[createOrderFromCart] Free order confirmation email failed:", mailErr);
@@ -388,7 +469,26 @@ export const createOrderFromCart = publicProcedure
       })();
     }
 
-    return createdOrder;
+    if (!createdOrder) {
+      return createdOrder;
+    }
+
+    const parsedCreatedOrderNotes = parseOrderNotes(createdOrder?.notes);
+
+    return {
+      ...createdOrder,
+      delivery_address: parsedCreatedOrderNotes?.delivery_address ?? null,
+      shipping_provider: parsedCreatedOrderNotes?.shipping_provider ?? null,
+      shipping_zone: parsedCreatedOrderNotes?.shipping_zone ?? null,
+      shipping_group: parsedCreatedOrderNotes?.shipping_group ?? null,
+      checkout_currency: parsedCreatedOrderNotes?.checkout_quote?.checkout_currency ?? null,
+      fx_rate_to_base: parsedCreatedOrderNotes?.checkout_quote?.fx_rate_to_base ?? null,
+      checkout_subtotal_amount: parsedCreatedOrderNotes?.checkout_quote?.checkout_subtotal_amount ?? null,
+      checkout_shipping_amount: parsedCreatedOrderNotes?.checkout_quote?.checkout_shipping_amount ?? null,
+      checkout_total_amount: parsedCreatedOrderNotes?.checkout_quote?.checkout_total_amount ?? null,
+      payment_gateway: parsedCreatedOrderNotes?.checkout_quote?.payment_gateway ?? null,
+      payment_method: parsedCreatedOrderNotes?.checkout_quote?.payment_method ?? null,
+    };
   });
 
 // ─── getOrderById ─────────────────────────────────────────────────────────────
@@ -413,6 +513,13 @@ export const getOrderById = publicProcedure.input(getOrderByIdSchema).query(asyn
     shipping_provider: parsedNotes?.shipping_provider ?? null,
     shipping_zone: parsedNotes?.shipping_zone ?? null,
     shipping_group: parsedNotes?.shipping_group ?? null,
+    checkout_currency: parsedNotes?.checkout_quote?.checkout_currency ?? null,
+    fx_rate_to_base: parsedNotes?.checkout_quote?.fx_rate_to_base ?? null,
+    checkout_subtotal_amount: parsedNotes?.checkout_quote?.checkout_subtotal_amount ?? null,
+    checkout_shipping_amount: parsedNotes?.checkout_quote?.checkout_shipping_amount ?? null,
+    checkout_total_amount: parsedNotes?.checkout_quote?.checkout_total_amount ?? null,
+    payment_gateway: parsedNotes?.checkout_quote?.payment_gateway ?? null,
+    payment_method: parsedNotes?.checkout_quote?.payment_method ?? null,
   };
 });
 
@@ -488,7 +595,10 @@ export const cancelOrder = publicProcedure.input(cancelOrderSchema).mutation(asy
       throw new TRPCError({ code: "BAD_REQUEST", message: "Already cancelled" });
     return await tx.order.update({
       where: { id },
-      data: { status: "cancelled", notes: reason ? `${order.notes || ""}\n[Cancelled]: ${reason}`.trim() : order.notes },
+      data: {
+        status: "cancelled",
+        notes: reason ? appendCancellationReason(order.notes, reason) : order.notes,
+      },
       include: { line_items: { include: { book_variant: { include: { book: true } } } }, customer: { include: { user: true } }, publisher: true },
     });
   });

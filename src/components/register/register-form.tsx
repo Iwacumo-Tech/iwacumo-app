@@ -122,6 +122,7 @@ export function RegisterForm() {
       roleName: selectedRole!,
       first_name: formData.get("first_name") as string,
       last_name: formData.get("last_name") as string,
+      pen_name: selectedRole === "Author" ? ((formData.get("pen_name") as string) || "").trim() || undefined : undefined,
       email,
       username: usernameInput,
       password,
@@ -290,6 +291,19 @@ export function RegisterForm() {
                 />
               </div>
             </div>
+
+            {selectedRole === "Author" && (
+              <div className="space-y-1">
+                <label className="text-[9px] font-black uppercase tracking-widest">
+                  Pen Name
+                </label>
+                <Input
+                  name="pen_name"
+                  placeholder="Optional author name"
+                  className="booka-input-minimal h-14"
+                />
+              </div>
+            )}
  
             <div className="space-y-1">
               <label className="text-[9px] font-black uppercase tracking-widest">

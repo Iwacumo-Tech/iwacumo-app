@@ -6,114 +6,195 @@ import {
   verifyPaymentSchema,
   createTransactionSchema,
 } from "../dtos";
-import axios from "axios";
-import { sendOrderConfirmationEmail } from "@/lib/email";
+import {
+  DEFAULT_CURRENCY_SETTINGS,
+  DEFAULT_PAYMENT_GATEWAY_SETTINGS,
+  getPaymentGatewayAdapter,
+  getPaymentGatewayHealthMap,
+  PAYMENT_GATEWAYS,
+  PAYMENT_METHODS,
+  PaymentGateway,
+  PaymentMethod,
+  normalizeCurrencySettings,
+  normalizePaymentGatewaySettings,
+} from "@/lib/payment-config";
+import { mergeOrderNotes, parseOrderNotes } from "@/lib/order-notes";
+import { finalizeCapturedPayment, finalizeFailedPayment } from "@/lib/payment-ops";
 
-const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || "";
-const PAYSTACK_BASE_URL   = "https://api.paystack.co";
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
-// ─── initializePayment ────────────────────────────────────────────────────────
+function getSavedCheckoutQuote(notes: string | null | undefined) {
+  return parseOrderNotes(notes)?.checkout_quote ?? null;
+}
+
+async function getPaymentSettings() {
+  const settingsRaw = await prisma.systemSettings.findMany();
+  const settings: Record<string, any> = {};
+  for (const setting of settingsRaw) settings[setting.key] = setting.value;
+
+  const currencySettings = normalizeCurrencySettings(
+    settings.currency_settings ?? DEFAULT_CURRENCY_SETTINGS
+  );
+  const paymentGatewaySettings = normalizePaymentGatewaySettings(
+    settings.payment_gateway_settings ?? DEFAULT_PAYMENT_GATEWAY_SETTINGS
+  );
+  const paymentGatewayHealth = getPaymentGatewayHealthMap(paymentGatewaySettings);
+
+  return {
+    currencySettings,
+    paymentGatewaySettings,
+    paymentGatewayHealth,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// initializePayment
+// ---------------------------------------------------------------------------
 
 export const initializePayment = publicProcedure
   .input(initializePaymentSchema)
   .mutation(async (opts) => {
-    const { order_id, email, amount, currency, callback_url } = opts.input;
+    const {
+      order_id,
+      email,
+      amount,
+      currency,
+      callback_url,
+      payment_gateway,
+      payment_method,
+    } = opts.input;
 
     const order = await prisma.order.findUnique({
-      where:   { id: order_id },
-      include: { customer: { include: { user: true } } },
+      where: { id: order_id },
+      include: {
+        customer: { include: { user: true } },
+      },
     });
+
     if (!order) throw new Error("Order not found");
-    if (order.payment_status !== "pending")
+    if (order.payment_status !== "pending") {
       throw new Error(`Order payment status is ${order.payment_status}, cannot initialize payment`);
+    }
 
-    if (amount <= 0) {
-      await prisma.$transaction(async (tx) => {
-        await tx.transactionHistory.create({
-          data: {
-            order_id: order.id,
-            type: "capture",
-            amount: 0,
-            currency: currency || "NGN",
-            payment_provider: "free",
-            provider_reference: `free_${order.order_number}`,
-            status: "succeeded",
-            processor_response: {
-              mode: "free_claim",
-              order_number: order.order_number,
-            },
-          },
-        });
+    const { currencySettings, paymentGatewaySettings, paymentGatewayHealth } = await getPaymentSettings();
+    const savedQuote = getSavedCheckoutQuote(order.notes);
 
-        await tx.order.update({
-          where: { id: order.id },
-          data: {
-            payment_status: "captured",
-            status: "paid",
-          },
-        });
+    const resolvedGateway = (payment_gateway
+      ?? savedQuote?.payment_gateway
+      ?? PAYMENT_GATEWAYS.PAYSTACK) as PaymentGateway;
+    const resolvedMethod = (payment_method
+      ?? savedQuote?.payment_method
+      ?? PAYMENT_METHODS.CARD) as PaymentMethod;
+    const resolvedCurrency = savedQuote?.checkout_currency
+      ?? currency
+      ?? order.currency
+      ?? currencySettings.base_currency;
+    const resolvedAmount = savedQuote?.checkout_total_amount
+      ?? amount
+      ?? order.total_amount;
+
+    if (resolvedAmount <= 0) {
+      const result = await finalizeCapturedPayment({
+        orderId: order.id,
+        reference: `free_${order.order_number}`,
+        amount: 0,
+        currency: resolvedCurrency,
+        paymentProvider: "free",
+        processorResponse: {
+          mode: "free_claim",
+          order_number: order.order_number,
+        },
       });
 
       return {
-        authorization_url: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/orders/${order.id}`,
+        authorization_url: `${APP_URL}/orders/${order.id}`,
         access_code: null,
         reference: `free_${order.order_number}`,
+        provider: "free",
+        success: result.success,
       };
     }
 
-    const amountInKobo = Math.round(amount * 100);
+    const gatewayHealth = paymentGatewayHealth[resolvedGateway];
+    const adapter = getPaymentGatewayAdapter(resolvedGateway);
+    const gatewaySettings = paymentGatewaySettings[resolvedGateway];
 
-    try {
-      const response = await axios.post(
-        `${PAYSTACK_BASE_URL}/transaction/initialize`,
-        {
-          email,
-          amount:     amountInKobo,
-          currency:   currency || "NGN",
-          reference:  `order_${order.order_number}_${Date.now()}`,
-          callback_url: callback_url ||
-            `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/payment/verify?order_id=${order_id}`,
-          metadata: {
-            order_id:     order.id,
-            order_number: order.order_number,
-            customer_id:  order.customer_id,
-          },
-        },
-        {
-          headers: {
-            Authorization:  `Bearer ${PAYSTACK_SECRET_KEY}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
+    if (!gatewayHealth?.checkout_ready) {
+      throw new Error(`${gatewaySettings.display_name || resolvedGateway} is not currently available.`);
+    }
 
-      const { data } = response.data;
+    if (!adapter.supportsCurrency(resolvedCurrency, gatewaySettings)) {
+      throw new Error(`${gatewaySettings.display_name || resolvedGateway} does not support ${resolvedCurrency}.`);
+    }
 
-      await prisma.transactionHistory.create({
+    if (!adapter.supportsMethod(resolvedMethod, gatewaySettings)) {
+      throw new Error(`${gatewaySettings.display_name || resolvedGateway} does not support the selected payment method.`);
+    }
+
+    const session = await adapter.createPaymentSession({
+      orderId: order.id,
+      orderNumber: order.order_number,
+      email,
+      amount: resolvedAmount,
+      currency: resolvedCurrency,
+      callbackUrl: callback_url || `${APP_URL}/payment/verify?order_id=${order_id}&gateway=${resolvedGateway}`,
+      metadata: {
+        customer_id: order.customer_id,
+        payment_method: resolvedMethod,
+      },
+    });
+
+    await prisma.transactionHistory.create({
+      data: {
+        order_id: order.id,
+        type: "authorization",
+        amount: resolvedAmount,
+        currency: resolvedCurrency,
+        payment_provider: resolvedGateway,
+        provider_reference: session.reference,
+        status: "pending",
+        processor_response: {
+          payment_method: resolvedMethod,
+          checkout_quote: savedQuote,
+          session: session.processor_response,
+        } as any,
+      },
+    });
+
+    if (!savedQuote) {
+      await prisma.order.update({
+        where: { id: order.id },
         data: {
-          order_id:           order.id,
-          type:               "authorization",
-          amount,
-          currency:           currency || "NGN",
-          payment_provider:   "paystack",
-          provider_reference: data.reference,
-          status:             "pending",
-          processor_response: response.data,
+          notes: mergeOrderNotes(order.notes, {
+            checkout_quote: {
+              base_currency: order.currency,
+              checkout_currency: resolvedCurrency,
+              fx_rate_to_base: resolvedCurrency === order.currency ? 1 : 0,
+              base_subtotal_amount: order.subtotal_amount,
+              base_shipping_amount: order.shipping_amount,
+              base_total_amount: order.total_amount,
+              checkout_subtotal_amount: order.subtotal_amount,
+              checkout_shipping_amount: order.shipping_amount,
+              checkout_total_amount: resolvedAmount,
+              payment_gateway: resolvedGateway,
+              payment_method: resolvedMethod,
+            },
+          }),
         },
       });
-
-      return {
-        authorization_url: data.authorization_url,
-        access_code:       data.access_code,
-        reference:         data.reference,
-      };
-    } catch (error: any) {
-      console.error("Paystack initialization error:", error);
-      throw new Error(error.response?.data?.message || "Failed to initialize payment");
     }
+
+    return {
+      authorization_url: session.authorization_url,
+      access_code: session.access_code,
+      reference: session.reference,
+      provider: resolvedGateway,
+    };
   });
 
-// ─── verifyPayment ────────────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// verifyPayment
+// ---------------------------------------------------------------------------
 
 export const verifyPayment = publicProcedure
   .input(verifyPaymentSchema)
@@ -123,160 +204,44 @@ export const verifyPayment = publicProcedure
     const order = await prisma.order.findUnique({
       where: { id: order_id },
       include: {
-        line_items: {
-          include: {
-            book_variant: { include: { book: true } },
-          },
-        },
-        publisher: { include: { tenant: true } },
-        customer:  { include: { user: true } },
+        transactions: { orderBy: { created_at: "desc" } },
       },
     });
+
     if (!order) throw new Error("Order not found");
 
-    try {
-      const response = await axios.get(
-        `${PAYSTACK_BASE_URL}/transaction/verify/${reference}`,
-        { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` } }
-      );
+    const savedQuote = getSavedCheckoutQuote(order.notes);
+    const latestGateway = order.transactions.find((tx) => tx.payment_provider)?.payment_provider;
+    const resolvedGateway = (savedQuote?.payment_gateway
+      ?? latestGateway
+      ?? PAYMENT_GATEWAYS.PAYSTACK) as PaymentGateway;
 
-      const { data } = response.data;
+    const adapter = getPaymentGatewayAdapter(resolvedGateway);
+    const verification = await adapter.verifyPayment(reference);
 
-      if (data.status === "success") {
-        const result = await prisma.$transaction(async (tx) => {
-          // ── 1. Resolve user identity ──────────────────────────────────
-          const userId = order.customer?.user_id || (order as any).user_id;
-          if (!userId) throw new Error("Could not resolve a User for this order.");
-
-          const tenantSlug      = order.publisher?.tenant?.slug;
-          const publisherId     = order.publisher_id;
-          const primaryAuthorId = order.line_items[0]?.book_variant?.book?.author_id;
-
-          // ── 2. Customer promotion ─────────────────────────────────────
-          let customer = await tx.customer.findFirst({
-            where: { user_id: userId, publisher_id: publisherId },
-          });
-
-          if (!customer) {
-            customer = await tx.customer.create({
-              data: {
-                user_id:      userId,
-                publisher_id: publisherId,
-                author_id:    primaryAuthorId,
-                name: order.customer?.user?.first_name
-                  ? `${order.customer.user.first_name} ${order.customer.user.last_name || ""}`
-                  : "New Customer",
-              },
-            });
-
-            // Assign customer role claim (idempotent)
-            const customerRole = await tx.role.findUnique({ where: { name: "customer" } });
-            if (customerRole && tenantSlug) {
-              const existingClaim = await tx.claim.findFirst({
-                where: { user_id: userId, role_name: "customer", tenant_slug: tenantSlug },
-              });
-              if (!existingClaim) {
-                await tx.claim.create({
-                  data: {
-                    user_id:    userId,
-                    role_name:  customerRole.name,
-                    active:     true,
-                    type:       "ROLE",
-                    tenant_slug: tenantSlug,
-                  },
-                });
-              }
-            }
-          } else if (primaryAuthorId && !customer.author_id) {
-            await tx.customer.update({
-              where: { id: customer.id },
-              data:  { author_id: primaryAuthorId },
-            });
-          }
-
-          // ── 3. Update transaction history to succeeded ────────────────
-          await tx.transactionHistory.updateMany({
-            where: { order_id: order.id, status: "pending" },
-            data:  { status: "succeeded" },
-          });
-
-          // ── 4. Mark order as paid ─────────────────────────────────────
-          await tx.order.update({
-            where: { id: order.id },
-            data: {
-              payment_status: "captured",
-              status:         "paid",
-              customer_id:    customer.id,
-            },
-          });
-
-          return { success: true, orderId: order.id, customerId: customer.id };
-        });
-
-        // ── 5. Send order confirmation email (non-blocking) ──────────────
-        // We do this outside the DB transaction so a mail failure never
-        // rolls back the payment update.
-        void (async () => {
-          try {
-            const customerUser = order.customer?.user;
-            if (!customerUser?.email) return;
-
-            // Parse delivery info from order notes if present
-            let deliveryState: string | undefined;
-            let shippingZone:  string | undefined;
-            if (order.notes) {
-              try {
-                const parsed = JSON.parse(order.notes);
-                if (parsed.delivery_address?.state) {
-                  deliveryState = parsed.delivery_address.state
-                    .split(" ")
-                    .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
-                    .join(" ");
-                  shippingZone = parsed.shipping_zone ?? parsed.shipping_group ?? undefined;
-                }
-              } catch { /* notes might not be JSON */ }
-            }
-
-            const isDigitalOnly = order.line_items.every(item => {
-              const fmt = item.book_variant.format.toLowerCase();
-              return fmt !== "paperback" && fmt !== "hardcover";
-            });
-
-            await sendOrderConfirmationEmail({
-              to:        customerUser.email,
-              firstName: customerUser.first_name,
-              orderNumber: order.order_number,
-              orderDate:   order.created_at,   // set at order creation
-              items: order.line_items.map(item => ({
-                title:    item.book_variant.book?.title ?? "Book",
-                type:     item.book_variant.format,
-                quantity: item.quantity,
-                price:    item.unit_price,
-              })),
-              subtotal:      order.subtotal_amount,
-              shippingCost:  order.shipping_amount,
-              total:         order.total_amount,
-              isDigitalOnly,
-              deliveryState,
-              shippingZone,
-            });
-          } catch (mailErr) {
-            // Log but never throw — payment is already confirmed
-            console.error("[verifyPayment] Order confirmation email failed:", mailErr);
-          }
-        })();
-
-        return result;
-      }
-
-      return { success: false, message: "Payment verification failed at gateway" };
-    } catch (error: any) {
-      console.error("PAYMENT_VERIFICATION_ERROR:", error);
-      throw new Error(error.message || "Failed to verify payment");
+    if (verification.success) {
+      return await finalizeCapturedPayment({
+        orderId: order.id,
+        reference,
+        amount: verification.amount,
+        currency: verification.currency,
+        paymentProvider: resolvedGateway,
+        processorResponse: verification.processor_response,
+      });
     }
+
+    await finalizeFailedPayment({
+      orderId: order.id,
+      reference,
+      processorResponse: verification.processor_response,
+    });
+
+    return { success: false, message: "Payment verification failed at gateway" };
   });
 
-// ─── createTransaction ────────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// createTransaction
+// ---------------------------------------------------------------------------
 
 export const createTransaction = publicProcedure
   .input(createTransactionSchema)
@@ -294,13 +259,15 @@ export const createTransaction = publicProcedure
     });
   });
 
-// ─── getTransactionsByOrder ───────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// getTransactionsByOrder
+// ---------------------------------------------------------------------------
 
 export const getTransactionsByOrder = publicProcedure
   .input(z.object({ order_id: z.string() }))
   .query(async (opts) => {
     return await prisma.transactionHistory.findMany({
-      where:   { order_id: opts.input.order_id },
+      where: { order_id: opts.input.order_id },
       orderBy: { created_at: "desc" },
     });
   });

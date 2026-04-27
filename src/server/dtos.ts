@@ -1,9 +1,11 @@
 import { z } from "zod";
+import { PAYMENT_GATEWAYS, PAYMENT_METHODS } from "@/lib/payment-config";
 
 export const createUserSchema = z.object({
   id: z.string().optional(),
   email: z.string().optional(),
   first_name: z.string().optional(),
+  pen_name: z.string().optional(),
   phone_number: z.string().optional(),
   last_name: z.string().optional(),
   roleName: z.string().optional(),
@@ -517,6 +519,19 @@ export const createOrderFromCartSchema = z.object({
   shipping_amount: z.number().min(0).default(0),
   discount_amount: z.number().min(0).default(0),
   currency: z.string().default("USD"),
+  checkout_currency: z.string().default("NGN"),
+  payment_gateway: z.enum([
+    PAYMENT_GATEWAYS.PAYSTACK,
+    PAYMENT_GATEWAYS.STRIPE,
+    PAYMENT_GATEWAYS.PAYPAL,
+    PAYMENT_GATEWAYS.FLUTTERWAVE,
+  ]).optional(),
+  payment_method: z.enum([
+    PAYMENT_METHODS.CARD,
+    PAYMENT_METHODS.BANK_TRANSFER,
+    PAYMENT_METHODS.PAYPAL,
+    PAYMENT_METHODS.MOBILE_MONEY,
+  ]).optional(),
   channel: z.string().optional(),
   notes: z.string().optional(),
   shipping_provider: z.enum(["speedaf", "fez"]).optional(),
@@ -554,8 +569,20 @@ export type TCancelOrderSchema = z.infer<typeof cancelOrderSchema>;
 export const initializePaymentSchema = z.object({
   order_id: z.string(),
   email: z.string().email(),
-  amount: z.number().min(0, "Amount cannot be negative"),
-  currency: z.string().default("NGN"),
+  amount: z.number().min(0, "Amount cannot be negative").optional(),
+  currency: z.string().default("NGN").optional(),
+  payment_gateway: z.enum([
+    PAYMENT_GATEWAYS.PAYSTACK,
+    PAYMENT_GATEWAYS.STRIPE,
+    PAYMENT_GATEWAYS.PAYPAL,
+    PAYMENT_GATEWAYS.FLUTTERWAVE,
+  ]).optional(),
+  payment_method: z.enum([
+    PAYMENT_METHODS.CARD,
+    PAYMENT_METHODS.BANK_TRANSFER,
+    PAYMENT_METHODS.PAYPAL,
+    PAYMENT_METHODS.MOBILE_MONEY,
+  ]).optional(),
   callback_url: z.string().url().optional(),
 });
 

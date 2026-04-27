@@ -177,11 +177,12 @@ interface OrderConfirmationParams {
   isDigitalOnly: boolean;
   deliveryState?: string;
   shippingZone?:  string;
+  currency:      string;
 }
 
 export async function sendOrderConfirmationEmail({
   to, firstName, orderNumber, orderDate, items,
-  subtotal, shippingCost, total, isDigitalOnly, deliveryState, shippingZone,
+  subtotal, shippingCost, total, isDigitalOnly, deliveryState, shippingZone, currency,
 }: OrderConfirmationParams) {
   const dashboardUrl = `${APP_URL}/app/orders`;
   const formatted    = orderDate.toLocaleDateString("en-GB", {
@@ -193,7 +194,7 @@ export async function sendOrderConfirmationEmail({
     react: OrderConfirmationTemplate({
       firstName, orderNumber, orderDate: formatted, items,
       subtotal, shippingCost, total, isDigitalOnly,
-      deliveryState, shippingZone, dashboardUrl,
+      deliveryState, shippingZone, currency, dashboardUrl,
     }),
   });
 }
