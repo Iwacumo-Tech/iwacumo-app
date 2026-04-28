@@ -339,7 +339,7 @@ export default function CartPage() {
         localStorage.removeItem(GUEST_CART_KEY);
         if (update) await update();
         setShowRegistrationDialog(false);
-        toast({ title: "Welcome to Booka!", description: "Account created. Finalizing your order…" });
+        toast({ title: "Welcome to Iwacumo!", description: "Account created. Finalizing your order…" });
         setTimeout(() => {
           if (requiresDelivery) setShowCheckoutDialog(true);
           else proceedWithCheckout();
@@ -722,7 +722,7 @@ export default function CartPage() {
           <DialogContent className="max-w-2xl border-4 border-black rounded-none gumroad-shadow p-0 overflow-hidden flex flex-col max-h-[90vh]">
             <DialogHeader className="p-6 border-b-2 border-black bg-[#FCFAEE]">
               <DialogTitle className="text-2xl font-black uppercase italic tracking-tighter">
-                Join Booka to Continue<span className="text-accent">.</span>
+                Join Iwacumo to Continue<span className="text-accent">.</span>
               </DialogTitle>
               <DialogDescription className="font-bold text-[10px] uppercase opacity-60">
                 Create an account to save your library and proceed to checkout.

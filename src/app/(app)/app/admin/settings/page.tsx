@@ -228,6 +228,10 @@ type NumberFieldProps = {
   placeholder?: string;
 };
 
+function toOptionalNumberInput(value: string) {
+  return value === "" ? undefined : Number(value);
+}
+
 function NumberField({ control, name, label, placeholder }: NumberFieldProps) {
   return (
     <FormField
@@ -244,7 +248,7 @@ function NumberField({ control, name, label, placeholder }: NumberFieldProps) {
               value={field.value ?? ""}
               onChange={(e) => {
                 const val = e.target.value;
-                field.onChange(val === "" ? 0 : Number(val));
+                field.onChange(toOptionalNumberInput(val));
               }}
             />
           </FormControl>

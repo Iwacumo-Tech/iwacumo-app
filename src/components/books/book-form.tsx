@@ -236,6 +236,14 @@ async function getPdfPageCount(file: File): Promise<number | null> {
   }
 }
 
+function toOptionalNumberInput(value: string) {
+  return value === "" ? undefined : Number(value);
+}
+
+function toNullableNumberInput(value: string) {
+  return value === "" ? null : Number(value);
+}
+
 function UploadField({ label, type, uploads, onUpload, accept }: UploadFieldProps) {
   const data = uploads[type];
   return (
@@ -984,7 +992,7 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                                   type={field.field_type === "number" ? "number" : field.field_type === "date" ? "date" : "text"}
                                   className="input-gumroad"
                                   value={(valueField.value as string) ?? ""}
-                                  onChange={(e) => valueField.onChange(field.field_type === "number" ? Number(e.target.value) : e.target.value)}
+                                  onChange={(e) => valueField.onChange(field.field_type === "number" ? toOptionalNumberInput(e.target.value) : e.target.value)}
                                   placeholder={field.placeholder}
                                 />
                               )}
@@ -1093,10 +1101,14 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                                   value={field.value ?? ""}
                                   onChange={(e) => {
                                     const val = e.target.value;
-                                    field.onChange(val === "" ? 0 : Number(val));
+                                    field.onChange(toOptionalNumberInput(val));
                                   }}
                                 />
                               </FormControl>
+                              <p className="flex items-start gap-1 text-[9px] text-gray-500 leading-relaxed">
+                                <Info size={11} className="mt-[1px] shrink-0" />
+                                This is automatically populated when you upload the PDF. Please confirm it before submitting.
+                              </p>
                               <FormMessage />
                             </FormItem>
                           )}
@@ -1116,7 +1128,7 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                                     type="number"
                                     className="input-gumroad"
                                     value={field.value ?? ""}
-                                    onChange={(e) => field.onChange(e.target.value === "" ? null : Number(e.target.value))}
+                                    onChange={(e) => field.onChange(toNullableNumberInput(e.target.value))}
                                   />
                                 </FormControl>
                               </FormItem>
@@ -1133,7 +1145,7 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                                     type="number"
                                     className="input-gumroad"
                                     value={field.value ?? ""}
-                                    onChange={(e) => field.onChange(e.target.value === "" ? null : Number(e.target.value))}
+                                    onChange={(e) => field.onChange(toNullableNumberInput(e.target.value))}
                                   />
                                 </FormControl>
                               </FormItem>
@@ -1250,7 +1262,7 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                                       value={field.value ?? ""}
                                       onChange={(e) => {
                                         const val = e.target.value;
-                                        field.onChange(val === "" ? 0 : Number(val));
+                                        field.onChange(toOptionalNumberInput(val));
                                       }}
                                     />
                                   </FormControl>
@@ -1308,7 +1320,7 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                                       value={field.value ?? ""}
                                       onChange={(e) => {
                                         const val = e.target.value;
-                                        field.onChange(val === "" ? 0 : Number(val));
+                                        field.onChange(toOptionalNumberInput(val));
                                       }}
                                     />
                                   </FormControl>
@@ -1336,7 +1348,7 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                                       value={field.value ?? ""}
                                       onChange={(e) => {
                                         const val = e.target.value;
-                                        field.onChange(val === "" ? 0 : Number(val));
+                                        field.onChange(toOptionalNumberInput(val));
                                       }}
                                     />
                                   </FormControl>
@@ -1381,7 +1393,7 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                                 value={field.value ?? ""}
                                 onChange={(e) => {
                                   const val = e.target.value;
-                                  field.onChange(val === "" ? 0 : Number(val));
+                                  field.onChange(toOptionalNumberInput(val));
                                 }}
                               />
                             </FormControl>
