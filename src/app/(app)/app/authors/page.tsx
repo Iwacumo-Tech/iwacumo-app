@@ -15,6 +15,8 @@ export default function AuthorsPage() {
 
   const isSuperAdmin = userRoles.some(r => r.name === "super-admin");
   const isPublisher  = userRoles.some(r => r.name === "publisher");
+  const isStaffRole = userRoles.some((r) => r.name === "tenant-admin" || r.name.startsWith("staff-"));
+  const canAddAuthor = isPublisher || isSuperAdmin || (isStaffRole && !!session?.user?.publisher_id);
 
   // ── Super-admin uses getAllAuthors (no scoping) ───────────────────────────
   // Publisher / author uses getAuthorsByUser (scoped by their publisher_id).
@@ -55,7 +57,7 @@ export default function AuthorsPage() {
           </p>
         </div>
 
-        {isPublisher && (
+        {canAddAuthor && (
           <AuthorForm
             action="Add"
             trigger={

@@ -14,6 +14,19 @@ import { useSession } from "next-auth/react";
 
 const menuButtonStyle = "w-full text-left px-3 py-2.5 text-xs font-black uppercase italic hover:bg-accent cursor-pointer flex items-center gap-2 transition-colors rounded-none outline-none border-none bg-transparent text-black shadow-none";
 
+function countPublishedWorks(author: any) {
+  const seen = new Set<string>();
+  const relatedBooks = [...(author?.books ?? []), ...(author?.primary_books ?? [])];
+
+  return relatedBooks.reduce((count: number, book: any) => {
+    if (!book?.id || seen.has(book.id) || book.deleted_at) return count;
+    seen.add(book.id);
+
+    if (!book.published || book.status === "archived") return count;
+    return count + 1;
+  }, 0);
+}
+
 function AuthorAction({ author }: { author: any }) {
   const { toast } = useToast();
   const utils = trpc.useUtils();
@@ -156,7 +169,7 @@ export const authorColumns: ColumnDef<any>[] = [
     header: "Published Works",
     cell: ({ row }) => (
       <div className="flex items-center gap-2">
-        <span className="font-black italic underline text-sm">{(row.original.books || []).length}</span>
+        <span className="font-black italic underline text-sm">{countPublishedWorks(row.original)}</span>
         <span className="text-[10px] font-bold opacity-30 uppercase tracking-tighter">Books</span>
       </div>
     )

@@ -96,6 +96,7 @@ import {
   verifyBankAccount,
   saveBankAccount,
   getMyPaymentAccount,
+  getBookCreationPayoutStatus,
 } from "./module/payment-accounts";
 
 import { getPaymentHistory } from "./module/payment-history";
@@ -272,6 +273,7 @@ export const appRouter = router({
   verifyBankAccount,
   saveBankAccount,
   getMyPaymentAccount,
+  getBookCreationPayoutStatus,
   getPaymentHistory,
 
   getAllCategories,

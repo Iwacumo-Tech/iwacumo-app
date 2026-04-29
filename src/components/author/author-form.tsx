@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
 import { useSession } from "next-auth/react";
 
@@ -20,11 +21,14 @@ const AuthorForm = ({ author, action, trigger }: { author?: any; action: "Add" |
   const isEditMode = action === "Edit" && !!author?.id;
   const { data: session } = useSession();
   const publisherId = session?.user?.publisher_id ?? null;
+  const userRoles = session?.roles ?? [];
+  const isSuperAdmin = userRoles.some((role) => role.name === "super-admin");
   const { data: publishers } = trpc.getAllPublisher.useQuery(undefined, {
-    enabled: !!publisherId && !isEditMode,
+    enabled: !isEditMode && (!!publisherId || isSuperAdmin),
   });
-  const currentPublisher = publishers?.find((publisher: any) => publisher.id === publisherId);
-  const isWhiteLabelPublisher = !!currentPublisher?.white_label;
+  const availablePublishers = isSuperAdmin
+    ? (publishers ?? [])
+    : (publishers ?? []).filter((publisher: any) => publisher.id === publisherId);
 
   const currentSchema = isEditMode ? updateAuthorSchema : createAuthorSchema;
 
@@ -53,6 +57,7 @@ const AuthorForm = ({ author, action, trigger }: { author?: any; action: "Add" |
           email: author.user?.email || "",
           username: author.user?.username || "",
           phone_number: author.user?.phone_number || "",
+          publisher_id: author.publisher_id || publisherId || "",
         });
       } else {
         form.reset({
@@ -62,11 +67,18 @@ const AuthorForm = ({ author, action, trigger }: { author?: any; action: "Add" |
           email: "",
           username: "",
           password: "",
-          phone_number: ""
+          phone_number: "",
+          publisher_id: publisherId || "",
         });
       }
     }
-  }, [open, isEditMode, author, form]);
+  }, [open, isEditMode, author, form, publisherId]);
+
+  const selectedPublisherId = form.watch("publisher_id");
+  const currentPublisher = availablePublishers.find(
+    (publisher: any) => publisher.id === (selectedPublisherId || publisherId)
+  );
+  const isWhiteLabelPublisher = !!currentPublisher?.white_label;
 
   const { mutate: addAuthor, isPending: isAdding } = trpc.createAuthor.useMutation({
     onSuccess: (result) => {
@@ -94,6 +106,11 @@ const AuthorForm = ({ author, action, trigger }: { author?: any; action: "Add" |
   });
 
   const onSubmit = (values: any) => {
+    if (!isEditMode && isSuperAdmin && !values.publisher_id) {
+      form.setError("publisher_id", { type: "manual", message: "Select a publisher." });
+      return;
+    }
+
     if (isEditMode) {
       updateAuthor(values);
     } else {
@@ -117,6 +134,33 @@ const AuthorForm = ({ author, action, trigger }: { author?: any; action: "Add" |
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="p-8 space-y-6">
             <div className="bg-white border-2 border-black p-6 space-y-4 gumroad-shadow-sm">
+              {!isEditMode && isSuperAdmin && (
+                <FormField
+                  control={form.control}
+                  name="publisher_id"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-[10px] font-black uppercase opacity-40">Publisher</FormLabel>
+                      <Select value={field.value || undefined} onValueChange={field.onChange}>
+                        <FormControl>
+                          <SelectTrigger className="input-gumroad">
+                            <SelectValue placeholder="Select a publisher" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {availablePublishers.map((publisher: any) => (
+                            <SelectItem key={publisher.id} value={publisher.id}>
+                              {publisher.tenant?.name || publisher.slug || "Unnamed Publisher"}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+
               <div className="grid grid-cols-2 gap-4">
                 <FormField control={form.control} name="first_name" render={({ field }) => (
                   <FormItem>

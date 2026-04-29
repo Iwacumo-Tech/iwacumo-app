@@ -57,6 +57,8 @@ function ConnectedAccountCard({
     is_verified:           boolean;
     subaccount_ready:      boolean;
     recipient_ready:       boolean;
+    payout_ready:          boolean;
+    blocking_reason_labels: string[];
     updated_at:            Date | string;
   };
   onReplace: () => void;
@@ -78,7 +80,11 @@ function ConnectedAccountCard({
             <p className="text-[9px] font-medium text-gray-400">Last updated {updatedAt}</p>
           </div>
         </div>
-        <BadgeCheck size={20} className="text-green-500" />
+        {account.payout_ready ? (
+          <BadgeCheck size={20} className="text-green-500" />
+        ) : (
+          <AlertTriangle size={20} className="text-amber-500" />
+        )}
       </div>
 
       {/* Account details */}
@@ -94,6 +100,7 @@ function ConnectedAccountCard({
         <div>
           <p className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-2">Status</p>
           <div className="flex flex-col gap-1.5">
+            <StatusBadge ready={account.payout_ready} label={account.payout_ready ? "Payout ready" : "Payout blocked"} />
             <StatusBadge ready={account.subaccount_ready} label={account.subaccount_ready ? "Auto-split ready" : "Auto-split pending"} />
             <StatusBadge ready={account.recipient_ready}  label={account.recipient_ready  ? "Transfers ready"  : "Transfers pending"} />
           </div>
@@ -103,10 +110,19 @@ function ConnectedAccountCard({
       {/* Explanation */}
       <div className="px-6 pb-5">
         {(!account.subaccount_ready || !account.recipient_ready) && (
-          <p className="text-[10px] font-medium text-amber-600 flex items-start gap-2 mb-4">
-            <AlertTriangle size={11} className="shrink-0 mt-0.5" />
-            Some Paystack registrations are still processing. Your earnings are tracked and will be routed once setup completes. Contact support if this persists beyond 24 hours.
-          </p>
+          <div className="mb-4 space-y-2">
+            <p className="text-[10px] font-medium text-amber-600 flex items-start gap-2">
+              <AlertTriangle size={11} className="shrink-0 mt-0.5" />
+              Automatic payout routing is still blocked until every Paystack registration step is ready.
+            </p>
+            <div className="space-y-1">
+              {account.blocking_reason_labels.map((reason) => (
+                <p key={reason} className="text-[10px] font-medium text-black/60">
+                  • {reason}
+                </p>
+              ))}
+            </div>
+          </div>
         )}
         <div className="flex items-center gap-3">
           <Button
@@ -210,7 +226,7 @@ export default function PaymentSettingsPage() {
     <div className="max-w-2xl mx-auto py-10 px-4 md:px-6">
       <SectionHeader
         label="Payout Settings"
-        sub="Connect your bank account to receive earnings from book sales."
+        sub="Connect and fully register your payout account before automated earnings routing can happen."
       />
 
       {/* How it works */}
@@ -219,10 +235,10 @@ export default function PaymentSettingsPage() {
         <div className="text-xs font-medium text-gray-600 space-y-1">
           <p>
             Your account number is verified live against your bank via Paystack.
-            Once saved, earnings are routed automatically when a customer pays.
+            We also register the related Paystack subaccount and transfer recipient needed for automated routing.
           </p>
           <p>
-            Your full account number is never shown in the UI after saving.
+            Your full account number is never shown in the UI after saving, and payout stays blocked until every registration step is ready.
           </p>
         </div>
       </div>

@@ -20,7 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { CheckCircle2, Loader2 } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useFieldArray, useForm, Control } from "react-hook-form";
 
 import { Checkbox } from "@/components/ui/checkbox";
@@ -232,24 +232,59 @@ function toOptionalNumberInput(value: string) {
   return value === "" ? undefined : Number(value);
 }
 
+type NumericInputProps = Omit<React.ComponentProps<typeof Input>, "type" | "value" | "onChange"> & {
+  value: number | null | undefined;
+  emptyValue?: undefined | null;
+  onValueChange: (value: number | null | undefined) => void;
+};
+
+function NumericInput({
+  value,
+  emptyValue = undefined,
+  onValueChange,
+  ...props
+}: NumericInputProps) {
+  const [displayValue, setDisplayValue] = useState(
+    value === null || value === undefined ? "" : String(value)
+  );
+  const [isFocused, setIsFocused] = useState(false);
+
+  useEffect(() => {
+    if (isFocused) return;
+    const nextValue = value === null || value === undefined ? "" : String(value);
+    setDisplayValue((current) => (current === nextValue ? current : nextValue));
+  }, [isFocused, value]);
+
+  return (
+    <Input
+      type="number"
+      {...props}
+      value={displayValue}
+      onFocus={() => setIsFocused(true)}
+      onBlur={() => setIsFocused(false)}
+      onChange={(e) => {
+        const raw = e.target.value;
+        setDisplayValue(raw);
+        onValueChange(raw === "" ? emptyValue : Number(raw));
+      }}
+    />
+  );
+}
+
 function NumberField({ control, name, label, placeholder }: NumberFieldProps) {
   return (
     <FormField
       control={control}
       name={name}
-      render={({ field }) => (
+        render={({ field }) => (
         <FormItem>
           <FormLabel className="font-bold text-xs uppercase">{label}</FormLabel>
           <FormControl>
-            <Input
-              type="number"
+            <NumericInput
               className="input-gumroad"
               placeholder={placeholder}
-              value={field.value ?? ""}
-              onChange={(e) => {
-                const val = e.target.value;
-                field.onChange(toOptionalNumberInput(val));
-              }}
+              value={field.value}
+              onValueChange={field.onChange}
             />
           </FormControl>
           <FormMessage />

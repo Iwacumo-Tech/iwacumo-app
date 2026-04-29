@@ -16,14 +16,15 @@ const ProfileDetails = ({ user, setEditProfile }: any) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const utils = trpc.useUtils();
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/^https?:\/\//, "") || "booka.africa";
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://booka.africa";
   
   const isPublisher = !!user?.publisher;
   const isAuthor = !!user?.author;
   const hasReaderProfile = (user?.customers?.length || 0) > 0;
   const canUpdateAvatar = isPublisher || isAuthor;
 
-  const storefrontUrl = isPublisher ? `https://${user?.username?.toLowerCase()}.${baseUrl}` : null;
+  const storefrontPath = isPublisher && user?.publisher?.slug ? `/${user.publisher.slug}` : null;
+  const storefrontUrl = storefrontPath ? `${appUrl.replace(/\/$/, "")}${storefrontPath}` : null;
 
   // Specific mutation for just the image
   const updateImage = trpc.updateProfileImage.useMutation({
@@ -192,13 +193,18 @@ const ProfileDetails = ({ user, setEditProfile }: any) => {
                 </div>
                 <div>
                   <p className="text-[10px] font-black uppercase opacity-40 tracking-widest">Public Storefront</p>
-                  <a 
-                    href={storefrontUrl!} 
-                    target="_blank" 
-                    className="font-bold underline flex items-center gap-1 hover:text-white transition-colors"
-                  >
-                    {user?.username?.toLowerCase()}.{baseUrl} <ExternalLink size={12} />
-                  </a>
+                  {storefrontUrl && storefrontPath ? (
+                    <a 
+                      href={storefrontUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-bold underline flex items-center gap-1 hover:text-white transition-colors"
+                    >
+                      {storefrontPath} <ExternalLink size={12} />
+                    </a>
+                  ) : (
+                    <p className="font-bold opacity-50">No storefront slug yet</p>
+                  )}
                 </div>
               </>
             ) : (

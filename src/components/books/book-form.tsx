@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm, useWatch } from "react-hook-form";
+import { useForm, useWatch, type DefaultValues } from "react-hook-form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useState, useEffect, useMemo } from "react";
@@ -11,9 +11,10 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -36,7 +37,8 @@ import { Book } from "@prisma/client";
 import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import axios from "axios";
-import { Loader2, CheckCircle2, UploadCloud, Edit3, TrendingUp, Info } from "lucide-react";
+import Link from "next/link";
+import { Loader2, CheckCircle2, UploadCloud, Edit3, TrendingUp, Info, AlertTriangle, ArrowRight } from "lucide-react";
 import {
   COMMON_BOOK_LANGUAGES,
   formatDimensionsInches,
@@ -56,6 +58,14 @@ interface BookFormProps {
   action: "Add" | "Edit";
   trigger?: React.ReactNode;
 }
+
+type PayoutGateEntity = {
+  entity_type: "publisher" | "author";
+  entity_id: string;
+  display_name: string;
+  payout_ready: boolean;
+  blocking_reason_labels: string[];
+};
 
 function getFriendlyBookError(message?: string) {
   if (!message) return "Please check the form and try again.";
@@ -191,6 +201,65 @@ interface UploadState {
   loading: boolean;
 }
 
+function createInitialUploads(book?: Book): Record<string, UploadState> {
+  return {
+    front:  { progress: 0, url: book?.book_cover  || "", loading: false },
+    back:   { progress: 0, url: book?.book_cover2 || "", loading: false },
+    spine:  { progress: 0, url: book?.book_cover3 || "", loading: false },
+    spread: { progress: 0, url: book?.book_cover4 || "", loading: false },
+    pdf:    { progress: 0, url: book?.pdf_url     || "", loading: false },
+    docx:   { progress: 0, url: book?.text_url    || "", loading: false },
+  };
+}
+
+function createBookFormDefaults({
+  book,
+  sessionAuthorId,
+  sessionPublisherId,
+  initialPrices,
+}: {
+  book?: Book;
+  sessionAuthorId?: string | null;
+  sessionPublisherId?: string | null;
+  initialPrices: { paperback?: number; hardcover?: number; ebook?: number };
+}): DefaultValues<TCreateBookSchema> {
+  return {
+    title:             book?.title            ?? "",
+    subtitle:          (book as any)?.subtitle ?? "",
+    isbn:              (book as any)?.isbn ?? "",
+    publication_date:  (book as any)?.publication_date ? new Date((book as any).publication_date) : undefined,
+    default_language:  normalizeBookLanguageValue((book as any)?.default_language),
+    short_description: book?.short_description ?? "",
+    long_description:  book?.long_description  ?? "",
+    page_count:        book?.page_count        ?? 0,
+    author_id:         book?.author_id         ?? sessionAuthorId ?? "",
+    publisher_id:      book?.publisher_id      ?? sessionPublisherId ?? "",
+    category_ids:      (book as any)?.categories?.map((c: any) => c.id) ?? [],
+    paper_back:        book?.paper_back ?? false,
+    e_copy:            book?.e_copy     ?? true,
+    hard_cover:        book?.hard_cover ?? false,
+    paperback_price:   initialPrices.paperback,
+    ebook_price:       initialPrices.ebook,
+    hardcover_price:   initialPrices.hardcover,
+    size:              (book as any)?.variants?.[0]?.size_bucket || (book as any)?.variants?.[0]?.size || "A5",
+    trim_size_mode:    (book as any)?.variants?.[0]?.trim_size_mode || "standard",
+    paper_type:        (book as any)?.variants?.[0]?.paper_type || "cream",
+    lamination_type:   (book as any)?.variants?.[0]?.lamination_type || "matte",
+    flap_type:         (book as any)?.variants?.[0]?.flap_type || "none",
+    custom_width_in:   (book as any)?.variants?.[0]?.custom_width_in ?? null,
+    custom_height_in:  (book as any)?.variants?.[0]?.custom_height_in ?? null,
+    size_bucket:       (book as any)?.variants?.[0]?.size_bucket || (book as any)?.variants?.[0]?.size || "A5",
+    display_width_in:  (book as any)?.variants?.[0]?.display_width_in ?? null,
+    display_height_in: (book as any)?.variants?.[0]?.display_height_in ?? null,
+    author_markup_type:  "percentage",
+    author_markup_value: 0,
+    special_addon_fee:  (book as any)?.special_addon_fee ?? 0,
+    special_addon_description: (book as any)?.special_addon_description ?? "",
+    custom_fields:      (book as any)?.metadata?.custom_fields ?? {},
+    admin_private_notes: (book as any)?.metadata?.private_creator_notes ?? "",
+  };
+}
+
 interface UploadFieldProps {
   label: string;
   type: string;
@@ -236,12 +305,39 @@ async function getPdfPageCount(file: File): Promise<number | null> {
   }
 }
 
-function toOptionalNumberInput(value: string) {
-  return value === "" ? undefined : Number(value);
-}
+type NumericInputProps = Omit<React.ComponentProps<typeof Input>, "type" | "value" | "onChange"> & {
+  value: number | string | null | undefined;
+  emptyValue?: null | undefined;
+  onValueChange: (value: number | string | null | undefined) => void;
+};
 
-function toNullableNumberInput(value: string) {
-  return value === "" ? null : Number(value);
+function NumericInput({
+  value,
+  emptyValue = undefined,
+  onValueChange,
+  ...props
+}: NumericInputProps) {
+  const [displayValue, setDisplayValue] = useState(
+    value === null || value === undefined ? "" : String(value)
+  );
+
+  useEffect(() => {
+    const nextValue = value === null || value === undefined ? "" : String(value);
+    setDisplayValue((current) => (current === nextValue ? current : nextValue));
+  }, [value]);
+
+  return (
+    <Input
+      type="number"
+      {...props}
+      value={displayValue}
+      onChange={(e) => {
+        const raw = e.target.value;
+        setDisplayValue(raw);
+        onValueChange(raw === "" ? emptyValue : Number(raw));
+      }}
+    />
+  );
 }
 
 function UploadField({ label, type, uploads, onUpload, accept }: UploadFieldProps) {
@@ -373,8 +469,13 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
   const { toast } = useToast();
   const utils = trpc.useUtils();
   const [open, setOpen] = useState(false);
+  const [payoutPromptOpen, setPayoutPromptOpen] = useState(false);
   const session = useSession();
   const sessionAuthorId = (session.data?.user as any)?.author_id;
+  const sessionPublisherId = (session.data?.user as any)?.publisher_id;
+  const activeProfile = session.data?.activeProfile;
+  const isAddFlow = action === "Add";
+  const shouldCheckPayoutGate = isAddFlow && (activeProfile === "publisher" || activeProfile === "author");
 
   const { data: authors } = trpc.getAuthorsByUser.useQuery(
     { id: session.data?.user.id as string },
@@ -383,6 +484,11 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
 
   const { data: categories } = trpc.getCategories.useQuery();
   const { data: systemSettings } = trpc.getSystemSettings.useQuery();
+  const { data: addBookPayoutGate, isLoading: addBookPayoutGateLoading } =
+    trpc.getBookCreationPayoutStatus.useQuery(
+      { publisher_id: sessionPublisherId || undefined },
+      { enabled: !!session.data?.user.id && shouldCheckPayoutGate }
+    );
 
   // Tracks which ebook file type was uploaded so the other is disabled
   const [ebookUploadedType, setEbookUploadedType] = useState<"pdf" | "docx" | null>(
@@ -413,61 +519,67 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
   }, [book]);
 
   // ── Upload state ────────────────────────────────────────────────────────────
-  const [uploads, setUploads] = useState<Record<string, UploadState>>({
-    front:  { progress: 0, url: book?.book_cover  || "", loading: false },
-    back:   { progress: 0, url: book?.book_cover2 || "", loading: false },
-    spine:  { progress: 0, url: book?.book_cover3 || "", loading: false },
-    spread: { progress: 0, url: book?.book_cover4 || "", loading: false },
-    pdf:    { progress: 0, url: book?.pdf_url     || "", loading: false },
-    docx:   { progress: 0, url: book?.text_url    || "", loading: false },
-  });
+  const initialUploads = useMemo(() => createInitialUploads(book), [book]);
+  const [uploads, setUploads] = useState<Record<string, UploadState>>(initialUploads);
+  const defaultFormValues = useMemo(
+    () =>
+      createBookFormDefaults({
+        book,
+        sessionAuthorId,
+        sessionPublisherId,
+        initialPrices,
+      }),
+    [book, sessionAuthorId, sessionPublisherId, initialPrices]
+  );
 
   // ── Form ────────────────────────────────────────────────────────────────────
   const form = useForm<TCreateBookSchema>({
     resolver: zodResolver(createBookSchema),
-    defaultValues: {
-      title:             book?.title            ?? "",
-      subtitle:          (book as any)?.subtitle ?? "",
-      isbn:              (book as any)?.isbn ?? "",
-      publication_date:  (book as any)?.publication_date ? new Date((book as any).publication_date) : undefined,
-      default_language:  normalizeBookLanguageValue((book as any)?.default_language),
-      short_description: book?.short_description ?? "",
-      long_description:  book?.long_description  ?? "",
-      page_count:        book?.page_count        ?? 0,
-      author_id:         book?.author_id         ?? sessionAuthorId ?? "",
-      publisher_id:      book?.publisher_id      ?? (session.data?.user as any)?.publisher_id ?? "",
-      category_ids:      (book as any)?.categories?.map((c: any) => c.id) ?? [],
-      paper_back:        book?.paper_back ?? false,
-      e_copy:            book?.e_copy     ?? true,
-      hard_cover:        book?.hard_cover ?? false,
-      paperback_price:   initialPrices.paperback,
-      ebook_price:       initialPrices.ebook,
-      hardcover_price:   initialPrices.hardcover,
-      size:              (book as any)?.variants?.[0]?.size_bucket || (book as any)?.variants?.[0]?.size || "A5",
-      trim_size_mode:    (book as any)?.variants?.[0]?.trim_size_mode || "standard",
-      paper_type:        (book as any)?.variants?.[0]?.paper_type || "cream",
-      lamination_type:   (book as any)?.variants?.[0]?.lamination_type || "matte",
-      flap_type:         (book as any)?.variants?.[0]?.flap_type || "none",
-      custom_width_in:   (book as any)?.variants?.[0]?.custom_width_in ?? null,
-      custom_height_in:  (book as any)?.variants?.[0]?.custom_height_in ?? null,
-      size_bucket:       (book as any)?.variants?.[0]?.size_bucket || (book as any)?.variants?.[0]?.size || "A5",
-      display_width_in:  (book as any)?.variants?.[0]?.display_width_in ?? null,
-      display_height_in: (book as any)?.variants?.[0]?.display_height_in ?? null,
-      author_markup_type:  "percentage",
-      author_markup_value: 0,
-      special_addon_fee:  (book as any)?.special_addon_fee ?? 0,
-      special_addon_description: (book as any)?.special_addon_description ?? "",
-      custom_fields:      (book as any)?.metadata?.custom_fields ?? {},
-      admin_private_notes: (book as any)?.metadata?.private_creator_notes ?? "",
-    },
+    defaultValues: defaultFormValues,
   });
 
+  useEffect(() => {
+    if (!open) return;
+
+    form.reset(defaultFormValues);
+    setUploads(initialUploads);
+    setEbookUploadedType(book?.pdf_url ? "pdf" : book?.text_url ? "docx" : null);
+    setPageCountAutoDetected(false);
+  }, [open, form, defaultFormValues, initialUploads, book]);
+
   const watched = useWatch({ control: form.control });
+  const selectedAuthorIdForGate = isAddFlow
+    ? ((watched.author_id as string | undefined) || sessionAuthorId || undefined)
+    : undefined;
+  const { data: selectedAuthorPayoutGate, isLoading: selectedAuthorPayoutGateLoading } = trpc.getBookCreationPayoutStatus.useQuery(
+    {
+      author_id: selectedAuthorIdForGate,
+      publisher_id: sessionPublisherId || undefined,
+    },
+    {
+      enabled:
+        !!session.data?.user.id
+        && shouldCheckPayoutGate
+        && activeProfile === "publisher"
+        && !!selectedAuthorIdForGate
+        && !!open,
+    }
+  );
   const bookFeatureToggles = systemSettings?.book_feature_toggles;
   const customFieldDefinitions = useMemo(
     () => normalizeBookCustomFields(systemSettings?.book_custom_fields ?? []),
     [systemSettings?.book_custom_fields]
   );
+  const activePayoutGate = activeProfile === "publisher" && selectedAuthorPayoutGate
+    ? selectedAuthorPayoutGate
+    : addBookPayoutGate;
+  const payoutSubmitBlockers = (activePayoutGate?.blocking_entities_for_submit ?? []) as PayoutGateEntity[];
+  const payoutOpenBlockers = (addBookPayoutGate?.blocking_entities_for_open ?? []) as PayoutGateEntity[];
+  const isPayoutGateBusy =
+    shouldCheckPayoutGate
+    && (addBookPayoutGateLoading || (activeProfile === "publisher" && !!selectedAuthorIdForGate && !!open && selectedAuthorPayoutGateLoading));
+  const isSubmitBlockedByPayout =
+    !!(shouldCheckPayoutGate && activePayoutGate && !activePayoutGate.can_submit_with_selected_author);
   const matchedSizeBucket = useMemo(() => {
     if (!(watched.paper_back || watched.hard_cover)) return null;
     if (watched.trim_size_mode !== "custom") return (watched.size || "A5") as "A6" | "A5" | "A4";
@@ -613,7 +725,16 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
           description: `Product ${action === "Add" ? "published" : "updated"} successfully.`,
         });
         Promise.all([utils.getAllBooks.invalidate(), utils.getBookByAuthor.invalidate()]).then(
-          () => setOpen(false)
+          () => {
+            if (action === "Add") {
+              form.reset(defaultFormValues);
+              setUploads(initialUploads);
+              setEbookUploadedType(null);
+              setPageCountAutoDetected(false);
+              setPayoutPromptOpen(false);
+            }
+            setOpen(false);
+          }
         );
       },
       onError: (err) =>
@@ -637,6 +758,21 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
     const finalAuthorId = values.author_id || sessionAuthorId;
     if (!finalAuthorId) {
       toast({ variant: "destructive", title: "Missing author", description: "Please choose the author for this book." });
+      return;
+    }
+    if (isPayoutGateBusy) {
+      toast({
+        title: "Checking payout setup",
+        description: "Please wait while we confirm the payout status for this creator.",
+      });
+      return;
+    }
+    if (isSubmitBlockedByPayout) {
+      toast({
+        variant: "destructive",
+        title: "Complete payout setup first",
+        description: payoutSubmitBlockers.map((entity) => `${entity.display_name}: ${entity.blocking_reason_labels.join(" ")}`).join(" "),
+      });
       return;
     }
 
@@ -703,7 +839,29 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
       ],
     };
 
-    submitBook(payload as any);
+      submitBook(payload as any);
+  };
+
+  const openBookForm = () => {
+    if (!isAddFlow || !shouldCheckPayoutGate) {
+      setOpen(true);
+      return;
+    }
+
+    if (addBookPayoutGateLoading) {
+      toast({
+        title: "Checking payout setup",
+        description: "Please wait a moment while we confirm your payout readiness.",
+      });
+      return;
+    }
+
+    if (addBookPayoutGate && !addBookPayoutGate.can_open_add_book) {
+      setPayoutPromptOpen(true);
+      return;
+    }
+
+    setOpen(true);
   };
 
   const handleFormError = (errors: any) => {
@@ -726,26 +884,29 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        {trigger ? (
-          trigger
-        ) : (
-          <Button
-            className={cn(
-              "rounded-none border-2 border-black transition-all font-black uppercase italic text-xs tracking-widest",
-              action === "Edit"
-                ? menuButtonStyle
-                : "bg-black text-white gumroad-shadow h-14 px-8 hover:translate-x-[2px] block"
-            )}
-          >
-            {action === "Edit" && <Edit3 size={14} />}
-            {action} Book
-          </Button>
-        )}
-      </DialogTrigger>
+    <>
+      {trigger ? (
+        <div onClick={openBookForm} className="contents">
+          {trigger}
+        </div>
+      ) : (
+        <Button
+          type="button"
+          onClick={openBookForm}
+          className={cn(
+            "rounded-none border-2 border-black transition-all font-black uppercase italic text-xs tracking-widest",
+            action === "Edit"
+              ? menuButtonStyle
+              : "bg-black text-white gumroad-shadow h-14 px-8 hover:translate-x-[2px] block"
+          )}
+        >
+          {action === "Edit" && <Edit3 size={14} />}
+          {action} Book
+        </Button>
+      )}
 
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto rounded-none border-2 border-black p-0 bg-[#F4F4F4]">
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto rounded-none border-2 border-black p-0 bg-[#F4F4F4]">
         <div className="p-6 border-b-2 border-black bg-white sticky top-0 z-20">
           <DialogTitle className="text-2xl font-black uppercase italic">
             {action} Book
@@ -765,6 +926,39 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
               </div>
 
               <div className="bg-white border-2 border-black p-6 space-y-4">
+                {isAddFlow && shouldCheckPayoutGate && payoutSubmitBlockers.length > 0 && (
+                  <div className="border-[1.5px] border-amber-300 bg-amber-50 p-4 space-y-3">
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-sm font-black uppercase italic">Complete payout setup before adding this book</p>
+                        <p className="text-xs font-medium text-amber-700 mt-1">
+                          The current creator setup is incomplete, so this book cannot be saved yet.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      {payoutSubmitBlockers.map((entity) => (
+                        <div key={`${entity.entity_type}-${entity.entity_id}`} className="border border-amber-200 bg-white px-3 py-2">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">
+                            {entity.entity_type} · {entity.display_name}
+                          </p>
+                          <p className="text-xs font-medium text-black/70 mt-1">
+                            {entity.blocking_reason_labels.join(" ")}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                    <div>
+                      <Link
+                        href="/app/settings/payment"
+                        className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-widest bg-amber-500 text-white px-3 py-2 hover:bg-amber-600 transition-colors"
+                      >
+                        Set Up Payout <ArrowRight size={10} />
+                      </Link>
+                    </div>
+                  </div>
+                )}
                 {/* Title */}
                 <FormField
                   control={form.control}
@@ -987,15 +1181,22 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                                   <Checkbox checked={!!valueField.value} onCheckedChange={valueField.onChange} />
                                   <span className="text-sm font-medium">{field.help_text || field.label}</span>
                                 </div>
-                              ) : (
-                                <Input
-                                  type={field.field_type === "number" ? "number" : field.field_type === "date" ? "date" : "text"}
-                                  className="input-gumroad"
-                                  value={(valueField.value as string) ?? ""}
-                                  onChange={(e) => valueField.onChange(field.field_type === "number" ? toOptionalNumberInput(e.target.value) : e.target.value)}
-                                  placeholder={field.placeholder}
-                                />
-                              )}
+                                ) : field.field_type === "number" ? (
+                                  <NumericInput
+                                    className="input-gumroad"
+                                    value={valueField.value as number | null | undefined}
+                                    onValueChange={valueField.onChange}
+                                    placeholder={field.placeholder}
+                                  />
+                                ) : (
+                                  <Input
+                                    type={field.field_type === "date" ? "date" : "text"}
+                                    className="input-gumroad"
+                                    value={(valueField.value as string) ?? ""}
+                                    onChange={(e) => valueField.onChange(e.target.value)}
+                                    placeholder={field.placeholder}
+                                  />
+                                )}
                             </FormControl>
                             {field.help_text && (
                               <p className="text-[10px] font-medium opacity-50">{field.help_text}</p>
@@ -1094,16 +1295,12 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                             <FormItem>
                               <FormLabel className="text-[10px] font-black uppercase">Page Count *</FormLabel>
                               <FormControl>
-                                <Input
-                                  type="number"
-                                  className="input-gumroad"
-                                  {...field}
-                                  value={field.value ?? ""}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
-                                    field.onChange(toOptionalNumberInput(val));
-                                  }}
-                                />
+                                  <NumericInput
+                                    className="input-gumroad"
+                                    value={field.value}
+                                    emptyValue={null}
+                                    onValueChange={field.onChange}
+                                  />
                               </FormControl>
                               <p className="flex items-start gap-1 text-[9px] text-gray-500 leading-relaxed">
                                 <Info size={11} className="mt-[1px] shrink-0" />
@@ -1124,12 +1321,12 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                               <FormItem>
                                 <FormLabel className="text-[10px] font-black uppercase">Custom Width (in)</FormLabel>
                                 <FormControl>
-                                  <Input
-                                    type="number"
-                                    className="input-gumroad"
-                                    value={field.value ?? ""}
-                                    onChange={(e) => field.onChange(toNullableNumberInput(e.target.value))}
-                                  />
+                                    <NumericInput
+                                      className="input-gumroad"
+                                      value={field.value}
+                                      emptyValue={null}
+                                      onValueChange={field.onChange}
+                                    />
                                 </FormControl>
                               </FormItem>
                             )}
@@ -1141,12 +1338,12 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                               <FormItem>
                                 <FormLabel className="text-[10px] font-black uppercase">Custom Height (in)</FormLabel>
                                 <FormControl>
-                                  <Input
-                                    type="number"
-                                    className="input-gumroad"
-                                    value={field.value ?? ""}
-                                    onChange={(e) => field.onChange(toNullableNumberInput(e.target.value))}
-                                  />
+                                    <NumericInput
+                                      className="input-gumroad"
+                                      value={field.value}
+                                      emptyValue={null}
+                                      onValueChange={field.onChange}
+                                    />
                                 </FormControl>
                               </FormItem>
                             )}
@@ -1255,16 +1452,12 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                                     {watched.author_markup_type === "flat" ? "Amount (₦)" : "Percentage (%)"}
                                   </FormLabel>
                                   <FormControl>
-                                    <Input
-                                      type="number"
-                                      className="input-gumroad"
-                                      min={0}
-                                      value={field.value ?? ""}
-                                      onChange={(e) => {
-                                        const val = e.target.value;
-                                        field.onChange(toOptionalNumberInput(val));
-                                      }}
-                                    />
+                                      <NumericInput
+                                        className="input-gumroad"
+                                        min={0}
+                                        value={field.value}
+                                        onValueChange={field.onChange}
+                                      />
                                   </FormControl>
                                 </FormItem>
                               )}
@@ -1313,15 +1506,12 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                                     Paperback Sell Price (₦)
                                   </FormLabel>
                                   <FormControl>
-                                    <Input
-                                      type="number"
+                                    <NumericInput
                                       className="input-gumroad bg-gray-50"
-                                      {...field}
-                                      value={field.value ?? ""}
-                                      onChange={(e) => {
-                                        const val = e.target.value;
-                                        field.onChange(toOptionalNumberInput(val));
-                                      }}
+                                      min={0}
+                                      value={field.value}
+                                      emptyValue={null}
+                                      onValueChange={field.onChange}
                                     />
                                   </FormControl>
                                   <p className="text-[9px] opacity-40 font-medium">
@@ -1341,15 +1531,12 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                                     Hardcover Sell Price (₦)
                                   </FormLabel>
                                   <FormControl>
-                                    <Input
-                                      type="number"
+                                    <NumericInput
                                       className="input-gumroad bg-gray-50"
-                                      {...field}
-                                      value={field.value ?? ""}
-                                      onChange={(e) => {
-                                        const val = e.target.value;
-                                        field.onChange(toOptionalNumberInput(val));
-                                      }}
+                                      min={0}
+                                      value={field.value}
+                                      emptyValue={null}
+                                      onValueChange={field.onChange}
                                     />
                                   </FormControl>
                                   <p className="text-[9px] opacity-40 font-medium">
@@ -1386,16 +1573,13 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                               E-Copy Price (₦) *
                             </FormLabel>
                             <FormControl>
-                              <Input
-                                type="number"
-                                className="input-gumroad"
-                                {...field}
-                                value={field.value ?? ""}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  field.onChange(toOptionalNumberInput(val));
-                                }}
-                              />
+                                <NumericInput
+                                  className="input-gumroad"
+                                  min={0}
+                                  value={field.value}
+                                  emptyValue={null}
+                                  onValueChange={field.onChange}
+                                />
                             </FormControl>
                             <p className="text-[10px] text-gray-500">
                               Set this to 0 if you want the e-book to be free.
@@ -1739,7 +1923,7 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
             {/* ── Submit ─────────────────────────────────────────────── */}
             <Button
               type="submit"
-              disabled={isPending || Object.values(uploads).some((u) => u.loading)}
+              disabled={isPending || Object.values(uploads).some((u) => u.loading) || isSubmitBlockedByPayout || isPayoutGateBusy}
               className="w-full h-16 bg-[#82d236] text-black font-black uppercase text-xl rounded-none border-2 border-black gumroad-shadow hover:translate-x-[3px] transition-all disabled:opacity-50 disabled:bg-gray-200 disabled:cursor-not-allowed"
             >
               {isPending ? <Loader2 className="animate-spin" /> : `${action} Product`}
@@ -1747,7 +1931,52 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
           </form>
         </Form>
       </DialogContent>
-    </Dialog>
+      </Dialog>
+
+      <Dialog open={payoutPromptOpen} onOpenChange={setPayoutPromptOpen}>
+        <DialogContent className="max-w-lg rounded-none border-2 border-black bg-white">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-black uppercase italic">
+              Set Up Payout Before Adding Books
+            </DialogTitle>
+            <DialogDescription className="text-sm font-medium text-black/70">
+              Publishers and white-label authors need a fully ready payout account before they can create new books.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            {payoutOpenBlockers.map((entity) => (
+              <div key={`${entity.entity_type}-${entity.entity_id}`} className="border-[1.5px] border-amber-300 bg-amber-50 px-4 py-3">
+                <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">
+                  {entity.entity_type} · {entity.display_name}
+                </p>
+                <p className="text-sm font-medium text-black/75 mt-1">
+                  {entity.blocking_reason_labels.join(" ")}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <DialogFooter className="gap-3 sm:justify-between">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setPayoutPromptOpen(false)}
+              className="rounded-none border-2 border-black font-black uppercase italic text-xs"
+            >
+              Close
+            </Button>
+            <Link
+              href="/app/settings/payment"
+              onClick={() => setPayoutPromptOpen(false)}
+              className="inline-flex items-center justify-center gap-2 rounded-none border-2 border-black bg-black px-4 py-2 text-xs font-black uppercase italic text-white hover:bg-accent hover:text-black transition-colors"
+            >
+              Set Up Payout <ArrowRight size={12} />
+            </Link>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };
 

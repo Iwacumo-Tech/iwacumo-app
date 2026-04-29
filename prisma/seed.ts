@@ -34,20 +34,20 @@ async function seedCategories() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 2. TENANT (Booka platform tenant)
+// 2. TENANT (Iwacumo platform tenant)
 // ─────────────────────────────────────────────────────────────
 async function seedTenants() {
   await prisma.tenant.upsert({
-    where:  { slug: "booka" },
-    update: { name: "Booka", contact_email: "support@booka.africa" },
+    where:  { slug: "iwacumo" },
+    update: { name: "Iwacumo", contact_email: "support@iwacumo.com" },
     create: {
-      name:          "Booka",
-      slug:          "booka",
-      contact_email: "support@booka.africa",
-      custom_domain: "https://booka.africa",
+      name:          "Iwacumo",
+      slug:          "iwacumo",
+      contact_email: "support@iwacumo.com",
+      custom_domain: "https://iwacumo.com",
     },
   });
-  console.log("✓ Tenant (Booka)");
+  console.log("✓ Tenant (Iwacumo)");
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -268,14 +268,14 @@ async function seedSuperAdminUser() {
         first_name: "Super",
         last_name:  "Admin",
         email:      "super.admin@yopmail.com",
-        password:   bcrypt.hashSync("secret", 10),
+        password:   bcrypt.hashSync("Admin123@pub", 10),
         username:   "superadmin",
         claims: {
           create: {
             permission_id: superAdminPermission.id,
             type:          "PERMISSION",
             active:        true,
-            tenant_slug:   "booka",
+            tenant_slug:   "iwacumo",
           },
         },
       },
@@ -289,32 +289,32 @@ async function seedSuperAdminUser() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 6. DEFAULT PUBLISHER (Booka house account)
+// 6. DEFAULT PUBLISHER (Iwacumo house account)
 // ─────────────────────────────────────────────────────────────
 async function seedDefaultPublisher() {
-  const bookaTenant = await prisma.tenant.findUnique({ where: { slug: "booka" } });
+  const iwacumoTenant = await prisma.tenant.findUnique({ where: { slug: "iwacumo" } });
   const superAdmin  = await prisma.user.findUnique({ where: { email: "super.admin@yopmail.com" } });
 
-  if (!bookaTenant || !superAdmin) {
+  if (!iwacumoTenant || !superAdmin) {
     console.warn("⚠ Tenant or super admin not found — skipping publisher seed");
     return;
   }
 
-  const existingByTenant = await prisma.publisher.findUnique({ where: { tenant_id: bookaTenant.id } });
+  const existingByTenant = await prisma.publisher.findUnique({ where: { tenant_id: iwacumoTenant.id } });
   const existingByUser   = await prisma.publisher.findUnique({ where: { user_id:   superAdmin.id  } });
 
   if (!existingByTenant && !existingByUser) {
     await prisma.publisher.create({
-      data: { user_id: superAdmin.id, tenant_id: bookaTenant.id, slug: "booka" },
+      data: { user_id: superAdmin.id, tenant_id: iwacumoTenant.id, slug: "iwacumo" },
     });
-  } else if (existingByUser && existingByUser.tenant_id !== bookaTenant.id && !existingByTenant) {
+  } else if (existingByUser && existingByUser.tenant_id !== iwacumoTenant.id && !existingByTenant) {
     await prisma.publisher.update({
       where: { user_id: superAdmin.id },
-      data:  { tenant_id: bookaTenant.id },
+      data:  { tenant_id: iwacumoTenant.id },
     });
   }
 
-  console.log("✓ Default publisher (Booka)");
+  console.log("✓ Default publisher (Iwacumo)");
 }
 
 // ─────────────────────────────────────────────────────────────

@@ -41,6 +41,7 @@ import {
   mergeOrderNotes,
   parseOrderNotes,
 } from "@/lib/order-notes";
+import { buildOrderPayoutRoutingSnapshot } from "@/lib/payout-routing";
 import { sendOrderConfirmationEmail } from "@/lib/email";
 import { resolveUserContext } from "@/lib/is-super-admin";
 
@@ -227,9 +228,17 @@ export const createOrderFromCart = publicProcedure
     if (errors.length > 0)
       throw new TRPCError({ code: "BAD_REQUEST", message: errors.join(", ") });
 
-    const enabledProviders = (Object.entries(shippingProviderOptions) as Array<[ShippingProvider, { enabled: boolean }]>)
-      .filter(([, config]) => config?.enabled)
-      .map(([provider]) => provider);
+      const enabledProviders = (Object.entries(shippingProviderOptions) as Array<[ShippingProvider, { enabled: boolean }]>) 
+        .filter(([, config]) => config?.enabled)
+        .map(([provider]) => provider);
+
+      const targetPublisher = targetPublisherId
+        ? await prisma.publisher.findUnique({
+            where: { id: targetPublisherId },
+            select: { white_label: true },
+          })
+        : null;
+      const payoutRouting = buildOrderPayoutRoutingSnapshot(!!targetPublisher?.white_label);
 
     const resolvedShippingProvider: ShippingProvider | undefined =
       shipping_provider
@@ -328,16 +337,17 @@ export const createOrderFromCart = publicProcedure
       });
     }
 
-    const orderNotes = mergeOrderNotes(notes || null, {
-      notes_text: notes || null,
-      delivery_address: requires_delivery ? (delivery_address ?? null) : null,
-      delivery_required: requires_delivery,
-      requires_physical_delivery: requires_delivery,
+      const orderNotes = mergeOrderNotes(notes || null, {
+        notes_text: notes || null,
+        delivery_address: requires_delivery ? (delivery_address ?? null) : null,
+        delivery_required: requires_delivery,
+        requires_physical_delivery: requires_delivery,
       shipping_provider: requires_delivery ? (resolvedShippingProvider ?? null) : null,
-      shipping_zone: requires_delivery && resolvedShippingProvider === SHIPPING_PROVIDERS.SPEEDAF ? shippingLabel : null,
-      shipping_group: requires_delivery && resolvedShippingProvider === SHIPPING_PROVIDERS.FEZ ? shippingLabel : null,
-      total_weight_grams: requires_delivery ? totalWeightGrams : 0,
-      checkout_quote: {
+        shipping_zone: requires_delivery && resolvedShippingProvider === SHIPPING_PROVIDERS.SPEEDAF ? shippingLabel : null,
+        shipping_group: requires_delivery && resolvedShippingProvider === SHIPPING_PROVIDERS.FEZ ? shippingLabel : null,
+        total_weight_grams: requires_delivery ? totalWeightGrams : 0,
+        payout_routing: payoutRouting,
+        checkout_quote: {
         base_currency: baseCurrency,
         checkout_currency: resolvedCheckoutCurrency,
         fx_rate_to_base: resolvedCheckoutCurrency === baseCurrency ? 1 : fxRateToBase,
@@ -478,13 +488,14 @@ export const createOrderFromCart = publicProcedure
 
     const parsedCreatedOrderNotes = parseOrderNotes(createdOrder?.notes);
 
-    return {
-      ...createdOrder,
-      delivery_address: parsedCreatedOrderNotes?.delivery_address ?? null,
-      shipping_provider: parsedCreatedOrderNotes?.shipping_provider ?? null,
-      shipping_zone: parsedCreatedOrderNotes?.shipping_zone ?? null,
-      shipping_group: parsedCreatedOrderNotes?.shipping_group ?? null,
-      checkout_currency: parsedCreatedOrderNotes?.checkout_quote?.checkout_currency ?? null,
+      return {
+        ...createdOrder,
+        delivery_address: parsedCreatedOrderNotes?.delivery_address ?? null,
+        shipping_provider: parsedCreatedOrderNotes?.shipping_provider ?? null,
+        shipping_zone: parsedCreatedOrderNotes?.shipping_zone ?? null,
+        shipping_group: parsedCreatedOrderNotes?.shipping_group ?? null,
+        payout_routing: parsedCreatedOrderNotes?.payout_routing ?? null,
+        checkout_currency: parsedCreatedOrderNotes?.checkout_quote?.checkout_currency ?? null,
       fx_rate_to_base: parsedCreatedOrderNotes?.checkout_quote?.fx_rate_to_base ?? null,
       checkout_subtotal_amount: parsedCreatedOrderNotes?.checkout_quote?.checkout_subtotal_amount ?? null,
       checkout_shipping_amount: parsedCreatedOrderNotes?.checkout_quote?.checkout_shipping_amount ?? null,
@@ -510,13 +521,14 @@ export const getOrderById = publicProcedure.input(getOrderByIdSchema).query(asyn
   if (!order) return order;
 
   const parsedNotes = parseOrderNotes(order.notes);
-  return {
-    ...order,
-    delivery_address: parsedNotes?.delivery_address ?? null,
-    shipping_provider: parsedNotes?.shipping_provider ?? null,
-    shipping_zone: parsedNotes?.shipping_zone ?? null,
-    shipping_group: parsedNotes?.shipping_group ?? null,
-    checkout_currency: parsedNotes?.checkout_quote?.checkout_currency ?? null,
+    return {
+      ...order,
+      delivery_address: parsedNotes?.delivery_address ?? null,
+      shipping_provider: parsedNotes?.shipping_provider ?? null,
+      shipping_zone: parsedNotes?.shipping_zone ?? null,
+      shipping_group: parsedNotes?.shipping_group ?? null,
+      payout_routing: parsedNotes?.payout_routing ?? null,
+      checkout_currency: parsedNotes?.checkout_quote?.checkout_currency ?? null,
     fx_rate_to_base: parsedNotes?.checkout_quote?.fx_rate_to_base ?? null,
     checkout_subtotal_amount: parsedNotes?.checkout_quote?.checkout_subtotal_amount ?? null,
     checkout_shipping_amount: parsedNotes?.checkout_quote?.checkout_shipping_amount ?? null,

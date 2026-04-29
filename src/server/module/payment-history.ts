@@ -3,6 +3,8 @@ import { z } from "zod";
 import { publicProcedure } from "@/server/trpc";
 import { TRPCError } from "@trpc/server";
 import { resolveUserContext } from "@/lib/is-super-admin";
+import { parseOrderNotes } from "@/lib/order-notes";
+import { resolveOrderPayoutRoutingSnapshot } from "@/lib/payout-routing";
  
 export const getPaymentHistorySchema = z.object({
   from_date:    z.string().optional(),
@@ -41,6 +43,7 @@ const BREAKDOWN_INCLUDE = {
       status:         true,
       payment_status: true,
       total_amount:   true,
+      notes:          true,
       customer: {
         include: {
           user: { select: { first_name: true, last_name: true, email: true } },
@@ -52,7 +55,15 @@ const BREAKDOWN_INCLUDE = {
  
 const EMPTY_RESULT = (page: number, perPage: number) => ({
   line_items:   [],
-  summary:      { total_sales: 0, my_earnings: 0, platform_total: 0, pending_payout: 0 },
+  summary:      {
+    total_sales: 0,
+    my_earnings: 0,
+    tracked_my_earnings: 0,
+    platform_total: 0,
+    pending_payout: 0,
+    payout_owner_total: 0,
+    publisher_held_author_earnings: 0,
+  },
   by_book:      [],
   by_author:    [],
   by_publisher: [],
@@ -133,16 +144,40 @@ export const getPaymentHistory = publicProcedure
         orderBy: { order: { created_at: "desc" } },
       }),
     ]);
+
+    const enrichLineItem = (item: any) => {
+      const parsedNotes = parseOrderNotes(item.order?.notes);
+      const fallbackWhiteLabel = !!item.book_variant?.book?.publisher?.white_label;
+
+      return {
+        ...item,
+        payoutRouting: resolveOrderPayoutRoutingSnapshot(
+          parsedNotes?.payout_routing,
+          fallbackWhiteLabel,
+        ),
+      };
+    };
+
+    const enrichedLineItems = lineItems.map(enrichLineItem);
+    const enrichedAllLineItems = allLineItems.map(enrichLineItem);
  
     // ── Summary totals ────────────────────────────────────────────────────
-    const totalSales        = allLineItems.reduce((a, c) => a + c.total_price,           0);
-    const totalPlatformFees = allLineItems.reduce((a, c) => a + (c.platform_fee        ?? 0), 0);
-    const totalPublisher    = allLineItems.reduce((a, c) => a + (c.publisher_earnings   ?? 0), 0);
-    const totalAuthor       = allLineItems.reduce((a, c) => a + (c.author_earnings      ?? 0), 0);
- 
+    const totalSales        = enrichedAllLineItems.reduce((a, c) => a + c.total_price,         0);
+    const totalPlatformFees = enrichedAllLineItems.reduce((a, c) => a + (c.platform_fee      ?? 0), 0);
+    const totalPublisher    = enrichedAllLineItems.reduce((a, c) => a + (c.publisher_earnings ?? 0), 0);
+    const totalAuthor       = enrichedAllLineItems.reduce((a, c) => a + (c.author_earnings    ?? 0), 0);
+    const publisherHeldAuthorEarnings = enrichedAllLineItems.reduce((amount, item) => {
+      return amount + (item.payoutRouting.author_share_payout_owner === "publisher" ? (item.author_earnings ?? 0) : 0);
+    }, 0);
+
     const myEarnings = isSuperAdmin ? totalPlatformFees
       : isPublisher  ? totalPublisher
       : totalAuthor;
+    const payoutOwnerTotal = isSuperAdmin
+      ? totalPlatformFees
+      : isPublisher
+        ? totalPublisher + publisherHeldAuthorEarnings
+        : totalAuthor;
  
     // ── Per-book breakdown ────────────────────────────────────────────────
     const bookMap = new Map<string, {
@@ -152,7 +187,7 @@ export const getPaymentHistory = publicProcedure
       platform_fee: number; units_sold: number;
     }>();
  
-    for (const item of allLineItems) {
+    for (const item of enrichedAllLineItems) {
       const book = (item as any).book_variant?.book;
       if (!book) continue;
       const existing = bookMap.get(book.id);
@@ -187,7 +222,7 @@ export const getPaymentHistory = publicProcedure
     }>();
  
     if (isSuperAdmin || isPublisher) {
-      for (const item of allLineItems) {
+      for (const item of enrichedAllLineItems) {
         const author = (item as any).book_variant?.book?.author;
         if (!author) continue;
         const name  = `${author.user?.first_name ?? ""} ${author.user?.last_name ?? ""}`.trim();
@@ -219,7 +254,7 @@ export const getPaymentHistory = publicProcedure
     }>();
  
     if (isSuperAdmin) {
-      for (const item of allLineItems) {
+      for (const item of enrichedAllLineItems) {
         const pub = (item as any).book_variant?.book?.publisher;
         if (!pub) continue;
         const name = pub.tenant?.name
@@ -246,7 +281,7 @@ export const getPaymentHistory = publicProcedure
     const byPublisher = Array.from(publisherMap.values()).sort((a, b) => b.total_sales - a.total_sales);
  
     // ── Serialise paginated items ─────────────────────────────────────────
-    const serialisedItems = lineItems.map(item => {
+    const serialisedItems = enrichedLineItems.map(item => {
       const bk   = (item as any).book_variant?.book;
       const auth = bk?.author;
       const cust = (item as any).order?.customer?.user;
@@ -266,6 +301,8 @@ export const getPaymentHistory = publicProcedure
         platform_fee:       item.platform_fee,
         publisher_earnings: item.publisher_earnings,
         author_earnings:    item.author_earnings,
+        author_share_payout_owner: item.payoutRouting.author_share_payout_owner,
+        publisher_white_label: item.payoutRouting.publisher_white_label,
         author_name:        auth
           ? `${auth.user?.first_name ?? ""} ${auth.user?.last_name ?? ""}`.trim()
           : "",
@@ -277,8 +314,11 @@ export const getPaymentHistory = publicProcedure
       summary: {
         total_sales:    totalSales,
         my_earnings:    myEarnings,
+        tracked_my_earnings: myEarnings,
         platform_total: totalPlatformFees,
         pending_payout: 0,
+        payout_owner_total: payoutOwnerTotal,
+        publisher_held_author_earnings: publisherHeldAuthorEarnings,
       },
       by_book:      byBook,
       by_author:    byAuthor,

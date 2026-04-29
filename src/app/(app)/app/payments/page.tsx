@@ -179,6 +179,10 @@ export default function PaymentsPage() {
   const pagination = data?.pagination;
 
   const earningsLabel = isPublisher ? "Publisher Earnings" : "Author Earnings";
+  const trackedEarnings = summary?.tracked_my_earnings ?? summary?.my_earnings ?? 0;
+  const payoutOwnerTotal = summary?.payout_owner_total ?? trackedEarnings;
+  const heldAmount = paymentAccount?.payout_ready ? 0 : payoutOwnerTotal;
+  const publisherHeldAuthorEarnings = summary?.publisher_held_author_earnings ?? 0;
 
   return (
     <div className="space-y-10">
@@ -207,13 +211,17 @@ export default function PaymentsPage() {
       </div>
 
       {/* Payout account nudge */}
-      {!paymentAccount && (
+      {(!paymentAccount || !paymentAccount.payout_ready) && (
         <div className="flex items-center gap-4 p-4 border-[1.5px] border-amber-300 bg-amber-50">
           <AlertTriangle size={16} className="text-amber-500 shrink-0" />
           <div className="flex-1">
-            <p className="text-sm font-black uppercase italic">Payout account not connected</p>
+            <p className="text-sm font-black uppercase italic">
+              {!paymentAccount ? "Payout account not connected" : "Payout setup still in progress"}
+            </p>
             <p className="text-xs font-medium text-amber-700 mt-0.5">
-              Your earnings are being tracked but won't be automatically routed until you connect a bank account.
+              {!paymentAccount
+                ? "Your earnings are being tracked, but automated routing cannot begin until you connect a payout account."
+                : paymentAccount.blocking_reason_labels.join(" ")}
             </p>
           </div>
           <Link
@@ -253,6 +261,39 @@ export default function PaymentsPage() {
           icon={TrendingUp}
         />
       </div>
+
+      {!isSuperAdmin && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="border-[1.5px] border-black bg-white p-4">
+            <p className="text-[10px] font-black uppercase tracking-widest opacity-50">Tracked Share</p>
+            <p className="text-2xl font-black italic mt-2">NGN {trackedEarnings.toLocaleString()}</p>
+            <p className="text-[10px] font-medium text-black/50 mt-1">The split recorded for your role.</p>
+          </div>
+          <div className="border-[1.5px] border-black bg-white p-4">
+            <p className="text-[10px] font-black uppercase tracking-widest opacity-50">Payout Owner Amount</p>
+            <p className="text-2xl font-black italic mt-2">NGN {payoutOwnerTotal.toLocaleString()}</p>
+            <p className="text-[10px] font-medium text-black/50 mt-1">The amount operationally owned for payout routing.</p>
+          </div>
+          <div className="border-[1.5px] border-black bg-white p-4">
+            <p className="text-[10px] font-black uppercase tracking-widest opacity-50">Currently Held</p>
+            <p className="text-2xl font-black italic mt-2">NGN {heldAmount.toLocaleString()}</p>
+            <p className="text-[10px] font-medium text-black/50 mt-1">
+              {paymentAccount?.payout_ready
+                ? "Your payout route is ready."
+                : "This remains held until payout setup is fully ready."}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {isPublisher && publisherHeldAuthorEarnings > 0 && (
+        <div className="border-[1.5px] border-black bg-black/[0.02] px-4 py-3">
+          <p className="text-[10px] font-black uppercase tracking-widest opacity-60">Non-white-label routing note</p>
+          <p className="text-xs font-medium text-black/70 mt-1">
+            NGN {publisherHeldAuthorEarnings.toLocaleString()} of tracked author share is operationally publisher-held under the non-white-label payout policy.
+          </p>
+        </div>
+      )}
 
       {/* Breakdown tabs */}
       <Tabs defaultValue="books" className="w-full">

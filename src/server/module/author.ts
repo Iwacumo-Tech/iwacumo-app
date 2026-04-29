@@ -96,15 +96,42 @@ export const createAuthor = publicProcedure.input(createAuthorSchema).mutation(a
   const session = await auth();
   if(!session) throw new TRPCError({ code: "UNAUTHORIZED" });
 
-  const creator = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    include: { publisher: { include: { tenant: true } }, claims: { include: { permission: true } } }
-  });
-  if (!creator?.publisher) {
-    throw new TRPCError({ code: "UNAUTHORIZED", message: "Only publishers can add authors." });
+  const [creator, creatorContext] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: session.user.id },
+      include: { publisher: { include: { tenant: true } }, claims: { include: { permission: true } } }
+    }),
+    resolveUserContext(session.user.id),
+  ]);
+
+  const scopedPublisherId = creator?.publisher?.id ?? creatorContext.publisher_id ?? null;
+  const targetPublisherId = opts.input.publisher_id?.trim() || scopedPublisherId;
+
+  if (!targetPublisherId) {
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "Only publishers and authorized staff can add authors." });
   }
 
-  const isWhiteLabel = !!creator.publisher.white_label;
+  if (!creatorContext.isSuperAdmin && !scopedPublisherId) {
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "Only publishers and authorized staff can add authors." });
+  }
+
+  if (!creatorContext.isSuperAdmin && scopedPublisherId && scopedPublisherId !== targetPublisherId) {
+    throw new TRPCError({
+      code: "UNAUTHORIZED",
+      message: "You can only add authors for your assigned publisher.",
+    });
+  }
+
+  const targetPublisher = await prisma.publisher.findUnique({
+    where: { id: targetPublisherId },
+    include: { tenant: true },
+  });
+
+  if (!targetPublisher || targetPublisher.deleted_at) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "Publisher not found." });
+  }
+
+  const isWhiteLabel = !!targetPublisher.white_label;
   const email = isWhiteLabel ? opts.input.email?.trim() : opts.input.email?.trim() || undefined;
 
   if (isWhiteLabel && !email) {
@@ -130,7 +157,10 @@ export const createAuthor = publicProcedure.input(createAuthorSchema).mutation(a
     }
   });
 
-  const slug = creator?.claims.find((claim) => claim.permission?.name === PERMISSIONS.PUBLISHER)?.tenant_slug;
+  const slug =
+    creator?.claims.find((claim) => claim.permission?.name === PERMISSIONS.PUBLISHER)?.tenant_slug
+    || targetPublisher.tenant?.slug
+    || null;
   const authorPermission = await prisma.permission.findFirst({ where: { name: PERMISSIONS.AUTHOR } });
 
   await prisma.claim.create({
@@ -140,7 +170,7 @@ export const createAuthor = publicProcedure.input(createAuthorSchema).mutation(a
   const author = await prisma.author.create({
     data: {
       user_id: user.id,
-      publisher_id: creator?.publisher?.id,
+      publisher_id: targetPublisher.id,
       name: deriveAuthorDisplayName(opts.input),
       pen_name: opts.input.pen_name?.trim() || null,
       invite_email: email || null,
@@ -150,8 +180,8 @@ export const createAuthor = publicProcedure.input(createAuthorSchema).mutation(a
   });
 
   if (isWhiteLabel && email) {
-    const inviterName = [creator.first_name, creator.last_name].filter(Boolean).join(" ") || "The iwacumo team";
-    const publisherName = creator.publisher.tenant?.name ?? "your publisher";
+    const inviterName = [session.user.first_name, session.user.last_name].filter(Boolean).join(" ") || "The iwacumo team";
+    const publisherName = targetPublisher.tenant?.name ?? "your publisher";
     await sendAuthorInvite(author.id, email, inviterName, publisherName);
   }
 
@@ -244,6 +274,14 @@ export const getAllAuthors = publicProcedure.query(async () => {
   return await prisma.author.findMany({
     where: { deleted_at: null },
     include: {
+      books: {
+        where: { deleted_at: null },
+        select: { id: true, published: true, status: true, deleted_at: true },
+      },
+      primary_books: {
+        where: { deleted_at: null },
+        select: { id: true, published: true, status: true, deleted_at: true },
+      },
       user: true,
       publisher: {
         include: {
@@ -305,7 +343,14 @@ export const getAuthorsByUser = publicProcedure
       return await prisma.author.findMany({
         where:   { deleted_at: null },
         include: {
-          books: { where: { deleted_at: null } },
+          books: {
+            where: { deleted_at: null },
+            select: { id: true, published: true, status: true, deleted_at: true },
+          },
+          primary_books: {
+            where: { deleted_at: null },
+            select: { id: true, published: true, status: true, deleted_at: true },
+          },
           user: true,
           publisher: {
             include: {
@@ -321,7 +366,14 @@ export const getAuthorsByUser = publicProcedure
       return await prisma.author.findMany({
         where:   { publisher_id: ctx.publisher_id, deleted_at: null },
         include: {
-          books: true,
+          books: {
+            where: { deleted_at: null },
+            select: { id: true, published: true, status: true, deleted_at: true },
+          },
+          primary_books: {
+            where: { deleted_at: null },
+            select: { id: true, published: true, status: true, deleted_at: true },
+          },
           user: true,
           publisher: {
             include: {
@@ -337,7 +389,14 @@ export const getAuthorsByUser = publicProcedure
       return await prisma.author.findMany({
         where:   { id: ctx.author_id, deleted_at: null },
         include: {
-          books: true,
+          books: {
+            where: { deleted_at: null },
+            select: { id: true, published: true, status: true, deleted_at: true },
+          },
+          primary_books: {
+            where: { deleted_at: null },
+            select: { id: true, published: true, status: true, deleted_at: true },
+          },
           user: true,
           publisher: {
             include: {

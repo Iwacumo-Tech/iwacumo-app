@@ -17,6 +17,7 @@ import { watermarkPdf } from "@/lib/watermark";
 import { put } from "@vercel/blob";
 
 import { sendBookApprovedEmail, sendBookDeniedEmail, sendBookIssueReportEmail } from "@/lib/email";
+import { resolveBookCreationPayoutStatus } from "@/server/module/payment-accounts";
 
 import { checkIsSuperAdmin, resolveUserContext } from "@/lib/is-super-admin";
 import {
@@ -359,6 +360,26 @@ export const createBook = publicProcedure.input(createBookSchema).mutation(async
   });
   if (!authorExists) {
     throw new TRPCError({ code: "NOT_FOUND", message: "The selected author could not be found." });
+  }
+
+  if (session.activeProfile === "publisher" || session.activeProfile === "author") {
+    const payoutGate = await resolveBookCreationPayoutStatus({
+      sessionUserId: session.user.id,
+      activeProfile: session.activeProfile,
+      authorId: primaryAuthorId,
+      publisherId,
+    });
+
+    if (!payoutGate.can_submit_with_selected_author) {
+      const blockingDetails = payoutGate.blocking_entities_for_submit
+        .map((entity) => `${entity.display_name}: ${entity.blocking_reason_labels.join(" ")}`)
+        .join(" ");
+
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `Complete payout setup before adding this book. ${blockingDetails}`.trim(),
+      });
+    }
   }
 
   // After resolving publisherId/authorId, before prisma.$transaction
