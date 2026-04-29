@@ -73,6 +73,23 @@ export type CreatePaymentSessionInput = {
   currency: string;
   callbackUrl: string;
   metadata?: Record<string, unknown>;
+  settlement?: {
+    paystack?: {
+      subaccount?: string;
+      transaction_charge?: number;
+      bearer?: "account" | "subaccount";
+      split?: {
+        type: "flat" | "percentage";
+        bearer_type: "account" | "subaccount" | "all" | "all-proportional";
+        bearer_subaccount?: string;
+        reference?: string;
+        subaccounts: Array<{
+          subaccount: string;
+          share: number;
+        }>;
+      };
+    };
+  };
 };
 
 export type CreatePaymentSessionResult = {
@@ -385,7 +402,8 @@ const paystackAdapter: PaymentGatewayAdapter = {
   displayName: "Paystack",
   implemented: true,
   supportsCurrency: (currency, settings) =>
-    settings.supported_currencies.includes(normalizeCurrencyCode(currency)),
+    normalizeCurrencyCode(currency) === "NGN"
+    && settings.supported_currencies.includes(normalizeCurrencyCode(currency)),
   supportsMethod: (method, settings) =>
     settings.supported_methods.includes(method),
   getCredentialHealth: () => buildCredentialHealth([
@@ -393,6 +411,7 @@ const paystackAdapter: PaymentGatewayAdapter = {
   ]),
   createPaymentSession: async (input) => {
     const amountInMinorUnit = Math.round(input.amount * 100);
+    const paystackSettlement = input.settlement?.paystack;
     const response = await axios.post(
       `${PAYSTACK_BASE_URL}/transaction/initialize`,
       {
@@ -406,6 +425,18 @@ const paystackAdapter: PaymentGatewayAdapter = {
           order_number: input.orderNumber,
           ...(input.metadata ?? {}),
         },
+        ...(paystackSettlement?.subaccount
+          ? { subaccount: paystackSettlement.subaccount }
+          : {}),
+        ...(typeof paystackSettlement?.transaction_charge === "number"
+          ? { transaction_charge: paystackSettlement.transaction_charge }
+          : {}),
+        ...(paystackSettlement?.bearer
+          ? { bearer: paystackSettlement.bearer }
+          : {}),
+        ...(paystackSettlement?.split
+          ? { split: paystackSettlement.split }
+          : {}),
       },
       {
         headers: {

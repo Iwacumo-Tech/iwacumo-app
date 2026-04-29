@@ -1,35 +1,78 @@
-import { put } from "@vercel/blob";
+import { auth } from "@/auth";
+import {
+  handleUpload,
+  type HandleUploadBody,
+} from "@vercel/blob/client";
 import { NextResponse } from "next/server";
+import {
+  type UploadCategory,
+  UPLOAD_ALLOWED_CONTENT_TYPES,
+  UPLOAD_LIMITS,
+  getUploadValidationError,
+} from "@/lib/upload-policy";
 
 export async function POST(request: Request): Promise<NextResponse> {
   try {
-    const { searchParams } = new URL(request.url);
-    const filename = searchParams.get("filename");
+    const body = (await request.json()) as HandleUploadBody;
+    const isTokenRequest = body?.type === "blob.generate-client-token";
 
-    if (!filename) {
-      return NextResponse.json({ error: "Filename is required" }, { status: 400 });
+    if (isTokenRequest) {
+      const session = await auth();
+      if (!session) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
     }
 
-    // Parse the incoming FormData to extract the file
-    const formData = await request.formData();
-    const file = formData.get("file") as File;
+    const jsonResponse = await handleUpload({
+      body,
+      request,
+      onBeforeGenerateToken: async (_pathname, clientPayload) => {
+        if (!clientPayload) {
+          throw new Error("Missing upload metadata.");
+        }
 
-    if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 });
-    }
+        const parsedPayload = JSON.parse(clientPayload) as {
+          category?: UploadCategory;
+          originalFilename?: string;
+          contentType?: string;
+          size?: number;
+        };
 
-    // Upload the file content using @vercel/blob
-    const blob = await put(filename, file.stream(), {
-      access: "public",
+        const category = parsedPayload.category;
+        if (!category || !(category in UPLOAD_LIMITS)) {
+          throw new Error("Invalid upload category.");
+        }
+
+        const validationError = getUploadValidationError(
+          {
+            name: parsedPayload.originalFilename,
+            type: parsedPayload.contentType,
+            size: parsedPayload.size,
+          },
+          category
+        );
+
+        if (validationError) {
+          throw new Error(validationError);
+        }
+
+        return {
+          allowedContentTypes: [...UPLOAD_ALLOWED_CONTENT_TYPES[category]],
+          maximumSizeInBytes: UPLOAD_LIMITS[category],
+          addRandomSuffix: true,
+        };
+      },
+      onUploadCompleted: async () => {
+        return;
+      },
     });
 
-    console.log("Blob uploaded successfully:", blob);
-    return NextResponse.json(blob);
+    return NextResponse.json(jsonResponse);
   } catch (error) {
     console.error("File upload error:", error);
     return NextResponse.json(
-      { error: "Failed to upload file" },
-      { status: 500 }
+      { error: error instanceof Error ? error.message : "Failed to upload file" },
+      { status: 400 }
     );
   }
 }

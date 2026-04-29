@@ -1,6 +1,5 @@
 "use client";
 
-import type { PutBlobResult } from "@vercel/blob";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { Input } from "@/components/ui/input";
@@ -15,6 +14,7 @@ import {
 } from "@/components/ui/form";
 import { useToast } from "@/components/ui/use-toast";
 import { trpc } from "@/app/_providers/trpc-provider";
+import { uploadImage } from "@/lib/server";
 import { Plus, Upload } from "lucide-react";
 
 const HeroSlideForm = () => {
@@ -45,14 +45,8 @@ const HeroSlideForm = () => {
     },
   });
 
-  const handleFileUpload = async (file: File): Promise<PutBlobResult> => {
-    const formData = new FormData();
-    formData.append("file", file);
-    const response = await fetch(`/api/avatar/upload?filename=${file.name}`, {
-      method: "POST", body: formData,
-    });
-    if (!response.ok) throw new Error("Failed to upload the file.");
-    return response.json();
+  const handleFileUpload = async (file: File): Promise<string> => {
+    return uploadImage(file, { category: "image", purpose: "hero-slides" });
   };
 
   const onSubmit = async (values: TheroSlideSchema) => {
@@ -61,9 +55,13 @@ const HeroSlideForm = () => {
       setUploading(true);
       try {
         const result = await handleFileUpload(fileInputRef.current.files[0]);
-        imageUrl = result.url;
-      } catch {
-        toast({ title: "Upload Failed", variant: "destructive", description: "Could not upload image." });
+        imageUrl = result;
+      } catch (error) {
+        toast({
+          title: "Upload Failed",
+          variant: "destructive",
+          description: error instanceof Error ? error.message : "Could not upload image.",
+        });
         setUploading(false);
         return;
       }

@@ -1,5 +1,7 @@
 // revelation/src/lib/server.ts
-import { Permission } from "@prisma/client";
+import type { Permission } from "@prisma/client";
+import { uploadFileToBlob, type UploadProgress } from "@/lib/upload-client";
+import { type UploadCategory } from "@/lib/upload-policy";
 
 export function checkPermission (slug: string | null, permissions: Permission[]) {
   try {
@@ -14,25 +16,22 @@ export function checkPermission (slug: string | null, permissions: Permission[])
 }
 
 /**
- * Augmented uploadImage (now handles images, PDFs, and DOCX)
- * Uses the internal /api/avatar/upload route which leverages Vercel Blob
+ * Upload helper for client-side surfaces that need a blob URL.
+ * Direct browser uploads are used so large files never pass through a Vercel Function body.
  */
-export async function uploadImage (file: File): Promise<string> {
-  const formData = new FormData();
-  formData.append("file", file);
-
-  // Call the existing Vercel Blob API route
-  const response = await fetch(`/api/avatar/upload?filename=${encodeURIComponent(file.name)}`, {
-    method: "POST",
-    body: formData,
+export async function uploadImage (
+  file: File,
+  options?: {
+    category?: UploadCategory;
+    purpose?: string;
+    onUploadProgress?: (progress: UploadProgress) => void;
+  }
+): Promise<string> {
+  const result = await uploadFileToBlob(file, {
+    category: options?.category,
+    purpose: options?.purpose ?? "uploads",
+    onUploadProgress: options?.onUploadProgress,
   });
 
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.error || "Failed to upload file");
-  }
-
-  const data = await response.json();
-  // Vercel Blob returns the public URL in the 'url' property
-  return data.url;
+  return result.url;
 }

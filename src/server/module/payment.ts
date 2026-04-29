@@ -22,11 +22,19 @@ import {
 } from "@/lib/payment-config";
 import { mergeOrderNotes, parseOrderNotes } from "@/lib/order-notes";
 import { finalizeCapturedPayment, finalizeFailedPayment } from "@/lib/payment-ops";
+import {
+  buildPaystackSettlementPlan,
+  resolveOrderPayoutRoutingSnapshot,
+} from "@/lib/payout-routing";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
 function getSavedCheckoutQuote(notes: string | null | undefined) {
   return parseOrderNotes(notes)?.checkout_quote ?? null;
+}
+
+function getSavedPayoutRouting(notes: string | null | undefined) {
+  return parseOrderNotes(notes)?.payout_routing ?? null;
 }
 
 async function getPaymentSettings() {
@@ -69,6 +77,37 @@ export const initializePayment = publicProcedure
       where: { id: order_id },
       include: {
         customer: { include: { user: true } },
+        publisher: {
+          include: {
+            tenant: true,
+            user: {
+              include: {
+                payment_account: true,
+              },
+            },
+          },
+        },
+        line_items: {
+          include: {
+            book_variant: {
+              include: {
+                book: {
+                  include: {
+                    author: {
+                      include: {
+                        user: {
+                          include: {
+                            payment_account: true,
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     });
 
@@ -138,6 +177,48 @@ export const initializePayment = publicProcedure
       });
     }
 
+    const resolvedPayoutRouting = resolveOrderPayoutRoutingSnapshot(
+      getSavedPayoutRouting(order.notes),
+      !!order.publisher?.white_label,
+    );
+
+    let paystackSettlementPlan = null;
+    if (resolvedGateway === PAYMENT_GATEWAYS.PAYSTACK) {
+      if ((order.currency || "").toUpperCase() !== "NGN") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Paystack direct settlement splitting is currently available only when the order base currency is NGN.",
+        });
+      }
+
+      try {
+        paystackSettlementPlan = buildPaystackSettlementPlan({
+          orderNumber: order.order_number,
+          currency: resolvedCurrency,
+          subtotalAmount: order.subtotal_amount,
+          totalAmount: order.total_amount,
+          publisher: order.publisher
+            ? {
+                id: order.publisher.id,
+                display_name: order.publisher.tenant?.name
+                  || `${order.publisher.user?.first_name ?? ""} ${order.publisher.user?.last_name ?? ""}`.trim()
+                  || "Publisher",
+                subaccount_code: order.publisher.user?.payment_account?.paystack_subaccount_code ?? null,
+              }
+            : null,
+          payoutRouting: resolvedPayoutRouting,
+          lineItems: order.line_items,
+        });
+      } catch (error) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: error instanceof Error
+            ? error.message
+            : "The payout settlement split for this order could not be prepared.",
+        });
+      }
+    }
+
     let session;
     try {
       session = await adapter.createPaymentSession({
@@ -150,6 +231,16 @@ export const initializePayment = publicProcedure
         metadata: {
           customer_id: order.customer_id,
         },
+        settlement: paystackSettlementPlan
+          ? {
+              paystack: {
+                subaccount: paystackSettlementPlan.subaccount,
+                transaction_charge: paystackSettlementPlan.transaction_charge,
+                bearer: paystackSettlementPlan.bearer,
+                split: paystackSettlementPlan.split,
+              },
+            }
+          : undefined,
       });
     } catch (error: any) {
       if (axios.isAxiosError(error)) {
@@ -184,33 +275,33 @@ export const initializePayment = publicProcedure
         status: "pending",
         processor_response: {
           checkout_quote: savedQuote,
+          settlement: paystackSettlementPlan,
           session: session.processor_response,
         } as any,
       },
     });
 
-    if (!savedQuote) {
-      await prisma.order.update({
-        where: { id: order.id },
-        data: {
-          notes: mergeOrderNotes(order.notes, {
-            checkout_quote: {
-              base_currency: order.currency,
-              checkout_currency: resolvedCurrency,
-              fx_rate_to_base: getCurrencyRate(resolvedCurrency, currencySettings),
-              base_subtotal_amount: order.subtotal_amount,
-              base_shipping_amount: order.shipping_amount,
-              base_total_amount: order.total_amount,
-              checkout_subtotal_amount: order.subtotal_amount,
-              checkout_shipping_amount: order.shipping_amount,
-              checkout_total_amount: resolvedAmount,
-              payment_gateway: resolvedGateway,
-              payment_method: null,
-            },
-          }),
-        },
-      });
-    }
+    await prisma.order.update({
+      where: { id: order.id },
+      data: {
+        notes: mergeOrderNotes(order.notes, {
+          checkout_quote: savedQuote ?? {
+            base_currency: order.currency,
+            checkout_currency: resolvedCurrency,
+            fx_rate_to_base: getCurrencyRate(resolvedCurrency, currencySettings),
+            base_subtotal_amount: order.subtotal_amount,
+            base_shipping_amount: order.shipping_amount,
+            base_total_amount: order.total_amount,
+            checkout_subtotal_amount: order.subtotal_amount,
+            checkout_shipping_amount: order.shipping_amount,
+            checkout_total_amount: resolvedAmount,
+            payment_gateway: resolvedGateway,
+            payment_method: null,
+          },
+          payment_settlement: paystackSettlementPlan,
+        }),
+      },
+    });
 
     return {
       authorization_url: session.authorization_url,

@@ -180,12 +180,15 @@ function LogoUploadField({
     setUploading(true);
     setUploadError("");
 
-    try {
-      // 2. Upload using the utility
-      const url = await uploadImage(file);
-      onChange(url);
-    } catch (err) {
-      setUploadError("Upload failed. Please try again.");
+      try {
+        // 2. Upload using the utility
+        const url = await uploadImage(file, {
+          category: "image",
+          purpose: "store-logos",
+        });
+        onChange(url);
+      } catch (err) {
+        setUploadError("Upload failed. Please try again.");
       console.error("[logo upload]", err);
     } finally {
       setUploading(false);

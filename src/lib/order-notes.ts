@@ -1,4 +1,7 @@
-import { OrderPayoutRoutingSnapshot } from "@/lib/payout-routing";
+import {
+  OrderPayoutRoutingSnapshot,
+  PaystackSettlementPlan,
+} from "@/lib/payout-routing";
 
 export type OrderCheckoutQuote = {
   base_currency: string;
@@ -24,6 +27,7 @@ export type OrderNotesData = {
   total_weight_grams?: number | null;
   checkout_quote?: OrderCheckoutQuote | null;
   payout_routing?: OrderPayoutRoutingSnapshot | null;
+  payment_settlement?: PaystackSettlementPlan | null;
   notes_text?: string | null;
   cancellation_reason?: string | null;
 };

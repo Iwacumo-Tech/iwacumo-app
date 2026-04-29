@@ -38,6 +38,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { trpc } from "@/app/_providers/trpc-provider";
 import { Publisher } from "@prisma/client";
 import { useState, useRef, useEffect } from "react";
+import { uploadImage } from "@/lib/server";
 
 interface PublisherFormProps {
   publisher?: Publisher;
@@ -52,22 +53,7 @@ export const EditPublisherForm = ({ publisher, action }: PublisherFormProps) => 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileUpload = async (file: File): Promise<string> => {
-    const formData = new FormData();
-    formData.append("file", file);
-
-    const response = await fetch(`/api/avatar/upload?filename=${file.name}`, {
-      method: "POST",
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const error = await response.text();
-      console.error("File upload response error:", error);
-      throw new Error("Failed to upload the file.");
-    }
-
-    const result = await response.json();
-    return result.url;
+    return uploadImage(file, { category: "image", purpose: "publisher-profiles" });
   };
 
   const form = useForm<TupdatePublisherSchema>({
@@ -121,7 +107,7 @@ export const EditPublisherForm = ({ publisher, action }: PublisherFormProps) => 
         toast({
           title: "Error",
           variant: "destructive",
-          description: "Failed to upload the image.",
+          description: error instanceof Error ? error.message : "Failed to upload the image.",
         });
         return; // Stop form submission if image upload fails
       }

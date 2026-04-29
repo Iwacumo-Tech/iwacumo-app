@@ -9,6 +9,7 @@ import Image from "next/image";
 import { trpc } from "@/app/_providers/trpc-provider";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { uploadImage } from "@/lib/server";
 import ProfileUpgradeSection from "./ProfileUpgradeSection";
 
 const ProfileDetails = ({ user, setEditProfile }: any) => {
@@ -48,25 +49,19 @@ const ProfileDetails = ({ user, setEditProfile }: any) => {
 
     try {
       setIsUploading(true);
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const response = await fetch(`/api/avatar/upload?filename=${file.name}`, {
-        method: "POST",
-        body: formData,
+      const uploadedUrl = await uploadImage(file, {
+        category: "image",
+        purpose: "profile-images",
       });
-
-      if (!response.ok) throw new Error("Upload failed");
-      const blob = await response.json();
       
       await updateImage.mutateAsync({
         id: user.id,
-        profilePicture: blob.url,
+        profilePicture: uploadedUrl,
       });
 
     } catch (error) {
       console.error("Upload error:", error);
-      toast.error("Failed to upload image");
+      toast.error(error instanceof Error ? error.message : "Failed to upload image");
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";

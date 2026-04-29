@@ -36,7 +36,7 @@ import { trpc } from "@/app/_providers/trpc-provider";
 import { Book } from "@prisma/client";
 import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
-import axios from "axios";
+import { uploadFileToBlob } from "@/lib/upload-client";
 import Link from "next/link";
 import { Loader2, CheckCircle2, UploadCloud, Edit3, TrendingUp, Info, AlertTriangle, ArrowRight } from "lucide-react";
 import {
@@ -626,25 +626,25 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
   // ── Upload handler ──────────────────────────────────────────────────────────
   const handleInstantUpload = async (file: File, type: string) => {
     setUploads((prev) => ({ ...prev, [type]: { ...prev[type], loading: true, progress: 0 } }));
-    const formData = new FormData();
-    formData.append("file", file);
     try {
-      const { data } = await axios.post(
-        `/api/avatar/upload?filename=${encodeURIComponent(file.name)}`,
-        formData,
-        {
-          onUploadProgress: (p) => {
-            setUploads((prev) => ({
-              ...prev,
-              [type]: { ...prev[type], progress: Math.round((p.loaded * 100) / (p.total || 1)) },
-            }));
-          },
-        }
-      );
-      setUploads((prev) => ({ ...prev, [type]: { ...prev[type], url: data.url, loading: false } }));
-    } catch {
+      const blob = await uploadFileToBlob(file, {
+        category: type === "pdf" || type === "docx" ? "document" : "image",
+        purpose: type === "pdf" || type === "docx" ? "book-files" : "book-assets",
+        onUploadProgress: ({ percentage }) => {
+          setUploads((prev) => ({
+            ...prev,
+            [type]: { ...prev[type], progress: Math.round(percentage) },
+          }));
+        },
+      });
+      setUploads((prev) => ({ ...prev, [type]: { ...prev[type], url: blob.url, loading: false, progress: 100 } }));
+    } catch (error) {
       setUploads((prev) => ({ ...prev, [type]: { ...prev[type], loading: false, progress: 0 } }));
-      toast({ variant: "destructive", title: "Upload Failed", description: "Could not upload asset." });
+      toast({
+        variant: "destructive",
+        title: "Upload Failed",
+        description: error instanceof Error ? error.message : "Could not upload asset.",
+      });
     }
   };
 
@@ -1667,7 +1667,11 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                           }}
                         />
                         {uploads["pdf"]?.loading ? (
-                          <div className="w-full px-4">
+                          <div className="w-full px-4 space-y-2">
+                            <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest">
+                              <span>Uploading PDF...</span>
+                              <span>{Math.max(1, uploads["pdf"].progress)}%</span>
+                            </div>
                             <div className="h-1 bg-gray-200 w-full rounded-full overflow-hidden">
                               <div
                                 className="h-full bg-black transition-all duration-300"
@@ -1771,7 +1775,18 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                         />
                         <div className="text-[10px] font-black uppercase italic text-center px-2">
                           {uploads.pdf?.loading ? (
-                            <Loader2 size={12} className="animate-spin" />
+                            <div className="w-full space-y-2">
+                              <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest">
+                                <span>Uploading PDF...</span>
+                                <span>{Math.max(1, uploads.pdf.progress)}%</span>
+                              </div>
+                              <div className="h-1 bg-gray-200 w-full rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-black transition-all duration-300"
+                                  style={{ width: `${uploads.pdf.progress}%` }}
+                                />
+                              </div>
+                            </div>
                           ) : uploads.pdf?.url ? (
                             <span className="text-green-700 flex items-center gap-1">
                               <CheckCircle2 size={12} /> PDF Uploaded
@@ -1873,7 +1888,18 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                         />
                         <div className="text-[10px] font-black uppercase italic text-center px-2">
                           {uploads.docx?.loading ? (
-                            <Loader2 size={12} className="animate-spin" />
+                            <div className="w-full space-y-2">
+                              <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest">
+                                <span>Uploading DOCX...</span>
+                                <span>{Math.max(1, uploads.docx.progress)}%</span>
+                              </div>
+                              <div className="h-1 bg-gray-200 w-full rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-black transition-all duration-300"
+                                  style={{ width: `${uploads.docx.progress}%` }}
+                                />
+                              </div>
+                            </div>
                           ) : uploads.docx?.url ? (
                             <span className="text-green-700 flex items-center gap-1">
                               <CheckCircle2 size={12} /> DOCX Uploaded
@@ -1940,7 +1966,7 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
               Set Up Payout Before Adding Books
             </DialogTitle>
             <DialogDescription className="text-sm font-medium text-black/70">
-              Publishers and white-label authors need a fully ready payout account before they can create new books.
+              You need a fully ready payout account before you can create new books.
             </DialogDescription>
           </DialogHeader>
 

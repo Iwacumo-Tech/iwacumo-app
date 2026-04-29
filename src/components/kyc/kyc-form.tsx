@@ -15,6 +15,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { uploadImage } from "@/lib/server";
+import { getUploadValidationError, inferUploadCategory } from "@/lib/upload-policy";
 import { Loader2, Upload, CheckCircle2, AlertCircle } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -81,6 +82,7 @@ function FileUploadField({
   fieldName: keyof FormValues; form: any;
 }) {
   const [uploading, setUploading]   = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const value    = form.watch(fieldName) as string | undefined;
@@ -90,20 +92,27 @@ function FileUploadField({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Basic size check — 10MB
-    if (file.size > 10 * 1024 * 1024) {
-      setUploadError("File too large. Max 10MB.");
+    const validationError = getUploadValidationError(file);
+    if (validationError) {
+      setUploadError(validationError);
       return;
     }
 
     setUploading(true);
+    setUploadProgress(0);
     setUploadError("");
 
     try {
-      const url = await uploadImage(file);
+      const url = await uploadImage(file, {
+        category: inferUploadCategory(file) ?? undefined,
+        purpose: "kyc-documents",
+        onUploadProgress: ({ percentage }) => {
+          setUploadProgress(Math.round(percentage));
+        },
+      });
       form.setValue(fieldName, url, { shouldValidate: true });
     } catch (err: any) {
-      setUploadError("Upload failed. Please try again.");
+      setUploadError(err instanceof Error ? err.message : "Upload failed. Please try again.");
       console.error("[kyc upload]", err);
     } finally {
       setUploading(false);
@@ -161,10 +170,21 @@ function FileUploadField({
                 onClick={() => inputRef.current?.click()}
                 className="w-full h-14 gap-2 rounded-none font-black uppercase text-[11px] tracking-widest hover:bg-accent"
               >
-                {uploading ? (
-                  <><Loader2 className="animate-spin size-4" />Uploading...</>
-                ) : (
+                {!uploading ? (
                   <><Upload className="size-4" />Upload File</>
+                ) : (
+                  <div className="w-full space-y-2 px-2">
+                    <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest">
+                      <span>Uploading...</span>
+                      <span>{Math.max(1, uploadProgress)}%</span>
+                    </div>
+                    <div className="h-1 bg-gray-200 w-full rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-black transition-all duration-300"
+                        style={{ width: `${uploadProgress}%` }}
+                      />
+                    </div>
+                  </div>
                 )}
               </Button>
             </div>
@@ -334,7 +354,7 @@ export function KycForm({ publisherId, authorId, mode = "publisher", existingKyc
 
             <FileUploadField
               label="ID Document"
-              hint="Clear photo or scan. JPG, PNG, or PDF. Max 10MB."
+              hint="Clear photo or scan. JPG or PNG up to 10MB, or PDF up to 50MB."
               fieldName="id_document_url"
               form={form}
             />
@@ -370,7 +390,7 @@ export function KycForm({ publisherId, authorId, mode = "publisher", existingKyc
 
             <FileUploadField
               label="Business Registration Certificate"
-              hint="CAC certificate or equivalent. JPG, PNG, or PDF. Max 10MB."
+              hint="CAC certificate or equivalent. JPG or PNG up to 10MB, or PDF up to 50MB."
               fieldName="business_reg_url"
               form={form}
             />
@@ -390,7 +410,7 @@ export function KycForm({ publisherId, authorId, mode = "publisher", existingKyc
 
             <FileUploadField
               label="Proof of Address Document"
-              hint="Utility bill, bank statement, or official letter. JPG, PNG, or PDF. Max 10MB."
+              hint="Utility bill, bank statement, or official letter. JPG or PNG up to 10MB, or PDF up to 50MB."
               fieldName="proof_of_address_url"
               form={form}
             />
