@@ -69,6 +69,25 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 
+const FONT_FAMILY_OPTIONS = ["inter", "playfair", "space-grotesk", "lora"] as const;
+const HERO_LAYOUT_OPTIONS = ["split", "full", "minimal"] as const;
+const ACCENT_STYLE_OPTIONS = ["bold", "outline", "soft"] as const;
+const THEME_PRESET_OPTIONS = ["editorial", "modern", "minimal", "bold"] as const;
+const PAGE_SURFACE_OPTIONS = ["paper", "studio", "contrast"] as const;
+const NAV_STYLE_OPTIONS = ["solid", "framed", "floating"] as const;
+const CARD_STYLE_OPTIONS = ["shadow", "bordered", "soft"] as const;
+const HEADING_STYLE_OPTIONS = ["italic", "serif", "caps"] as const;
+
+function normalizeStoreEnum<T extends string>(
+  value: unknown,
+  allowed: readonly T[],
+  fallback: T,
+): T {
+  return typeof value === "string" && allowed.includes(value as T)
+    ? value as T
+    : fallback;
+}
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function SectionHeader({ icon: Icon, label }: { icon: React.ElementType; label: string }) {
@@ -334,24 +353,24 @@ export default function PublisherStoreSettingsPage() {
       tagline:         (t as any)?.tagline ?? "",
       brand_color:     t?.brand_color     ?? "#FFD700",
       secondary_color: t?.secondary_color ?? "#000000",
-      font_family:     ((t as any)?.font_family as FormValues["font_family"]) || "inter",
+      font_family:     normalizeStoreEnum((t as any)?.font_family, FONT_FAMILY_OPTIONS, "inter"),
       custom_domain:   data.publisher.custom_domain ?? "",
       twitter:         social.twitter   ?? "",
       instagram:       social.instagram ?? "",
       facebook:        social.facebook  ?? "",
       website:         social.website   ?? "",
-      themePreset:     settings.themePreset     ?? "editorial",
-      pageSurface:     settings.pageSurface     ?? "paper",
-      navStyle:        settings.navStyle        ?? "solid",
-      cardStyle:       settings.cardStyle       ?? "shadow",
-      headingStyle:    settings.headingStyle    ?? "italic",
-      heroLayout:      settings.heroLayout      ?? "split",
-      accentStyle:     settings.accentStyle     ?? "bold",
+      themePreset:     normalizeStoreEnum(settings.themePreset, THEME_PRESET_OPTIONS, "editorial"),
+      pageSurface:     normalizeStoreEnum(settings.pageSurface, PAGE_SURFACE_OPTIONS, "paper"),
+      navStyle:        normalizeStoreEnum(settings.navStyle, NAV_STYLE_OPTIONS, "solid"),
+      cardStyle:       normalizeStoreEnum(settings.cardStyle, CARD_STYLE_OPTIONS, "shadow"),
+      headingStyle:    normalizeStoreEnum(settings.headingStyle, HEADING_STYLE_OPTIONS, "italic"),
+      heroLayout:      normalizeStoreEnum(settings.heroLayout, HERO_LAYOUT_OPTIONS, "split"),
+      accentStyle:     normalizeStoreEnum(settings.accentStyle, ACCENT_STYLE_OPTIONS, "bold"),
       showCategories:  settings.showCategories  ?? true,
       showNewArrivals: settings.showNewArrivals ?? true,
       showFeatured:    settings.showFeatured     ?? true,
     });
-  }, [data]);
+  }, [data, form]);
 
   const onSubmit = (values: FormValues) => {
     update.mutate({
@@ -631,7 +650,6 @@ export default function PublisherStoreSettingsPage() {
                       </FormLabel>
                       {/* <pre className="text-[10px] text-red-500">Current Value: "{field.value}"</pre> */}
                       <Select
-                        key={field.value}
                         value={field.value ?? "inter"}
                         onValueChange={field.onChange}
                       >

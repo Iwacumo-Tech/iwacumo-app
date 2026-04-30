@@ -65,9 +65,6 @@ export default async function StorePage({ params, searchParams }: StorePageProps
     ? Array.from(new Map(books.flatMap((book) => book.categories).map((category) => [category.id, category])).values())
     : [];
 
-  const marqueeText = isWhiteLabel && (store as any).tagline
-    ? (store as any).tagline
-    : `Direct from ${store.name ?? "this store"}`;
   const activeCategory = selectedCategorySlug
     ? allCategories.find((category) => category.slug.toLowerCase() === selectedCategorySlug) ?? null
     : null;
@@ -98,22 +95,6 @@ export default async function StorePage({ params, searchParams }: StorePageProps
         themePreset={storeSettings.themePreset}
       />
 
-      <div
-        className="overflow-hidden border-y-[1.5px] py-3"
-        style={{ background: themeTokens.marqueeBg, borderColor: secondaryColor, color: themeTokens.marqueeText }}
-      >
-        <div className="animate-marquee flex items-center justify-center gap-12 whitespace-nowrap">
-          {[...Array(4)].map((_, index) => (
-            <div key={index} className="flex items-center gap-4 text-[9px] font-black uppercase tracking-[0.25em]">
-              <Star size={10} className="fill-current" style={{ color: accentColor }} />
-              {marqueeText}
-              <Star size={10} className="fill-current" style={{ color: accentColor }} />
-              Curated Publishing Storefront
-            </div>
-          ))}
-        </div>
-      </div>
-
       <div className="mx-auto max-w-[1440px] px-6 py-10 md:px-12 md:py-12">
         <div className={themeTokens.contentShellClassName}>
           {(storeBio || isWhiteLabel) && (
@@ -123,7 +104,6 @@ export default async function StorePage({ params, searchParams }: StorePageProps
             >
               <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
                 <div className="max-w-3xl space-y-3">
-                  <p className="text-[10px] font-black uppercase tracking-[0.28em] opacity-50">Publisher Storefront</p>
                   <h1 className={`text-3xl md:text-5xl ${themeTokens.headingTitleClassName}`}>
                     {store.name}
                     <span style={{ color: accentColor }}>.</span>
@@ -131,12 +111,6 @@ export default async function StorePage({ params, searchParams }: StorePageProps
                   <p className={`max-w-2xl text-sm md:text-base ${isBoldPreset ? "text-white/80" : "text-gray-600"}`}>
                     {storeBio || "A curated publishing storefront designed to feel distinct from the main marketplace and shaped around this publisher's own brand."}
                   </p>
-                </div>
-                <div
-                  className={`inline-flex items-center gap-2 self-start border px-4 py-2 text-[10px] font-black uppercase tracking-[0.22em] md:self-auto ${isBoldPreset ? "border-white/20 bg-white/10 text-white" : "border-black/10 bg-white/70 text-black"}`}
-                >
-                  <Sparkles size={12} style={{ color: accentColor }} />
-                  {storeSettings.themePreset} theme
                 </div>
               </div>
             </section>
