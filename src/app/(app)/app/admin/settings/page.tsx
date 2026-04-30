@@ -17,6 +17,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { CheckCircle2, Loader2 } from "lucide-react";
@@ -210,6 +216,14 @@ const PAYMENT_METHOD_OPTIONS = [
   { value: PAYMENT_METHODS.BANK_TRANSFER, label: "Bank Transfer" },
   { value: PAYMENT_METHODS.PAYPAL, label: "PayPal" },
   { value: PAYMENT_METHODS.MOBILE_MONEY, label: "Mobile Money" },
+] as const;
+
+const SETTINGS_TABS = [
+  { value: "commerce", label: "Commerce" },
+  { value: "payments", label: "Payments" },
+  { value: "shipping", label: "Shipping" },
+  { value: "books", label: "Books" },
+  { value: "compliance", label: "Compliance" },
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -459,6 +473,22 @@ export default function SystemSettingsPage() {
       ) : (
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-10">
+            <Tabs defaultValue="commerce" className="space-y-8">
+              <div className="overflow-x-auto">
+                <TabsList className="h-auto min-w-max rounded-none border-4 border-black bg-white p-2">
+                  {SETTINGS_TABS.map((tab) => (
+                    <TabsTrigger
+                      key={tab.value}
+                      value={tab.value}
+                      className="rounded-none border-2 border-transparent px-4 py-3 text-xs font-black uppercase tracking-widest data-[state=active]:border-black data-[state=active]:bg-black data-[state=active]:text-accent"
+                    >
+                      {tab.label}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </div>
+
+              <TabsContent value="payments" forceMount className="space-y-10 data-[state=inactive]:hidden">
 
             {/* ── Platform Fee ─────────────────────────────────────────── */}
             {false && (
@@ -788,6 +818,9 @@ export default function SystemSettingsPage() {
               })}
             </section>
 
+              </TabsContent>
+
+              <TabsContent value="commerce" forceMount className="space-y-10 data-[state=inactive]:hidden">
             <section className="bg-white border-4 border-black gumroad-shadow p-6 space-y-6">
               <h2 className="text-2xl font-black uppercase italic">Platform Fee</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -847,6 +880,9 @@ export default function SystemSettingsPage() {
               </p>
             </section>
 
+              </TabsContent>
+
+              <TabsContent value="books" forceMount className="space-y-10 data-[state=inactive]:hidden">
             {/* ── Printing Costs ───────────────────────────────────────── */}
             <section className="bg-white border-4 border-black gumroad-shadow p-6 space-y-8">
               <h2 className="text-2xl font-black uppercase italic">Printing Costs (₦)</h2>
@@ -878,6 +914,9 @@ export default function SystemSettingsPage() {
               </div>
             </section>
 
+              </TabsContent>
+
+              <TabsContent value="shipping" forceMount className="space-y-10 data-[state=inactive]:hidden">
             {/* ── Shipping Rates (Speedaf) ─────────────────────────────── */}
             <section className="bg-white border-4 border-black gumroad-shadow p-6 space-y-6">
               <h2 className="text-2xl font-black uppercase italic">Shipping Providers</h2>
@@ -979,6 +1018,9 @@ export default function SystemSettingsPage() {
               </div>
             </section>
 
+              </TabsContent>
+
+              <TabsContent value="compliance" forceMount className="space-y-10 data-[state=inactive]:hidden">
             <section className="bg-white border-4 border-black gumroad-shadow p-6 space-y-6">
               <div>
                 <h2 className="text-2xl font-black uppercase italic">Publisher KYC Requirements</h2>
@@ -1086,6 +1128,9 @@ export default function SystemSettingsPage() {
               </div>
             </section>
 
+              </TabsContent>
+
+              <TabsContent value="books" forceMount className="space-y-10 data-[state=inactive]:hidden">
             <section className="bg-white border-4 border-black gumroad-shadow p-6 space-y-6">
               <div>
                 <h2 className="text-2xl font-black uppercase italic">Book Feature Toggles</h2>
@@ -1317,6 +1362,9 @@ export default function SystemSettingsPage() {
                 ))}
               </div>
             </section>
+
+              </TabsContent>
+            </Tabs>
 
             <div className="flex justify-end pt-2">
               <Button

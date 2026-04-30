@@ -212,6 +212,9 @@ export function buildPaystackSettlementPlan(params: {
   currency: string;
   subtotalAmount: number;
   totalAmount: number;
+  shippingAmount: number;
+  taxAmount: number;
+  discountAmount: number;
   publisher: {
     id: string | null;
     display_name: string;
@@ -275,9 +278,11 @@ export function buildPaystackSettlementPlan(params: {
     });
   }
 
-  // Shipping, tax, and discount adjustments live at the order level today,
-  // so they settle to the publisher side without changing stored line-item split math.
-  publisherAmountBase += params.totalAmount - params.subtotalAmount;
+  // Shipping is a platform-held charge. Tax and discount remain aligned to
+  // the current publisher-side settlement policy without changing stored
+  // line-item split math.
+  platformAmountBase += params.shippingAmount || 0;
+  publisherAmountBase += (params.taxAmount || 0) - (params.discountAmount || 0);
 
   const totalAmountMinorUnit = toMinorUnit(params.totalAmount);
   const platformAmountMinorUnit = toMinorUnit(platformAmountBase);

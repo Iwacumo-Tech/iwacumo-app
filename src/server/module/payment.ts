@@ -197,6 +197,9 @@ export const initializePayment = publicProcedure
           currency: resolvedCurrency,
           subtotalAmount: order.subtotal_amount,
           totalAmount: order.total_amount,
+          shippingAmount: order.shipping_amount,
+          taxAmount: order.tax_amount,
+          discountAmount: order.discount_amount,
           publisher: order.publisher
             ? {
                 id: order.publisher.id,
