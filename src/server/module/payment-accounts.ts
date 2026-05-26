@@ -40,6 +40,9 @@ type GateEntityStatus = PaymentAccountReadiness & {
   entity_id: string;
   display_name: string;
   white_label: boolean | null;
+  onboarding_status?: string | null;
+  user_active?: boolean | null;
+  payout_required_for_book_creation?: boolean;
 };
 
 function buildPublisherDisplayName(publisher: {
@@ -71,6 +74,9 @@ function buildGateEntityStatus(params: {
   entity_id: string;
   display_name: string;
   white_label: boolean | null;
+  onboarding_status?: string | null;
+  user_active?: boolean | null;
+  payout_required_for_book_creation?: boolean;
   account: {
     is_verified?: boolean | null;
     paystack_subaccount_code?: string | null;
@@ -84,8 +90,23 @@ function buildGateEntityStatus(params: {
     entity_id: params.entity_id,
     display_name: params.display_name,
     white_label: params.white_label,
+    onboarding_status: params.onboarding_status ?? null,
+    user_active: params.user_active ?? null,
+    payout_required_for_book_creation: params.payout_required_for_book_creation,
     ...readiness,
   };
+}
+
+function authorRequiresPayoutForBookCreation(author: {
+  onboarding_status?: string | null;
+  user?: { active?: boolean | null } | null;
+  publisher?: { white_label?: boolean | null } | null;
+}) {
+  return (
+    !!author.publisher?.white_label
+    && author.onboarding_status === "active"
+    && author.user?.active === true
+  );
 }
 
 export async function resolveBookCreationPayoutStatus(params: {
@@ -202,6 +223,13 @@ export async function resolveBookCreationPayoutStatus(params: {
           user: creator,
         }),
         white_label: creator.author.publisher?.white_label ?? null,
+        onboarding_status: creator.author.onboarding_status,
+        user_active: creator.active,
+        payout_required_for_book_creation: authorRequiresPayoutForBookCreation({
+          onboarding_status: creator.author.onboarding_status,
+          user: creator,
+          publisher: creator.author.publisher,
+        }),
         account: creator.payment_account,
       })
     : null;
@@ -212,6 +240,9 @@ export async function resolveBookCreationPayoutStatus(params: {
         entity_id: selectedAuthor.id,
         display_name: buildAuthorDisplayName(selectedAuthor),
         white_label: selectedAuthor.publisher?.white_label ?? null,
+        onboarding_status: selectedAuthor.onboarding_status,
+        user_active: selectedAuthor.user?.active ?? null,
+        payout_required_for_book_creation: authorRequiresPayoutForBookCreation(selectedAuthor),
         account: selectedAuthor.user?.payment_account,
       })
     : null;
@@ -224,7 +255,7 @@ export async function resolveBookCreationPayoutStatus(params: {
   const openBlockingEntities: GateEntityStatus[] = [];
   const submitBlockingEntities: GateEntityStatus[] = [];
 
-  if (isAuthorProfile && actingAuthorStatus?.white_label) {
+  if (isAuthorProfile && actingAuthorStatus?.payout_required_for_book_creation) {
     if (publisherStatus && !publisherStatus.payout_ready) {
       openBlockingEntities.push(publisherStatus);
       submitBlockingEntities.push(publisherStatus);
@@ -243,7 +274,7 @@ export async function resolveBookCreationPayoutStatus(params: {
   if (
     isPublisherProfile
     && selectedAuthorStatus
-    && selectedAuthorStatus.white_label
+    && selectedAuthorStatus.payout_required_for_book_creation
     && !selectedAuthorStatus.payout_ready
   ) {
     submitBlockingEntities.push(selectedAuthorStatus);

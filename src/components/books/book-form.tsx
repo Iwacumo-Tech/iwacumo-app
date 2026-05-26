@@ -538,15 +538,6 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
     defaultValues: defaultFormValues,
   });
 
-  useEffect(() => {
-    if (!open) return;
-
-    form.reset(defaultFormValues);
-    setUploads(initialUploads);
-    setEbookUploadedType(book?.pdf_url ? "pdf" : book?.text_url ? "docx" : null);
-    setPageCountAutoDetected(false);
-  }, [open, form, defaultFormValues, initialUploads, book]);
-
   const watched = useWatch({ control: form.control });
   const selectedAuthorIdForGate = isAddFlow
     ? ((watched.author_id as string | undefined) || sessionAuthorId || undefined)

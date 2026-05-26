@@ -76,9 +76,11 @@ type SettlementLineItem = {
       author_id?: string | null;
       author?: {
         id: string;
+        onboarding_status?: string | null;
         pen_name?: string | null;
         name?: string | null;
         user?: {
+          active?: boolean | null;
           first_name?: string | null;
           last_name?: string | null;
           payment_account?: {
@@ -109,6 +111,13 @@ function displayAuthorName(author: {
 
 function displayPublisherName(publisherName?: string | null) {
   return publisherName?.trim() || "Publisher";
+}
+
+function authorCanReceiveDirectSettlement(author: {
+  onboarding_status?: string | null;
+  user?: { active?: boolean | null } | null;
+} | null | undefined) {
+  return author?.onboarding_status === "active" && author.user?.active === true;
 }
 
 export function getPayoutBlockingReasonLabel(reason: PayoutBlockingReason) {
@@ -253,6 +262,11 @@ export function buildPaystackSettlementPlan(params: {
     const author = lineItem.book_variant?.book?.author ?? null;
     const authorId = lineItem.book_variant?.book?.author_id ?? author?.id ?? null;
     const authorSubaccountCode = author?.user?.payment_account?.paystack_subaccount_code?.trim() || null;
+
+    if (!authorCanReceiveDirectSettlement(author)) {
+      publisherAmountBase += authorEarnings;
+      continue;
+    }
 
     if (!authorId || !author) {
       throw new Error("A white-label order includes author earnings without a linked author payout profile.");
