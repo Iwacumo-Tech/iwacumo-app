@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 import { trpc } from "@/app/_providers/trpc-provider";
 import { useToast } from "@/components/ui/use-toast";
 import { useCartStore } from "@/store/use-cart-store";
-import { GUEST_CART_KEY, notifyCartUpdate } from "@/lib/cart-utils";
+import { getGuestCartItems, notifyCartUpdate, setGuestCartItems } from "@/lib/cart-utils";
 import { formatDimensionsInches, getBookLanguageLabel, normalizeBookCustomFields } from "@/lib/book-config";
 import { getFriendlyErrorMessage } from "@/lib/error-message";
 
@@ -245,12 +245,7 @@ export default function ProductDetails() {
         utils.getCartsByUser.invalidate();
       } else {
         // Guest cart
-        let cartItems: any[] = [];
-        try {
-          const stored = localStorage.getItem(GUEST_CART_KEY);
-          cartItems = stored ? JSON.parse(stored) : [];
-          if (!Array.isArray(cartItems)) cartItems = [];
-        } catch { cartItems = []; }
+        const cartItems: any[] = getGuestCartItems<any>();
 
         cartItems.push({
           id:         `${Date.now()}-${Math.random()}`,
@@ -262,7 +257,7 @@ export default function ProductDetails() {
           total:      totalPrice,
         });
 
-        localStorage.setItem(GUEST_CART_KEY, JSON.stringify(cartItems));
+        setGuestCartItems(cartItems);
         notifyCartUpdate();
       }
 

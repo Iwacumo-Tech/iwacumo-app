@@ -20,7 +20,11 @@ import { cn } from "@/lib/utils";
 import DeliveryForm from "@/components/checkout/delivery-form";
 import GuestRegistrationForm from "@/components/checkout/guest-registration-form";
 import { TDeliveryAddressSchema, TCreateCustomerSchema } from "@/server/dtos";
-import { GUEST_CART_KEY } from "@/lib/cart-utils";
+import {
+  clearGuestCartItems,
+  getGuestCartItems,
+  setGuestCartItems,
+} from "@/lib/cart-utils";
 import {
   calcShippingCostForProvider,
   DEFAULT_FEZ_SHIPPING_RATES,
@@ -104,14 +108,7 @@ export default function CartPage() {
     if (isAuthenticated && userCartItems) {
       setCartItems(userCartItems.map(item => ({ ...item, quantity: item.quantity ?? undefined })));
     } else if (!isAuthenticated) {
-      const stored = localStorage.getItem(GUEST_CART_KEY);
-      if (stored) {
-        try {
-          setCartItems(JSON.parse(stored));
-        } catch {
-          localStorage.removeItem(GUEST_CART_KEY);
-        }
-      }
+      setCartItems(getGuestCartItems<CartItem>());
     }
   }, [isAuthenticated, userCartItems]);
 
@@ -122,8 +119,7 @@ export default function CartPage() {
   useEffect(() => {
     const sync = () => {
       if (!isAuthenticated) {
-        const stored = localStorage.getItem(GUEST_CART_KEY);
-        setCartItems(stored ? JSON.parse(stored) : []);
+        setCartItems(getGuestCartItems<CartItem>());
       }
     };
 
@@ -304,7 +300,7 @@ export default function CartPage() {
       }
 
       if (order.payment_status === "captured" || order.total_amount <= 0) {
-        localStorage.removeItem(GUEST_CART_KEY);
+        clearGuestCartItems();
         utils.getCartsByUser.invalidate();
         toast({ title: "Book added to your library", description: "Your free order is complete." });
         router.push(`/orders/${order.id}`);
@@ -335,7 +331,7 @@ export default function CartPage() {
       const result = await signIn("credentials", { username, password: registrationPassword, redirect: false });
       if (result?.ok) {
         setRegistrationPassword("");
-        localStorage.removeItem(GUEST_CART_KEY);
+        clearGuestCartItems();
         if (update) await update();
         setShowRegistrationDialog(false);
         toast({ title: "Welcome to Iwacumo!", description: "Account created. Finalizing your order…" });
@@ -354,7 +350,7 @@ export default function CartPage() {
       } else {
         const updated = cartItems.filter(item => item.id !== id);
         setCartItems(updated);
-        localStorage.setItem(GUEST_CART_KEY, JSON.stringify(updated));
+        setGuestCartItems(updated);
         window.dispatchEvent(new Event("cart-updated"));
       }
     }
@@ -370,7 +366,7 @@ export default function CartPage() {
     });
     setCartItems(updated);
     if (!isAuthenticated) {
-      localStorage.setItem(GUEST_CART_KEY, JSON.stringify(updated));
+      setGuestCartItems(updated);
       window.dispatchEvent(new Event("cart-updated"));
     }
   };

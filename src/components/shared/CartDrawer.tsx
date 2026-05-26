@@ -11,7 +11,11 @@ import Link from "next/link";
 import Image from "next/image";
 import { useToast } from "@/components/ui/use-toast";
 import { cn } from "@/lib/utils";
-import { GUEST_CART_KEY, notifyCartUpdate } from "@/lib/cart-utils";
+import {
+  getGuestCartItems,
+  notifyCartUpdate,
+  setGuestCartItems,
+} from "@/lib/cart-utils";
 
 // ─── Format helpers (module level) ───────────────────────────────────────────
 
@@ -171,12 +175,7 @@ export default function CartDrawer() {
 
   // ── Guest cart observer ───────────────────────────────────────
   const loadGuestCart = useCallback(() => {
-    try {
-      const stored = localStorage.getItem(GUEST_CART_KEY);
-      setGuestItems(stored ? JSON.parse(stored) : []);
-    } catch {
-      setGuestItems([]);
-    }
+    setGuestItems(getGuestCartItems());
   }, []);
 
   useEffect(() => {
@@ -201,7 +200,7 @@ export default function CartDrawer() {
       deleteMutation.mutate({ id });
     } else {
       const filtered = guestItems.filter(i => i.id !== id);
-      localStorage.setItem(GUEST_CART_KEY, JSON.stringify(filtered));
+      setGuestCartItems(filtered);
       notifyCartUpdate();
       toast({ title: "Removed", description: "Item removed from bag." });
     }
@@ -226,7 +225,7 @@ export default function CartDrawer() {
       const updated = guestItems.map(i =>
         i.id === id ? { ...i, quantity: newQty, total: i.price * newQty } : i
       );
-      localStorage.setItem(GUEST_CART_KEY, JSON.stringify(updated));
+      setGuestCartItems(updated);
       notifyCartUpdate();
     }
   };
