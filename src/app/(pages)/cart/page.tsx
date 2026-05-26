@@ -303,10 +303,9 @@ export default function CartPage() {
         return;
       }
 
-      localStorage.removeItem(GUEST_CART_KEY);
-      utils.getCartsByUser.invalidate();
-
       if (order.payment_status === "captured" || order.total_amount <= 0) {
+        localStorage.removeItem(GUEST_CART_KEY);
+        utils.getCartsByUser.invalidate();
         toast({ title: "Book added to your library", description: "Your free order is complete." });
         router.push(`/orders/${order.id}`);
         return;

@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { parseOrderNotes } from "@/lib/order-notes";
 import { sendOrderConfirmationEmail } from "@/lib/email";
@@ -71,6 +72,25 @@ async function sendCapturedOrderEmail(orderId: string) {
     deliveryState,
     shippingZone,
     currency: checkoutQuote?.checkout_currency ?? order.currency,
+  });
+}
+
+async function clearSnapshottedCartItems(
+  tx: Prisma.TransactionClient,
+  orderNotes: string | null | undefined,
+  userId: string,
+) {
+  const cartItemIds = parseOrderNotes(orderNotes)?.cart_snapshot?.cart_item_ids ?? [];
+
+  if (!cartItemIds.length) return;
+
+  await tx.cart.updateMany({
+    where: {
+      id: { in: cartItemIds },
+      userId,
+      deleted_at: null,
+    },
+    data: { deleted_at: new Date() },
   });
 }
 
@@ -188,6 +208,8 @@ export async function finalizeCapturedPayment(input: FinalizeCapturedPaymentInpu
         customer_id: customer.id,
       },
     });
+
+    await clearSnapshottedCartItems(tx, order.notes, userId);
 
     return { success: true, orderId: order.id, customerId: customer.id };
   });

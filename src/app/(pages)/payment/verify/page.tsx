@@ -12,6 +12,7 @@ import { useToast } from "@/components/ui/use-toast";
 function PaymentVerifyContent() {
   const router = useRouter();
   const { toast } = useToast();
+  const utils = trpc.useUtils();
   const searchParams = useSearchParams();
   const verificationStarted = useRef(false);
 
@@ -22,6 +23,7 @@ function PaymentVerifyContent() {
   const { mutate: verify } = trpc.verifyPayment.useMutation({
     onSuccess: (data) => {
       if (data.success) {
+        utils.getCartsByUser.invalidate();
         // Redirect to the new Success Page on successful verification
         router.replace(`/payment/success/${(data as any).orderId}`);
       } else {

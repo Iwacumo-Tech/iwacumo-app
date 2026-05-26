@@ -112,7 +112,7 @@ export const initializePayment = publicProcedure
     });
 
     if (!order) throw new Error("Order not found");
-    if (order.payment_status !== "pending") {
+    if (!["pending", "failed"].includes(order.payment_status)) {
       throw new Error(`Order payment status is ${order.payment_status}, cannot initialize payment`);
     }
 

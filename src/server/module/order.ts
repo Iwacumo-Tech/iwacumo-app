@@ -72,6 +72,23 @@ const mapBookTypeToFormat = (bookType: string): string => {
 const isPhysicalFormat = (format: string) =>
   format === "paperback" || format === "hardcover";
 
+const getNormalizedCartItemIds = (cartItemIds: Array<string | null | undefined>) =>
+  Array.from(new Set(cartItemIds.filter((id): id is string => !!id))).sort();
+
+const cartSnapshotsMatch = (
+  left: Array<string | null | undefined>,
+  right: Array<string | null | undefined>,
+) => {
+  const normalizedLeft = getNormalizedCartItemIds(left);
+  const normalizedRight = getNormalizedCartItemIds(right);
+
+  return (
+    normalizedLeft.length > 0
+    && normalizedLeft.length === normalizedRight.length
+    && normalizedLeft.every((id, index) => id === normalizedRight[index])
+  );
+};
+
 // ─── createOrderFromCart ──────────────────────────────────────────────────────
 
 export const createOrderFromCart = publicProcedure
@@ -94,6 +111,7 @@ export const createOrderFromCart = publicProcedure
     });
     if (cartItems.length === 0)
       throw new TRPCError({ code: "BAD_REQUEST", message: "Cart is empty" });
+    const currentCartItemIds = getNormalizedCartItemIds(cartItems.map((item) => item.id));
 
     const firstBook = await prisma.book.findFirst({
       where: { title: cartItems[0]?.book_title, deleted_at: null },
@@ -108,6 +126,58 @@ export const createOrderFromCart = publicProcedure
           name: `${user.first_name} ${user.last_name || ""}`.trim() || user.email,
         },
       });
+    }
+
+    if (customer?.id && targetPublisherId && currentCartItemIds.length > 0) {
+      const unresolvedOrders = await prisma.order.findMany({
+        where: {
+          customer_id: customer.id,
+          publisher_id: targetPublisherId,
+          payment_status: { in: ["pending", "failed"] },
+          status: { notIn: ["cancelled", "refunded"] },
+        },
+        select: { id: true, notes: true },
+        orderBy: { created_at: "desc" },
+        take: 10,
+      });
+
+      const matchingOrder = unresolvedOrders.find((order) =>
+        cartSnapshotsMatch(
+          parseOrderNotes(order.notes)?.cart_snapshot?.cart_item_ids ?? [],
+          currentCartItemIds,
+        )
+      );
+
+      if (matchingOrder) {
+        const existingOrder = await prisma.order.findUnique({
+          where: { id: matchingOrder.id },
+          include: {
+            line_items: { include: { book_variant: { include: { book: true } } } },
+            customer: { include: { user: true } },
+            publisher: true,
+          },
+        });
+
+        if (existingOrder) {
+          const parsedExistingOrderNotes = parseOrderNotes(existingOrder.notes);
+
+          return {
+            ...existingOrder,
+            delivery_address: parsedExistingOrderNotes?.delivery_address ?? null,
+            shipping_provider: parsedExistingOrderNotes?.shipping_provider ?? null,
+            shipping_zone: parsedExistingOrderNotes?.shipping_zone ?? null,
+            shipping_group: parsedExistingOrderNotes?.shipping_group ?? null,
+            payout_routing: parsedExistingOrderNotes?.payout_routing ?? null,
+            checkout_currency: parsedExistingOrderNotes?.checkout_quote?.checkout_currency ?? null,
+            fx_rate_to_base: parsedExistingOrderNotes?.checkout_quote?.fx_rate_to_base ?? null,
+            checkout_subtotal_amount: parsedExistingOrderNotes?.checkout_quote?.checkout_subtotal_amount ?? null,
+            checkout_shipping_amount: parsedExistingOrderNotes?.checkout_quote?.checkout_shipping_amount ?? null,
+            checkout_total_amount: parsedExistingOrderNotes?.checkout_quote?.checkout_total_amount ?? null,
+            payment_gateway: parsedExistingOrderNotes?.checkout_quote?.payment_gateway ?? null,
+            payment_method: parsedExistingOrderNotes?.checkout_quote?.payment_method ?? null,
+          };
+        }
+      }
     }
 
     const settingsRaw = await prisma.systemSettings.findMany();
@@ -342,25 +412,37 @@ export const createOrderFromCart = publicProcedure
         delivery_address: requires_delivery ? (delivery_address ?? null) : null,
         delivery_required: requires_delivery,
         requires_physical_delivery: requires_delivery,
-      shipping_provider: requires_delivery ? (resolvedShippingProvider ?? null) : null,
+        shipping_provider: requires_delivery ? (resolvedShippingProvider ?? null) : null,
         shipping_zone: requires_delivery && resolvedShippingProvider === SHIPPING_PROVIDERS.SPEEDAF ? shippingLabel : null,
         shipping_group: requires_delivery && resolvedShippingProvider === SHIPPING_PROVIDERS.FEZ ? shippingLabel : null,
         total_weight_grams: requires_delivery ? totalWeightGrams : 0,
+        cart_snapshot: {
+          cart_item_ids: currentCartItemIds,
+          publisher_id: targetPublisherId,
+          items: cartItems.map((item) => ({
+            cart_item_id: item.id,
+            book_title: item.book_title,
+            book_type: item.book_type,
+            quantity: item.quantity ?? 1,
+            price: item.price,
+            total: item.total,
+          })),
+        },
         payout_routing: payoutRouting,
         checkout_quote: {
-        base_currency: baseCurrency,
-        checkout_currency: resolvedCheckoutCurrency,
-        fx_rate_to_base: resolvedCheckoutCurrency === baseCurrency ? 1 : fxRateToBase,
-        base_subtotal_amount: subtotal,
-        base_shipping_amount: verifiedShippingAmount,
-        base_total_amount: totalAmount,
-        checkout_subtotal_amount: checkoutSubtotalAmount,
-        checkout_shipping_amount: checkoutShippingAmount,
-        checkout_total_amount: checkoutTotalAmount,
-        payment_gateway: resolvedPaymentGateway,
-        payment_method: null,
-      },
-    });
+          base_currency: baseCurrency,
+          checkout_currency: resolvedCheckoutCurrency,
+          fx_rate_to_base: resolvedCheckoutCurrency === baseCurrency ? 1 : fxRateToBase,
+          base_subtotal_amount: subtotal,
+          base_shipping_amount: verifiedShippingAmount,
+          base_total_amount: totalAmount,
+          checkout_subtotal_amount: checkoutSubtotalAmount,
+          checkout_shipping_amount: checkoutShippingAmount,
+          checkout_total_amount: checkoutTotalAmount,
+          payment_gateway: resolvedPaymentGateway,
+          payment_method: null,
+        },
+      });
 
     const order = await prisma.$transaction(async (tx) => {
       const newOrder = await tx.order.create({
@@ -409,10 +491,16 @@ export const createOrderFromCart = publicProcedure
           },
         });
       }
-      await tx.cart.updateMany({
-        where: { userId: user_id, deleted_at: null },
-        data:  { deleted_at: new Date() },
-      });
+      if (isFreeOrder && currentCartItemIds.length > 0) {
+        await tx.cart.updateMany({
+          where: {
+            id: { in: currentCartItemIds },
+            userId: user_id,
+            deleted_at: null,
+          },
+          data: { deleted_at: new Date() },
+        });
+      }
       return newOrder;
     });
 

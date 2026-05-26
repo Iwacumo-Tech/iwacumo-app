@@ -17,6 +17,19 @@ export type OrderCheckoutQuote = {
   payment_method: string | null;
 };
 
+export type OrderCartSnapshot = {
+  cart_item_ids: string[];
+  publisher_id?: string | null;
+  items: Array<{
+    cart_item_id: string;
+    book_title: string;
+    book_type: string;
+    quantity: number;
+    price: number;
+    total: number;
+  }>;
+};
+
 export type OrderNotesData = {
   delivery_address?: Record<string, any> | null;
   delivery_required?: boolean;
@@ -26,6 +39,7 @@ export type OrderNotesData = {
   shipping_group?: string | null;
   total_weight_grams?: number | null;
   checkout_quote?: OrderCheckoutQuote | null;
+  cart_snapshot?: OrderCartSnapshot | null;
   payout_routing?: OrderPayoutRoutingSnapshot | null;
   payment_settlement?: PaystackSettlementPlan | null;
   notes_text?: string | null;

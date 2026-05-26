@@ -38,6 +38,7 @@ export default function OrderDetailsPage() {
       if (data.success) {
         toast({ title: "Payment Successful", description: "Your order is now confirmed." });
         utils.getOrderById.invalidate({ id: orderId });
+        utils.getCartsByUser.invalidate();
       }
     }
   });

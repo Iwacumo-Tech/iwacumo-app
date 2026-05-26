@@ -1,12 +1,20 @@
 "use client";
 
+import { useEffect } from "react";
 import { trpc } from "@/app/_providers/trpc-provider";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { CheckCircle2, BookOpen, Package, ArrowRight, Loader2 } from "lucide-react";
 
 export default function PaymentSuccessPage({ params }: { params: { orderId: string } }) {
+  const utils = trpc.useUtils();
   const { data: order, isLoading } = trpc.getOrderById.useQuery({ id: params.orderId });
+
+  useEffect(() => {
+    if (order?.payment_status === "captured") {
+      utils.getCartsByUser.invalidate();
+    }
+  }, [order?.payment_status, utils]);
 
   if (isLoading) {
     return (
