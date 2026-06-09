@@ -91,6 +91,17 @@ function getGuestCheckoutLoginErrorMessage(error?: string | null) {
   return "Unable to sign in with those credentials right now.";
 }
 
+async function waitForAuthenticatedSession() {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const nextSession = await getSession();
+    const nextUserId = (nextSession as any)?.user?.id as string | undefined;
+    if (nextUserId) return nextSession;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  return null;
+}
+
 export default function CartPage() {
   const { data: session, status, update } = useSession();
   const { toast } = useToast();
@@ -115,6 +126,7 @@ export default function CartPage() {
   const [showRegistrationDialog, setShowRegistrationDialog] = useState(false);
   const [guestCheckoutAuthMode, setGuestCheckoutAuthMode] = useState<GuestCheckoutAuthMode>("register");
   const [guestLoginError, setGuestLoginError] = useState("");
+  const [isGuestLoginPending, setIsGuestLoginPending] = useState(false);
   const [requiresDelivery, setRequiresDelivery] = useState(false);
   const [registrationPassword, setRegistrationPassword] = useState("");
   const [selectedState, setSelectedState] = useState<string>("");
@@ -471,27 +483,31 @@ export default function CartPage() {
 
   const handleExistingAccountLogin = async (data: GuestCheckoutLoginValues) => {
     setGuestLoginError("");
-
-    const signInResult = await signIn("credentials", {
-      username: data.username,
-      password: data.password,
-      redirect: false,
-    });
-
-    if (!signInResult?.ok) {
-      setGuestLoginError(getGuestCheckoutLoginErrorMessage(signInResult?.error));
-      return;
-    }
-
-    const authenticatedSession = await getSession();
-    const authenticatedUserId = (authenticatedSession as any)?.user?.id as string | undefined;
-
-    if (!authenticatedUserId) {
-      setGuestLoginError("Your account signed in, but we could not finish restoring your bag. Please try again.");
-      return;
-    }
+    setIsGuestLoginPending(true);
 
     try {
+      const signInResult = await signIn("credentials", {
+        username: data.username,
+        password: data.password,
+        redirect: false,
+      });
+
+      if (!signInResult?.ok) {
+        setGuestLoginError(getGuestCheckoutLoginErrorMessage(signInResult?.error));
+        return;
+      }
+
+      const updatedSession = update ? await update() : null;
+      const authenticatedSession =
+        ((updatedSession as any)?.user?.id ? updatedSession : null) ??
+        await waitForAuthenticatedSession();
+      const authenticatedUserId = (authenticatedSession as any)?.user?.id as string | undefined;
+
+      if (!authenticatedUserId) {
+        setGuestLoginError("Your account signed in, but we could not finish restoring your bag. Please try again.");
+        return;
+      }
+
       await transferGuestCartMutation.mutateAsync({
         cart_items: cartItems.map((item) => ({
           book_image: item.book_image,
@@ -515,6 +531,8 @@ export default function CartPage() {
       }, 500);
     } catch {
       // Mutation error state is already surfaced above.
+    } finally {
+      setIsGuestLoginPending(false);
     }
   };
 
@@ -858,7 +876,7 @@ export default function CartPage() {
                   )}
                   <GuestLoginForm
                     onSubmit={handleExistingAccountLogin}
-                    isLoading={transferGuestCartMutation.isPending}
+                    isLoading={isGuestLoginPending || transferGuestCartMutation.isPending}
                   />
                 </div>
               )}
@@ -874,14 +892,14 @@ export default function CartPage() {
               <Button
                 type="submit"
                 form={guestCheckoutAuthMode === "register" ? "guest-registration-form" : "guest-login-form"}
-                disabled={registerGuestMutation.isPending || transferGuestCartMutation.isPending}
+                disabled={registerGuestMutation.isPending || isGuestLoginPending || transferGuestCartMutation.isPending}
                 className="booka-button-primary relative h-12 px-8 text-xs text-transparent"
               >
                 {registerGuestMutation.isPending ? "Creating…" : "Create Account & Continue"}
-                <span className="absolute inset-0 flex items-center justify-center text-xs">
+                <span className="absolute inset-0 flex items-center justify-center text-xs text-black">
                   {guestCheckoutAuthMode === "register"
                     ? (registerGuestMutation.isPending ? "Creating..." : "Create Account & Continue")
-                    : (transferGuestCartMutation.isPending ? "Signing In..." : "Sign In & Continue")}
+                    : ((isGuestLoginPending || transferGuestCartMutation.isPending) ? "Signing In..." : "Sign In & Continue")}
                 </span>
               </Button>
             </div>
