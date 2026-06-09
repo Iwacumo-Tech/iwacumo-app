@@ -505,7 +505,7 @@ export const deliveryAddressSchema = z.object({
   address_line2: z.string().optional(),
   city: z.string().min(1, "City is required"),
   state: z.string().min(1, "State is required"),
-  postal_code: z.string().min(1, "Postal code is required"),
+  postal_code: z.string().optional(),
   country: z.string().min(1, "Country is required").default("Nigeria"),
   delivery_instructions: z.string().optional(),
 });

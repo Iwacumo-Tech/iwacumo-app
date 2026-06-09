@@ -251,7 +251,7 @@ export default function DeliveryForm({
             render={({ field }) => (
               <FormItem>
                 <FormLabel className="text-[10px] font-black uppercase tracking-widest">
-                  Postal Code *
+                  Postal Code
                 </FormLabel>
                 <FormControl>
                   <Input

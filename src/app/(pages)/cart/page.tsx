@@ -13,12 +13,13 @@ import {
   DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
-import { useSession, signIn } from "next-auth/react";
+import { useSession, signIn, getSession } from "next-auth/react";
 import { trpc } from "@/app/_providers/trpc-provider";
 import { useToast } from "@/components/ui/use-toast";
 import { cn } from "@/lib/utils";
 import DeliveryForm from "@/components/checkout/delivery-form";
 import GuestRegistrationForm from "@/components/checkout/guest-registration-form";
+import GuestLoginForm, { GuestCheckoutLoginValues } from "@/components/checkout/guest-login-form";
 import { TDeliveryAddressSchema, TCreateCustomerSchema } from "@/server/dtos";
 import {
   clearGuestCartItems,
@@ -48,6 +49,7 @@ import {
   normalizePaymentGatewaySettings,
   PaymentGateway,
 } from "@/lib/payment-config";
+import { formatPublicCurrencyPrice } from "@/lib/public-price";
 
 type CartItem = {
   id: string;
@@ -58,6 +60,8 @@ type CartItem = {
   quantity?: number | null;
   total?: number;
 };
+
+type GuestCheckoutAuthMode = "register" | "login";
 
 const SHIPPING_PROVIDER_LABELS: Record<ShippingProvider, string> = {
   speedaf: "Speedaf",
@@ -73,6 +77,18 @@ function isPhysical(bookType: string) {
 
 function isEbook(bookType: string) {
   return bookType.toLowerCase().includes("ebook");
+}
+
+function getGuestCheckoutLoginErrorMessage(error?: string | null) {
+  if (!error) return "Unable to sign in right now. Please try again.";
+  if (error === "EMAIL_NOT_VERIFIED") return "Please verify your email before signing in.";
+  if (error === "AUTHOR_NOT_PERMITTED") {
+    return "This account cannot use dashboard sign-in access. Please use a customer account to continue checkout.";
+  }
+  if (error === "CredentialsSignin") {
+    return "Invalid credentials. Please check your email/username and password.";
+  }
+  return "Unable to sign in with those credentials right now.";
 }
 
 export default function CartPage() {
@@ -97,6 +113,8 @@ export default function CartPage() {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [showCheckoutDialog, setShowCheckoutDialog] = useState(false);
   const [showRegistrationDialog, setShowRegistrationDialog] = useState(false);
+  const [guestCheckoutAuthMode, setGuestCheckoutAuthMode] = useState<GuestCheckoutAuthMode>("register");
+  const [guestLoginError, setGuestLoginError] = useState("");
   const [requiresDelivery, setRequiresDelivery] = useState(false);
   const [registrationPassword, setRegistrationPassword] = useState("");
   const [selectedState, setSelectedState] = useState<string>("");
@@ -325,6 +343,12 @@ export default function CartPage() {
     },
   });
 
+  const transferGuestCartMutation = trpc.transferGuestCartToUser.useMutation({
+    onError: (err) => {
+      setGuestLoginError(err.message);
+    },
+  });
+
   const registerGuestMutation = trpc.registerGuestAndTransferCart.useMutation({
     onSuccess: async (data) => {
       const username = data.user.username || data.user.email;
@@ -337,11 +361,19 @@ export default function CartPage() {
         toast({ title: "Welcome to Iwacumo!", description: "Account created. Finalizing your order…" });
         setTimeout(() => {
           if (requiresDelivery) setShowCheckoutDialog(true);
-          else proceedWithCheckout();
+          else proceedWithCheckout(undefined, data.user.id);
         }, 800);
       }
     },
   });
+
+  const handleGuestDialogOpenChange = (open: boolean) => {
+    setShowRegistrationDialog(open);
+    if (!open) {
+      setGuestCheckoutAuthMode("register");
+      setGuestLoginError("");
+    }
+  };
 
   const handleDeleteItem = (id: string) => {
     if (confirm("Remove this masterpiece from your bag?")) {
@@ -384,7 +416,12 @@ export default function CartPage() {
 
   const handleCheckout = () => {
     if (!cartItems.length) return;
-    if (!isAuthenticated) return setShowRegistrationDialog(true);
+    if (!isAuthenticated) {
+      setGuestCheckoutAuthMode("register");
+      setGuestLoginError("");
+      setShowRegistrationDialog(true);
+      return;
+    }
 
     if (!hasValidCheckoutRate) {
       toast({
@@ -432,6 +469,55 @@ export default function CartPage() {
     });
   };
 
+  const handleExistingAccountLogin = async (data: GuestCheckoutLoginValues) => {
+    setGuestLoginError("");
+
+    const signInResult = await signIn("credentials", {
+      username: data.username,
+      password: data.password,
+      redirect: false,
+    });
+
+    if (!signInResult?.ok) {
+      setGuestLoginError(getGuestCheckoutLoginErrorMessage(signInResult?.error));
+      return;
+    }
+
+    const authenticatedSession = await getSession();
+    const authenticatedUserId = (authenticatedSession as any)?.user?.id as string | undefined;
+
+    if (!authenticatedUserId) {
+      setGuestLoginError("Your account signed in, but we could not finish restoring your bag. Please try again.");
+      return;
+    }
+
+    try {
+      await transferGuestCartMutation.mutateAsync({
+        cart_items: cartItems.map((item) => ({
+          book_image: item.book_image,
+          book_title: item.book_title,
+          book_type: item.book_type,
+          price: item.price,
+          quantity: item.quantity ?? 1,
+          total: (item.quantity ?? 1) * item.price,
+        })),
+      });
+
+      clearGuestCartItems();
+      if (update) await update();
+      await utils.getCartsByUser.invalidate();
+      setShowRegistrationDialog(false);
+      toast({ title: "Welcome back!", description: "Your bag is ready. Continuing checkoutâ€¦" });
+
+      setTimeout(() => {
+        if (requiresDelivery) setShowCheckoutDialog(true);
+        else proceedWithCheckout(undefined, authenticatedUserId);
+      }, 500);
+    } catch {
+      // Mutation error state is already surfaced above.
+    }
+  };
+
   const handleDeliverySubmit = (data: TDeliveryAddressSchema) => {
     if (data.state) setSelectedState(data.state);
     if (!selectedShippingProvider) {
@@ -446,8 +532,9 @@ export default function CartPage() {
     proceedWithCheckout(data);
   };
 
-  const proceedWithCheckout = (deliveryData?: TDeliveryAddressSchema) => {
-    if (!isAuthenticated || !userId) return;
+  const proceedWithCheckout = (deliveryData?: TDeliveryAddressSchema, authenticatedUserId?: string) => {
+    const effectiveUserId = authenticatedUserId || userId;
+    if (!effectiveUserId) return;
     if (!isFreeCheckout && !selectedPaymentOption) return;
 
     const stateForShipping = deliveryData?.state || selectedState;
@@ -457,7 +544,7 @@ export default function CartPage() {
     const finalShipping = shippingQuote?.amount ?? 0;
 
     createOrderMutation.mutate({
-      user_id: userId,
+      user_id: effectiveUserId,
       tax_amount: 0,
       shipping_amount: finalShipping,
       discount_amount: 0,
@@ -557,7 +644,7 @@ export default function CartPage() {
                 </div>
                 <div className="text-right min-w-[120px]">
                   <p className="text-xl font-black italic">
-                    {formatMoney(item.price * (item.quantity ?? 1), currencySettings.base_currency)}
+                    {formatPublicCurrencyPrice(item.price * (item.quantity ?? 1), currencySettings.base_currency)}
                   </p>
                   <button
                     onClick={() => handleDeleteItem(item.id)}
@@ -640,7 +727,7 @@ export default function CartPage() {
               <div className="space-y-3">
                 <div className="flex justify-between font-bold uppercase text-xs opacity-50">
                   <span>Subtotal</span>
-                  <span>{formatMoney(checkoutSubtotal, selectedCheckoutCurrency || currencySettings.default_checkout_currency)}</span>
+                  <span>{formatPublicCurrencyPrice(checkoutSubtotal, selectedCheckoutCurrency || currencySettings.default_checkout_currency)}</span>
                 </div>
 
                 <div className="flex justify-between font-bold uppercase text-xs">
@@ -661,7 +748,7 @@ export default function CartPage() {
                     )}
                     {requiresDelivery && selectedState && !enabledShippingProviders.length && "No courier available"}
                     {requiresDelivery && selectedState && enabledShippingProviders.length > 0 && !selectedShippingProvider && "Choose courier"}
-                    {requiresDelivery && selectedState && selectedShippingProvider && `${SHIPPING_PROVIDER_LABELS[selectedShippingProvider]} · ${formatMoney(checkoutShipping, selectedCheckoutCurrency || currencySettings.default_checkout_currency)}`}
+                    {requiresDelivery && selectedState && selectedShippingProvider && `${SHIPPING_PROVIDER_LABELS[selectedShippingProvider]} · ${formatPublicCurrencyPrice(checkoutShipping, selectedCheckoutCurrency || currencySettings.default_checkout_currency)}`}
                   </span>
                 </div>
 
@@ -685,10 +772,10 @@ export default function CartPage() {
                   <span className="font-black uppercase text-xs">Total</span>
                   <div className="text-right">
                     <p className="text-4xl font-black italic">
-                      {formatMoney(checkoutTotal, selectedCheckoutCurrency || currencySettings.default_checkout_currency)}
+                      {formatPublicCurrencyPrice(checkoutTotal, selectedCheckoutCurrency || currencySettings.default_checkout_currency)}
                     </p>
                     <p className="text-[9px] text-gray-400 font-medium">
-                      Base {formatMoney(total, currencySettings.base_currency)}
+                      Base {formatPublicCurrencyPrice(total, currencySettings.base_currency)}
                     </p>
                   </div>
                 </div>
@@ -713,37 +800,89 @@ export default function CartPage() {
       </div>
 
       {!isAuthenticated && (
-        <Dialog open={showRegistrationDialog} onOpenChange={setShowRegistrationDialog}>
+        <Dialog open={showRegistrationDialog} onOpenChange={handleGuestDialogOpenChange}>
           <DialogContent className="max-w-2xl border-4 border-black rounded-none gumroad-shadow p-0 overflow-hidden flex flex-col max-h-[90vh]">
             <DialogHeader className="p-6 border-b-2 border-black bg-[#FCFAEE]">
               <DialogTitle className="text-2xl font-black uppercase italic tracking-tighter">
-                Join Iwacumo to Continue<span className="text-accent">.</span>
+                {guestCheckoutAuthMode === "register"
+                  ? <>Join Iwacumo to Continue<span className="text-accent">.</span></>
+                  : <>Sign In to Continue<span className="text-accent">.</span></>}
               </DialogTitle>
               <DialogDescription className="font-bold text-[10px] uppercase opacity-60">
-                Create an account to save your library and proceed to checkout.
+                {guestCheckoutAuthMode === "register"
+                  ? "Create an account to save your library and proceed to checkout."
+                  : "Use your existing account and keep this bag ready for checkout."}
               </DialogDescription>
             </DialogHeader>
             <div className="flex-1 overflow-y-auto p-6 bg-white">
-              <GuestRegistrationForm
-                onSubmit={handleGuestRegistration}
-                isLoading={registerGuestMutation.isPending}
-              />
+              <div className="mb-6 flex gap-2 border-2 border-black p-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGuestCheckoutAuthMode("register");
+                    setGuestLoginError("");
+                  }}
+                  className={cn(
+                    "flex-1 px-4 py-3 text-[10px] font-black uppercase tracking-widest transition-colors",
+                    guestCheckoutAuthMode === "register" ? "bg-black text-white" : "bg-white text-black hover:bg-black/5"
+                  )}
+                >
+                  Create Account
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGuestCheckoutAuthMode("login");
+                    setGuestLoginError("");
+                  }}
+                  className={cn(
+                    "flex-1 px-4 py-3 text-[10px] font-black uppercase tracking-widest transition-colors",
+                    guestCheckoutAuthMode === "login" ? "bg-black text-white" : "bg-white text-black hover:bg-black/5"
+                  )}
+                >
+                  Sign In
+                </button>
+              </div>
+
+              {guestCheckoutAuthMode === "register" ? (
+                <GuestRegistrationForm
+                  onSubmit={handleGuestRegistration}
+                  isLoading={registerGuestMutation.isPending}
+                />
+              ) : (
+                <div className="space-y-4">
+                  {guestLoginError && (
+                    <div className="border-2 border-red-500 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
+                      {guestLoginError}
+                    </div>
+                  )}
+                  <GuestLoginForm
+                    onSubmit={handleExistingAccountLogin}
+                    isLoading={transferGuestCartMutation.isPending}
+                  />
+                </div>
+              )}
             </div>
             <div className="flex gap-4 justify-end p-6 border-t-2 border-black bg-gray-50">
               <Button
                 variant="outline"
-                onClick={() => setShowRegistrationDialog(false)}
+                onClick={() => handleGuestDialogOpenChange(false)}
                 className="rounded-none border-2 border-black font-black uppercase text-xs h-12 px-6"
               >
                 Cancel
               </Button>
               <Button
                 type="submit"
-                form="guest-registration-form"
-                disabled={registerGuestMutation.isPending}
-                className="booka-button-primary h-12 px-8 text-xs"
+                form={guestCheckoutAuthMode === "register" ? "guest-registration-form" : "guest-login-form"}
+                disabled={registerGuestMutation.isPending || transferGuestCartMutation.isPending}
+                className="booka-button-primary relative h-12 px-8 text-xs text-transparent"
               >
                 {registerGuestMutation.isPending ? "Creating…" : "Create Account & Continue"}
+                <span className="absolute inset-0 flex items-center justify-center text-xs">
+                  {guestCheckoutAuthMode === "register"
+                    ? (registerGuestMutation.isPending ? "Creating..." : "Create Account & Continue")
+                    : (transferGuestCartMutation.isPending ? "Signing In..." : "Sign In & Continue")}
+                </span>
               </Button>
             </div>
           </DialogContent>
@@ -779,7 +918,7 @@ export default function CartPage() {
                           .join(" ")}
                       </span>
                       <span className="font-black italic text-lg">
-                        {formatMoney(checkoutShipping, selectedCheckoutCurrency || currencySettings.default_checkout_currency)}
+                        {formatPublicCurrencyPrice(checkoutShipping, selectedCheckoutCurrency || currencySettings.default_checkout_currency)}
                       </span>
                     </div>
                   ) : selectedState && enabledShippingProviders.length === 0 ? (
@@ -831,7 +970,7 @@ export default function CartPage() {
                         </div>
                         <div className="text-right">
                           <p className="text-sm font-black">
-                            {quote ? formatMoney(
+                            {quote ? formatPublicCurrencyPrice(
                               convertBaseAmount(
                                 quote.amount,
                                 selectedCheckoutCurrency || currencySettings.default_checkout_currency,
@@ -882,7 +1021,7 @@ export default function CartPage() {
               {createOrderMutation.isPending
                 ? "Processing…"
                 : selectedState && selectedShippingProvider
-                  ? `Continue — ${formatMoney(checkoutTotal, selectedCheckoutCurrency || currencySettings.default_checkout_currency)}`
+                  ? `Continue — ${formatPublicCurrencyPrice(checkoutTotal, selectedCheckoutCurrency || currencySettings.default_checkout_currency)}`
                   : selectedState && enabledShippingProviders.length === 0
                     ? "Shipping Unavailable"
                     : "Continue to Payment"

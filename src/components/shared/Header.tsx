@@ -187,7 +187,9 @@ function HeaderContent() {
         </nav>
 
         {/* --- 4. MOBILE ACTIONS --- */}
-        <div className="flex items-center gap-3 lg:hidden">
+        <div className="flex items-center gap-2 lg:hidden">
+          <LanguageSwitcher compact className="shrink-0" />
+
           <div ref={mobileSearchButtonRef} className="relative md:hidden">
             <Button
               type="button"
@@ -246,7 +248,7 @@ function HeaderContent() {
                     </div>
                   )}
                   <div className="pt-1">
-                    <LanguageSwitcher />
+                    <LanguageSwitcher className="w-full justify-between" dropdownAlign="start" />
                   </div>
                 </div>
               </div>

@@ -13,6 +13,7 @@ import {
   getGatewayDisplayName,
   normalizePaymentGatewaySettings,
 } from "@/lib/payment-config";
+import { formatPublicCurrencyPrice } from "@/lib/public-price";
 
 export default function PaymentPage() {
   const params = useParams();
@@ -111,21 +112,21 @@ export default function PaymentPage() {
           <div className="space-y-4 py-6 border-y-2 border-black border-dashed">
             <div className="flex justify-between font-bold uppercase text-xs">
               <span>Item Total</span>
-              <span>{formatMoney(checkoutSubtotal, checkoutCurrency)}</span>
+              <span>{formatPublicCurrencyPrice(checkoutSubtotal, checkoutCurrency)}</span>
             </div>
             <div className="flex justify-between font-bold uppercase text-xs">
               <span>Delivery</span>
-              <span>{formatMoney(checkoutShipping, checkoutCurrency)}</span>
+              <span>{formatPublicCurrencyPrice(checkoutShipping, checkoutCurrency)}</span>
             </div>
             <div className="flex justify-between items-end pt-2">
               <span className="font-black uppercase text-sm">Amount Due</span>
               <span className="text-4xl font-black italic text-primary">
-                {formatMoney(checkoutTotal, checkoutCurrency)}
+                {formatPublicCurrencyPrice(checkoutTotal, checkoutCurrency)}
               </span>
             </div>
             {(order as any)?.checkout_currency && (order as any)?.checkout_currency !== order?.currency && (
               <p className="text-[10px] font-bold uppercase tracking-widest opacity-40 text-right">
-                Base Order Total {formatMoney(order?.total_amount ?? 0, order?.currency || "NGN")}
+                Base Order Total {formatPublicCurrencyPrice(order?.total_amount ?? 0, order?.currency || "NGN")}
               </p>
             )}
           </div>

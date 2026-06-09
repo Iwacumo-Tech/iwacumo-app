@@ -6,6 +6,7 @@ import {
   BookApprovedTemplate,
   StaffInviteTemplate,
   OrderConfirmationTemplate,
+  FulfillmentStatusUpdatedTemplate,
   BankAccountConnectedTemplate,
   KycApprovedTemplate,
   KycRejectedTemplate,
@@ -184,7 +185,7 @@ export async function sendOrderConfirmationEmail({
   to, firstName, orderNumber, orderDate, items,
   subtotal, shippingCost, total, isDigitalOnly, deliveryState, shippingZone, currency,
 }: OrderConfirmationParams) {
-  const dashboardUrl = `${APP_URL}/app/orders`;
+  const dashboardUrl = `${APP_URL}/app/books`;
   const formatted    = orderDate.toLocaleDateString("en-GB", {
     day: "numeric", month: "long", year: "numeric",
   });
@@ -195,6 +196,65 @@ export async function sendOrderConfirmationEmail({
       firstName, orderNumber, orderDate: formatted, items,
       subtotal, shippingCost, total, isDigitalOnly,
       deliveryState, shippingZone, currency, dashboardUrl,
+    }),
+  });
+}
+
+const FULFILLMENT_STATUS_EMAIL_COPY: Record<string, { label: string; message: string }> = {
+  unfulfilled: {
+    label: "Processing",
+    message: "This item is recorded on your order and is waiting to enter fulfillment.",
+  },
+  in_print: {
+    label: "In Print",
+    message: "Your book is now in print. We will email you again when it is ready to ship.",
+  },
+  ready_to_ship: {
+    label: "Ready to Ship",
+    message: "Your book is ready to ship. We will keep you posted as fulfillment progresses.",
+  },
+  delivered: {
+    label: "Delivered",
+    message: "This item has been marked delivered. You can view your books from your dashboard.",
+  },
+  cancelled: {
+    label: "Cancelled",
+    message: "Fulfillment for this item has been cancelled. Contact support if you need help with this order.",
+  },
+};
+
+interface FulfillmentStatusUpdatedParams {
+  to: string;
+  firstName: string;
+  orderNumber: string;
+  bookTitle: string;
+  fulfillmentStatus: string;
+}
+
+export async function sendFulfillmentStatusUpdatedEmail({
+  to,
+  firstName,
+  orderNumber,
+  bookTitle,
+  fulfillmentStatus,
+}: FulfillmentStatusUpdatedParams) {
+  const copy = FULFILLMENT_STATUS_EMAIL_COPY[fulfillmentStatus] ?? {
+    label: fulfillmentStatus.replace(/_/g, " "),
+    message: "The fulfillment status for this item has been updated.",
+  };
+  const dashboardUrl = `${APP_URL}/app/books`;
+
+  return resend.emails.send({
+    from: FROM,
+    to,
+    subject: `Fulfillment update - ${bookTitle}`,
+    react: FulfillmentStatusUpdatedTemplate({
+      firstName,
+      orderNumber,
+      bookTitle,
+      fulfillmentStatusLabel: copy.label,
+      statusMessage: copy.message,
+      dashboardUrl,
     }),
   });
 }

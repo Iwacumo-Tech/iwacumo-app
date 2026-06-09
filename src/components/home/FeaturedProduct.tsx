@@ -1,11 +1,12 @@
 "use client";
 
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Card, CardContent } from "@/components/ui/card";
-import Image from "next/image";
-import { cn } from "@/lib/utils";
-import { trpc } from "@/app/_providers/trpc-provider";
 import Link from "next/link";
+import Image from "next/image";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent } from "@/components/ui/card";
+import { trpc } from "@/app/_providers/trpc-provider";
+import { cn } from "@/lib/utils";
+import { formatPublicNairaPrice } from "@/lib/public-price";
 
 export default function ProductTabs() {
   const featuredBooks = trpc.getAllFeaturedBooks.useQuery();
@@ -45,7 +46,6 @@ export default function ProductTabs() {
           </TabsTrigger>
         </TabsList>
 
-        {/* Featured Products Tab */}
         <TabsContent value="featured" className="mt-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
             {featuredBooks.isLoading && (
@@ -68,7 +68,6 @@ export default function ProductTabs() {
           </div>
         </TabsContent>
 
-        {/* New Arrivals Tab */}
         <TabsContent value="new" className="mt-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
             {newBooks.isLoading && (
@@ -127,9 +126,7 @@ function ProductCard({ book }: { book: any }) {
             </h3>
             <div className="flex items-center gap-2">
               <span className="text-base font-bold">
-                {book?.price
-                  ? ` ₦${book.price.toFixed(2)}`
-                  : "Price not available"}
+                {formatPublicNairaPrice(book?.price)}
               </span>
             </div>
           </div>

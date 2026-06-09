@@ -11,6 +11,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useToast } from "@/components/ui/use-toast";
 import { cn } from "@/lib/utils";
+import { formatPublicNairaPrice } from "@/lib/public-price";
 import {
   getGuestCartItems,
   notifyCartUpdate,
@@ -101,7 +102,7 @@ function CartItemRow({ item, isAuthenticated, onDelete, onQtyChange, isDeleting 
 
         {/* Unit price */}
         <p className="text-[10px] font-bold text-gray-400">
-          ₦{item.price.toLocaleString()} each
+          {`${formatPublicNairaPrice(item.price)} each`}
         </p>
 
         {/* Quantity row */}
@@ -138,7 +139,7 @@ function CartItemRow({ item, isAuthenticated, onDelete, onQtyChange, isDeleting 
 
           {/* Line total */}
           <span className="font-black text-sm italic">
-            ₦{lineTotal.toLocaleString()}
+            {formatPublicNairaPrice(lineTotal)}
           </span>
         </div>
       </div>
@@ -298,7 +299,7 @@ export default function CartDrawer() {
                   {itemCount} {itemCount === 1 ? "item" : "items"} · excl. shipping
                 </p>
               </div>
-              <span className="text-2xl font-black italic">₦{subtotal.toLocaleString()}</span>
+              <span className="text-2xl font-black italic">{formatPublicNairaPrice(subtotal)}</span>
             </div>
 
             {/* Physical items shipping note */}

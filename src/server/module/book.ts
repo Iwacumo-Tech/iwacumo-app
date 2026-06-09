@@ -14,6 +14,7 @@ import { TRPCError } from "@trpc/server";
 import mammoth from "mammoth"; 
 import axios from "axios"
 import { watermarkPdf } from "@/lib/watermark";
+import { applyRestrictedPdfProtection } from "@/lib/pdf-protection";
 import { put } from "@vercel/blob";
 
 import { sendBookApprovedEmail, sendBookDeniedEmail, sendBookIssueReportEmail } from "@/lib/email";
@@ -1398,6 +1399,15 @@ export const generateWatermarkedEbook = publicProcedure
         resolveBookStoreContext(book)
       );
 
+      const protectedPdf = await applyRestrictedPdfProtection(
+        securedPdf,
+        {
+          bookId: book.id,
+          userEmail: session.user.email,
+          sourceUrl: book.pdf_url,
+        }
+      );
+
       // 3. Upload temporary secure copy
       const authorName =
         `${book.author?.user?.first_name ?? ""} ${book.author?.user?.last_name ?? ""}`.trim() ||
@@ -1409,7 +1419,7 @@ export const generateWatermarkedEbook = publicProcedure
         .filter(Boolean)
         .join("-");
       const tempName = `temp/${filenameBase || "book-download"}-${Date.now()}.pdf`;
-      const { url } = await put(tempName, Buffer.from(securedPdf), { 
+      const { url } = await put(tempName, Buffer.from(protectedPdf), { 
         access: "public",
         contentType: "application/pdf",
       });

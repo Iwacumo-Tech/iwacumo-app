@@ -36,8 +36,10 @@ const menuButtonStyle =
 function FulfillmentBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; className: string }> = {
     unfulfilled: { label: "Processing",  className: "bg-amber-100  text-amber-700  border-amber-300"   },
-    in_progress: { label: "In Progress", className: "bg-blue-100   text-blue-700   border-blue-300"    },
-    shipped:     { label: "Shipped",     className: "bg-purple-100 text-purple-700 border-purple-300"  },
+    in_progress: { label: "In Print",    className: "bg-blue-100   text-blue-700   border-blue-300"    },
+    in_print:    { label: "In Print",    className: "bg-blue-100   text-blue-700   border-blue-300"    },
+    shipped:     { label: "Ready to Ship", className: "bg-purple-100 text-purple-700 border-purple-300" },
+    ready_to_ship: { label: "Ready to Ship", className: "bg-purple-100 text-purple-700 border-purple-300" },
     delivered:   { label: "Delivered",   className: "bg-emerald-100 text-emerald-700 border-emerald-300" },
     cancelled:   { label: "Cancelled",   className: "bg-red-100    text-red-700    border-red-300"     },
   };

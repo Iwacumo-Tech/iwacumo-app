@@ -11,8 +11,18 @@ import {
 } from "@/lib/profile-mode";
 import { checkIsSuperAdmin } from "@/lib/is-super-admin";
 
+const SEVEN_DAYS_IN_SECONDS = 7 * 24 * 60 * 60;
+
 export const { handlers, auth } = NextAuth({
   trustHost: true,
+  session: {
+    strategy: "jwt",
+    maxAge: SEVEN_DAYS_IN_SECONDS,
+    updateAge: 24 * 60 * 60,
+  },
+  jwt: {
+    maxAge: SEVEN_DAYS_IN_SECONDS,
+  },
   providers: [
     CredentialsProvider({
       id: "credentials",

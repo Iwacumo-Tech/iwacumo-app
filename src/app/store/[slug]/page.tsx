@@ -5,6 +5,11 @@ import StoreHeroCarousel from "./_components/StoreHeroCarousel";
 import { Sparkles, Star } from "lucide-react";
 import Link from "next/link";
 import { getStorefrontThemeTokens, normalizeStorefrontThemeSettings, withAlpha } from "@/lib/storefront-theme";
+import {
+  DEFAULT_BUYER_FORMAT_VISIBILITY,
+  getBuyerVisibleFormatsFromVariants,
+  normalizeBuyerFormatVisibility,
+} from "@/lib/book-config";
 
 interface StorePageProps {
   params: { slug: string };
@@ -22,7 +27,7 @@ export default async function StorePage({ params, searchParams }: StorePageProps
         include: {
           books: {
             where: { published: true, deleted_at: null },
-            include: { author: { include: { user: true } }, categories: true },
+            include: { author: { include: { user: true } }, categories: true, variants: true },
             orderBy: { published_at: "desc" },
           },
         },
@@ -33,6 +38,13 @@ export default async function StorePage({ params, searchParams }: StorePageProps
   });
 
   if (!store) notFound();
+
+  const buyerFormatVisibilitySettings = await prisma.systemSettings.findUnique({
+    where: { key: "buyer_format_visibility" },
+  });
+  const buyerFormatVisibility = normalizeBuyerFormatVisibility(
+    buyerFormatVisibilitySettings?.value ?? DEFAULT_BUYER_FORMAT_VISIBILITY
+  );
 
   const isWhiteLabel = store.publishers?.white_label ?? false;
   const storeSettings = normalizeStorefrontThemeSettings(((store as any).store_settings as Record<string, any> | null) ?? null);
@@ -50,7 +62,12 @@ export default async function StorePage({ params, searchParams }: StorePageProps
     heroSlides = await prisma.heroSlide.findMany({ where: { tenant_id: null, deleted_at: null } });
   }
 
-  const books = store.publishers?.books ?? [];
+  const books = (store.publishers?.books ?? []).filter((book) =>
+    getBuyerVisibleFormatsFromVariants(
+      book.variants as Array<{ format?: string | null }> | undefined,
+      buyerFormatVisibility
+    ).length > 0
+  );
   const filteredBooks = selectedCategorySlug
     ? books.filter((book) =>
         book.categories.some((category) => category.slug.toLowerCase() === selectedCategorySlug)

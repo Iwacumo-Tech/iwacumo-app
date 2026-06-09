@@ -55,7 +55,7 @@ export function OrderConfirmationTemplate({
   return (
     <Html>
       <Head />
-      <Preview>Order confirmed - {orderNumber}. Your books are on their way!</Preview>
+      <Preview>Order confirmed - {orderNumber}. Your books are available from your dashboard.</Preview>
       <Body style={body}>
         <Container style={container}>
           <Section style={header}>
@@ -69,7 +69,7 @@ export function OrderConfirmationTemplate({
               Hey <strong>{firstName}</strong>, your order is confirmed and payment has been received.
               {isDigitalOnly
                 ? " Your digital books are ready to read in your library."
-                : " We'll get your physical copies dispatched shortly."}
+                : " We'll keep you updated by email as your physical copies move through fulfillment."}
             </Text>
 
             <Section style={metaBox}>
@@ -149,12 +149,12 @@ export function OrderConfirmationTemplate({
             <Text style={paragraph}>
               {isDigitalOnly
                 ? "Head to your dashboard to start reading immediately."
-                : "You'll receive a shipping notification with your tracking number once your order is dispatched."}
+                : "Head to your dashboard to view your books. We'll email you when fulfillment status changes."}
             </Text>
 
             <Section style={buttonContainer}>
               <Button href={dashboardUrl} style={button}>
-                {isDigitalOnly ? "READ MY BOOKS" : "TRACK MY ORDER"}
+                {isDigitalOnly ? "READ MY BOOKS" : "VIEW MY BOOKS"}
               </Button>
             </Section>
 

@@ -8,6 +8,10 @@ import { cn } from "@/lib/utils";
 import Link from "next/link";
 import Image from "next/image";
 import { ChevronRight, ChevronLeft, Loader2, SearchX, Sparkles, ArrowRight } from "lucide-react";
+import {
+  getBuyerVisibleFormatsFromVariants,
+  normalizeBuyerFormatVisibility,
+} from "@/lib/book-config";
 
 // ─── Global Hero Carousel ─────────────────────────────────────────────────────
 
@@ -121,8 +125,16 @@ function ShopContent() {
 
   const { data: books, isLoading: booksLoading } = trpc.getAllBooks.useQuery();
   const { data: categories } = trpc.getCategories.useQuery();
+  const { data: systemSettings } = trpc.getSystemSettings.useQuery();
 
-  const filteredBooks = books?.filter((book: any) => {
+  const buyerVisibleBooks = books?.filter((book: any) =>
+    getBuyerVisibleFormatsFromVariants(
+      book.variants,
+      normalizeBuyerFormatVisibility(systemSettings?.buyer_format_visibility)
+    ).length > 0
+  );
+
+  const filteredBooks = buyerVisibleBooks?.filter((book: any) => {
     const matchesCategory = activeCategory === "all" ||
       book.categories?.some((cat: any) => cat.slug === activeCategory);
     const searchLower = searchQuery.toLowerCase();
@@ -133,7 +145,7 @@ function ShopContent() {
     return matchesCategory && matchesSearch;
   });
 
-  const recommendedBooks = books
+  const recommendedBooks = buyerVisibleBooks
     ?.filter((b) => b.featured || b.published)
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     .slice(0, 8);
