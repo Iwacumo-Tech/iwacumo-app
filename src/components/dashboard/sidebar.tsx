@@ -88,7 +88,7 @@ export function Sidebar({ logout, links, storeSlug, setIsOpen }: {
 
         <div className="pt-1">
           <p className="mb-2 text-[9px] font-black uppercase tracking-widest opacity-35">Language</p>
-          <LanguageSwitcher className="w-full justify-between bg-[#F9F6F0]" />
+          <LanguageSwitcher className="w-full justify-between bg-[#F9F6F0]" dropdownAlign="start" />
         </div>
 
         <Button

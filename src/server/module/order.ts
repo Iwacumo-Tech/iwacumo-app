@@ -1,5 +1,6 @@
 
 import prisma from "@/lib/prisma";
+import { auth } from "@/auth";
 import { z } from "zod";
 import { publicProcedure } from "@/server/trpc";
 import { TRPCError } from "@trpc/server";
@@ -42,7 +43,7 @@ import {
   parseOrderNotes,
 } from "@/lib/order-notes";
 import { buildOrderPayoutRoutingSnapshot } from "@/lib/payout-routing";
-import { sendOrderConfirmationEmail } from "@/lib/email";
+import { sendFulfillmentStatusUpdatedEmail, sendOrderConfirmationEmail } from "@/lib/email";
 import { resolveUserContext } from "@/lib/is-super-admin";
 
 const PUBLISHER_SPLIT_FALLBACK = 30;
@@ -51,6 +52,41 @@ const generateOrderNumber = (): string => {
   const timestamp = Date.now();
   const random    = Math.floor(Math.random() * 10000).toString().padStart(4, "0");
   return `ORD-${timestamp}-${random}`;
+};
+
+const sendFulfillmentStatusChangeNotification = async ({
+  lineItemId,
+  previousStatus,
+  nextStatus,
+}: {
+  lineItemId: string;
+  previousStatus?: string | null;
+  nextStatus: string;
+}) => {
+  if (previousStatus === nextStatus) return;
+
+  const lineItem = await prisma.orderLineItem.findUnique({
+    where: { id: lineItemId },
+    include: {
+      order: { include: { customer: { include: { user: true } } } },
+      book_variant: { include: { book: true } },
+    },
+  });
+
+  if (!lineItem) return;
+
+  const customerUser = lineItem.order.customer.user;
+  const bookTitle = lineItem.book_variant.book?.title ?? "Book";
+
+  void sendFulfillmentStatusUpdatedEmail({
+    to: customerUser.email,
+    firstName: customerUser.first_name,
+    orderNumber: lineItem.order.order_number,
+    bookTitle,
+    fulfillmentStatus: nextStatus,
+  }).catch((error) => {
+    console.error("Failed to send fulfillment status email", error);
+  });
 };
 
 const mapBookTypeToFormat = (bookType: string): string => {
@@ -677,6 +713,18 @@ export const getDeliveriesByCustomer = publicProcedure.input(z.object({ user_id:
 // ─── updateOrderStatus ────────────────────────────────────────────────────────
 
 export const updateOrderStatus = publicProcedure.input(updateOrderStatusSchema).mutation(async (opts) => {
+  const roleNames = opts.ctx.session?.roles?.map((role) => role.name.toLowerCase()) ?? [];
+  const canEditOrderStatus = roleNames.some(
+    (role) => role === "super-admin" || role.startsWith("staff-")
+  );
+
+  if (!canEditOrderStatus) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Only admin or staff can edit order status.",
+    });
+  }
+
   const { id, status, payment_status } = opts.input;
   const updateData: any = {};
   if (status) updateData.status = status;
@@ -765,8 +813,15 @@ export const createDeliveryTracking = publicProcedure.input(createDeliveryTracki
     },
     include: { order: true, order_lineitem: { include: { book_variant: { include: { book: true } } } } },
   });
-  if (opts.input.order_lineitem_id)
-    await prisma.orderLineItem.update({ where: { id: opts.input.order_lineitem_id }, data: { fulfillment_status: "in_progress" } });
+  if (opts.input.order_lineitem_id && opts.input.order_lineitem_id !== "none") {
+    const previousFulfillmentStatus = delivery.order_lineitem?.fulfillment_status;
+    await prisma.orderLineItem.update({ where: { id: opts.input.order_lineitem_id }, data: { fulfillment_status: "in_print" } });
+    await sendFulfillmentStatusChangeNotification({
+      lineItemId: opts.input.order_lineitem_id,
+      previousStatus: previousFulfillmentStatus,
+      nextStatus: "in_print",
+    });
+  }
   if (order.status !== "fulfilled")
     await prisma.order.update({ where: { id: opts.input.order_id }, data: { status: "fulfilled" } });
   return delivery;
@@ -784,10 +839,16 @@ export const updateDeliveryTracking = publicProcedure.input(updateDeliveryTracki
     include: { order: { include: { line_items: true } }, order_lineitem: { include: { book_variant: { include: { book: true } } } } },
   });
   if (updated.order_lineitem_id) {
-    let fStatus = "in_progress";
+    const previousFulfillmentStatus = updated.order_lineitem?.fulfillment_status;
+    let fStatus = "in_print";
     if (updateData.status === "delivered") fStatus = "delivered";
-    else if (["in_transit", "out_for_delivery"].includes(updateData.status || "")) fStatus = "shipped";
+    else if (["in_transit", "out_for_delivery"].includes(updateData.status || "")) fStatus = "ready_to_ship";
     await prisma.orderLineItem.update({ where: { id: updated.order_lineitem_id }, data: { fulfillment_status: fStatus } });
+    await sendFulfillmentStatusChangeNotification({
+      lineItemId: updated.order_lineitem_id,
+      previousStatus: previousFulfillmentStatus,
+      nextStatus: fStatus,
+    });
   }
   return updated;
 });
@@ -881,16 +942,33 @@ export const getOrdersNeedingShipping = publicProcedure
       line_item_id:       z.string(),
       fulfillment_status: z.enum([
         "unfulfilled",
-        "in_progress",
-        "shipped",
+        "in_print",
+        "ready_to_ship",
         "delivered",
         "cancelled",
       ]),
     })
   )
   .mutation(async ({ input }) => {
+    const session = await auth();
+    const roleNames = session?.roles?.map((role) => role.name.toLowerCase()) ?? [];
+    const canEditOrderStatus = roleNames.some(
+      (role) => role === "super-admin" || role.startsWith("staff-")
+    );
+
+    if (!canEditOrderStatus) {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "Only admin or staff can edit order status.",
+      });
+    }
+
     const lineItem = await prisma.orderLineItem.findUnique({
       where: { id: input.line_item_id },
+      include: {
+        order: { include: { customer: { include: { user: true } } } },
+        book_variant: { include: { book: true } },
+      },
     });
  
     if (!lineItem) {
@@ -928,6 +1006,12 @@ export const getOrdersNeedingShipping = publicProcedure
         data:  { status: "fulfilled" },
       });
     }
+
+    await sendFulfillmentStatusChangeNotification({
+      lineItemId: lineItem.id,
+      previousStatus: lineItem.fulfillment_status,
+      nextStatus: input.fulfillment_status,
+    });
  
     return updated;
   });

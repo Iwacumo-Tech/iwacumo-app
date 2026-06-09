@@ -34,10 +34,12 @@ import {
   DEFAULT_FEZ_SHIPPING_RATES,
   DEFAULT_SHIPPING_PROVIDER_OPTIONS,
   DEFAULT_SPEEDAF_SHIPPING_RATES,
+  DEFAULT_BUYER_FORMAT_VISIBILITY,
   DEFAULT_BOOK_LIVE_PRICING_ENABLED,
   DEFAULT_BOOK_FEATURE_TOGGLES,
   DEFAULT_BOOK_FLAP_COSTS,
   DEFAULT_BOOK_SIZE_RANGES,
+  normalizeBuyerFormatVisibility,
   normalizeBookLivePricingEnabled,
   type BookCustomFieldDefinition,
 } from "@/lib/book-config";
@@ -143,6 +145,11 @@ type SettingsFormValues = {
     flap: boolean;
     physical_printing: boolean;
   };
+  buyer_format_visibility: {
+    ebook: boolean;
+    paperback: boolean;
+    hardcover: boolean;
+  };
   book_size_ranges: {
     A6: { width_min: number; width_max: number; height_min: number; height_max: number };
     A5: { width_min: number; width_max: number; height_min: number; height_max: number };
@@ -204,6 +211,7 @@ const DEFAULTS: SettingsFormValues = {
     require_proof_of_address: true,
   },
   book_feature_toggles: DEFAULT_BOOK_FEATURE_TOGGLES,
+  buyer_format_visibility: DEFAULT_BUYER_FORMAT_VISIBILITY,
   book_size_ranges: DEFAULT_BOOK_SIZE_RANGES,
   book_flap_costs: DEFAULT_BOOK_FLAP_COSTS,
   book_live_pricing_enabled: DEFAULT_BOOK_LIVE_PRICING_ENABLED,
@@ -406,6 +414,7 @@ export default function SystemSettingsPage() {
       kyc_requirements: (settings as any).kyc_requirements ?? DEFAULTS.kyc_requirements,
       author_kyc_requirements: (settings as any).author_kyc_requirements ?? DEFAULTS.author_kyc_requirements,
       book_feature_toggles: (settings as any).book_feature_toggles ?? DEFAULTS.book_feature_toggles,
+      buyer_format_visibility: normalizeBuyerFormatVisibility((settings as any).buyer_format_visibility),
       book_size_ranges: (settings as any).book_size_ranges ?? DEFAULTS.book_size_ranges,
       book_flap_costs: (settings as any).book_flap_costs ?? DEFAULTS.book_flap_costs,
       book_live_pricing_enabled: normalizeBookLivePricingEnabled((settings as any).book_live_pricing_enabled),
@@ -444,6 +453,7 @@ export default function SystemSettingsPage() {
       updateSettings({ key: "kyc_requirements", value: data.kyc_requirements });
       updateSettings({ key: "author_kyc_requirements", value: data.author_kyc_requirements });
     updateSettings({ key: "book_feature_toggles", value: data.book_feature_toggles });
+    updateSettings({ key: "buyer_format_visibility", value: data.buyer_format_visibility });
     updateSettings({ key: "book_size_ranges", value: data.book_size_ranges });
     updateSettings({ key: "book_flap_costs", value: data.book_flap_costs });
     updateSettings({ key: "book_live_pricing_enabled", value: data.book_live_pricing_enabled });
@@ -1149,6 +1159,43 @@ export default function SystemSettingsPage() {
                   { field: "book_feature_toggles.hardcover" as const, label: "Hardcover" },
                   { field: "book_feature_toggles.flap" as const, label: "Flaps" },
                   { field: "book_feature_toggles.physical_printing" as const, label: "Physical Printing" },
+                ].map(({ field, label }) => (
+                  <FormField
+                    key={field}
+                    control={form.control}
+                    name={field}
+                    render={({ field: f }) => (
+                      <FormItem className="flex items-start gap-4 space-y-0 border-2 border-black p-4">
+                        <FormControl>
+                          <Checkbox
+                            checked={f.value as boolean}
+                            onCheckedChange={f.onChange}
+                            className="mt-0.5 border-2 border-black data-[state=checked]:bg-black data-[state=checked]:text-accent"
+                          />
+                        </FormControl>
+                        <FormLabel className="font-black uppercase text-[11px] tracking-widest cursor-pointer">
+                          {label}
+                        </FormLabel>
+                      </FormItem>
+                    )}
+                  />
+                ))}
+              </div>
+            </section>
+
+            <section className="bg-white border-4 border-black gumroad-shadow p-6 space-y-8">
+              <div>
+                <h2 className="text-2xl font-black uppercase italic">Buyer Format Visibility</h2>
+                <p className="text-xs opacity-50 font-medium mt-1">
+                  Control which formats buyers can see on storefront and product detail pages without affecting the book form.
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                {[
+                  { field: "buyer_format_visibility.ebook" as const, label: "E-Book" },
+                  { field: "buyer_format_visibility.paperback" as const, label: "Paperback" },
+                  { field: "buyer_format_visibility.hardcover" as const, label: "Hardcover" },
                 ].map(({ field, label }) => (
                   <FormField
                     key={field}

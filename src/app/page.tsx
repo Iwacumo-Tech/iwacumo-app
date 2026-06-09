@@ -19,7 +19,7 @@ export default function Home() {
       <Hero />
 
       {/* 2. Scrolling Trust Bar (Publishers & Partners) */}
-      <Marquee text="Naija Reads • Accra Stories • Nairobi Voices • Joburg Journals • Booka Originals" />
+      <Marquee text="Naija Reads • Accra Stories • Nairobi Voices • Rwandan Tales" />
 
       {/* 3. Curator's Choice (The Admin-Featured Section) */}
       <FeaturedSection title="Curator's Choice" filter="featured" />

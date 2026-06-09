@@ -70,11 +70,12 @@ export default function Footer() {
         {/* Bottom Bar */}
         <div className="mt-20 pt-8 border-t border-white/10 flex flex-col md:flex-row justify-between items-center gap-6 text-xs font-bold uppercase tracking-widest opacity-60">
           <p className="text-center md:text-left">© 2026 Iwacumo Publishing Platform. Built for the Continent.</p>
-          <div className="flex flex-wrap justify-center gap-4 md:gap-8">
-            <span>Lagos, Nigeria</span>
-            <span>Nairobi, Kenya</span>
-            <span>Accra, Ghana</span>
-          </div>
+            <div className="flex flex-wrap justify-center gap-4 md:gap-8">
+              <span>Lagos, Nigeria</span>
+              <span>Nairobi, Kenya</span>
+              <span>Accra, Ghana</span>
+              <span>Kigali, Rwanda</span>
+            </div>
         </div>
       </div>
     </footer>

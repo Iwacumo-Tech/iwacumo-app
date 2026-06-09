@@ -18,8 +18,15 @@ import { trpc } from "@/app/_providers/trpc-provider";
 import { useToast } from "@/components/ui/use-toast";
 import { useCartStore } from "@/store/use-cart-store";
 import { getGuestCartItems, notifyCartUpdate, setGuestCartItems } from "@/lib/cart-utils";
-import { formatDimensionsInches, getBookLanguageLabel, normalizeBookCustomFields } from "@/lib/book-config";
+import {
+  formatDimensionsInches,
+  getBookLanguageLabel,
+  getBuyerVisibleFormatsFromVariants,
+  normalizeBookCustomFields,
+  normalizeBuyerFormatVisibility,
+} from "@/lib/book-config";
 import { getFriendlyErrorMessage } from "@/lib/error-message";
+import { formatPublicNairaPrice } from "@/lib/public-price";
 
 // ─── Format metadata (module level — hard rule #4) ────────────────────────────
 
@@ -85,7 +92,7 @@ function FormatCard({
         </div>
       </div>
       <div className="text-right shrink-0 ml-4">
-        <p className="font-black text-lg italic">₦{price.toLocaleString()}</p>
+        <p className="font-black text-lg italic">{formatPublicNairaPrice(price)}</p>
         {selected && (
           <p className="text-[9px] font-black uppercase tracking-widest text-accent mt-0.5">Selected</p>
         )}
@@ -162,11 +169,11 @@ export default function ProductDetails() {
 
   // ── Available formats — derived from actual variants only ─────────────────
   const availableFormats = useMemo(() => {
-    if (!book?.variants) return [];
-    return (["ebook", "paperback", "hardcover"] as const).filter(f =>
-      book.variants!.some((v: any) => v.format.toLowerCase() === f)
+    return getBuyerVisibleFormatsFromVariants(
+      book?.variants as Array<{ format?: string | null }> | undefined,
+      normalizeBuyerFormatVisibility(systemSettings?.buyer_format_visibility)
     );
-  }, [book]);
+  }, [book, systemSettings?.buyer_format_visibility]);
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [currentImage,   setCurrentImage]   = useState(0);
@@ -520,7 +527,7 @@ export default function ProductDetails() {
                   {selectedFormat !== "ebook" && quantity > 1 && ` × ${quantity}`}
                 </span>
                 <span className="font-black text-2xl italic">
-                  ₦{totalPrice.toLocaleString()}
+                  {formatPublicNairaPrice(totalPrice)}
                 </span>
               </div>
 

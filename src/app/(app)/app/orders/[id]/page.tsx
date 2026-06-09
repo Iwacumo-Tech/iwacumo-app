@@ -2,6 +2,7 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { trpc } from "@/app/_providers/trpc-provider";
+import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import {
   Table, TableBody, TableCell,
@@ -31,8 +32,21 @@ const STATUS_COLORS: Record<string, string> = {
   draft:       "bg-gray-200 text-black",
   unfulfilled: "bg-gray-200 text-black",
   in_progress: "bg-yellow-400 text-black",
+  in_print:    "bg-yellow-400 text-black",
   shipped:     "bg-blue-400 text-white",
+  ready_to_ship: "bg-blue-400 text-white",
   delivered:   "bg-green-500 text-white",
+};
+
+const normalizeFulfillmentStatus = (status: string) => {
+  if (status === "in_progress") return "in_print";
+  if (status === "shipped") return "ready_to_ship";
+  return status;
+};
+
+const formatFulfillmentStatusLabel = (status: string) => {
+  const normalized = normalizeFulfillmentStatus(status);
+  return FULFILLMENT_OPTIONS.find((option) => option.value === normalized)?.label ?? normalized;
 };
 
 const StatusBadge = ({ label, variant }: { label: string; variant: string }) => (
@@ -56,8 +70,8 @@ const ORDER_STATUS_OPTIONS = [
 // ── Line-item fulfillment status options ──────────────────────
 const FULFILLMENT_OPTIONS = [
   { value: "unfulfilled",  label: "Unfulfilled"  },
-  { value: "in_progress",  label: "In Progress"  },
-  { value: "shipped",      label: "Shipped"      },
+  { value: "in_print",     label: "In Print"     },
+  { value: "ready_to_ship", label: "Ready to Ship" },
   { value: "delivered",    label: "Delivered"    },
   { value: "cancelled",    label: "Cancelled"    },
 ];
@@ -73,6 +87,7 @@ function FulfillmentStatusCell({
   onSuccess: () => void;
 }) {
   const { toast } = useToast();
+  const selectedStatus = normalizeFulfillmentStatus(currentStatus);
 
   // updateOrderStatus can update fulfillment_status on line items via
   // the existing updateOrderStatus procedure when we pass it.
@@ -108,7 +123,7 @@ function FulfillmentStatusCell({
 
   return (
     <Select
-      value={currentStatus}
+      value={selectedStatus}
       onValueChange={(val) =>
         mutation.mutate({ line_item_id: lineItemId, fulfillment_status: val as any })
       }
@@ -142,6 +157,7 @@ export default function AdminOrderDetailsPage() {
   const { toast } = useToast();
   const orderId = params?.id as string;
   const utils   = trpc.useUtils();
+  const { data: session } = useSession();
 
   const { data: order, isLoading, isError } =
     trpc.getOrderById.useQuery({ id: orderId });
@@ -191,6 +207,10 @@ export default function AdminOrderDetailsPage() {
     const format = item.book_variant?.format?.toLowerCase() || "";
     return format === "paperback" || format === "hardcover";
   });
+  const roleNames = session?.roles?.map((role) => role.name.toLowerCase()) ?? [];
+  const canEditOrderStatus = roleNames.some(
+    (role) => role === "super-admin" || role.startsWith("staff-")
+  );
 
   const invalidateOrder = () => {
     utils.getOrderById.invalidate({ id: orderId });
@@ -234,28 +254,32 @@ export default function AdminOrderDetailsPage() {
           {/* Order status — editable */}
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-black uppercase opacity-40">Order Status</span>
-            <Select
-              value={order.status}
-              onValueChange={(val) =>
-                updateStatusMutation.mutate({ id: orderId, status: val as any })
-              }
-              disabled={updateStatusMutation.isPending}
-            >
-              <SelectTrigger className="h-10 w-44 rounded-none border-4 border-black font-black uppercase italic text-[11px] focus:ring-0 bg-white gumroad-shadow-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="!bg-white rounded-none border-2 border-black z-[50]">
-                {ORDER_STATUS_OPTIONS.map((opt) => (
-                  <SelectItem
-                    key={opt.value}
-                    value={opt.value}
-                    className="text-[10px] font-black uppercase italic"
-                  >
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {canEditOrderStatus ? (
+              <Select
+                value={order.status}
+                onValueChange={(val) =>
+                  updateStatusMutation.mutate({ id: orderId, status: val as any })
+                }
+                disabled={updateStatusMutation.isPending}
+              >
+                <SelectTrigger className="h-10 w-44 rounded-none border-4 border-black font-black uppercase italic text-[11px] focus:ring-0 bg-white gumroad-shadow-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="!bg-white rounded-none border-2 border-black z-[50]">
+                  {ORDER_STATUS_OPTIONS.map((opt) => (
+                    <SelectItem
+                      key={opt.value}
+                      value={opt.value}
+                      className="text-[10px] font-black uppercase italic"
+                    >
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <StatusBadge label={order.status} variant={order.status} />
+            )}
           </div>
         </div>
       </div>
@@ -319,12 +343,18 @@ export default function AdminOrderDetailsPage() {
                           </TableCell>
                           <TableCell>
                             {isPhysical ? (
-                              // Physical items get a fulfillment status select
-                              <FulfillmentStatusCell
-                                lineItemId={item.id}
-                                currentStatus={item.fulfillment_status ?? "unfulfilled"}
-                                onSuccess={invalidateOrder}
-                              />
+                              canEditOrderStatus ? (
+                                <FulfillmentStatusCell
+                                  lineItemId={item.id}
+                                  currentStatus={item.fulfillment_status ?? "unfulfilled"}
+                                  onSuccess={invalidateOrder}
+                                />
+                              ) : (
+                                <StatusBadge
+                                  label={formatFulfillmentStatusLabel(item.fulfillment_status ?? "unfulfilled")}
+                                  variant={item.fulfillment_status ?? "unfulfilled"}
+                                />
+                              )
                             ) : (
                               // Digital items are auto-fulfilled on payment
                               <StatusBadge label="Digital — Auto" variant="fulfilled" />

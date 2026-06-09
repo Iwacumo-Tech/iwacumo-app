@@ -37,6 +37,12 @@ export type BookFeatureToggles = {
   physical_printing: boolean;
 };
 
+export type BuyerFormatVisibility = {
+  ebook: boolean;
+  paperback: boolean;
+  hardcover: boolean;
+};
+
 export const COMMON_BOOK_LANGUAGES = [
   "English",
   "French",
@@ -106,6 +112,12 @@ export const DEFAULT_BOOK_FEATURE_TOGGLES: BookFeatureToggles = {
   physical_printing: true,
 };
 
+export const DEFAULT_BUYER_FORMAT_VISIBILITY: BuyerFormatVisibility = {
+  ebook: true,
+  paperback: true,
+  hardcover: true,
+};
+
 export const DEFAULT_BOOK_SIZE_RANGES: BookSizeRanges = {
   A6: { width_min: 0, width_max: 4.0, height_min: 0, height_max: 5.83 },
   A5: { width_min: 4.1, width_max: 5.83, height_min: 5.84, height_max: 8.2 },
@@ -136,6 +148,40 @@ export function normalizeBookFeatureToggles(value: any): BookFeatureToggles {
     flap: value?.flap ?? DEFAULT_BOOK_FEATURE_TOGGLES.flap,
     physical_printing: value?.physical_printing ?? DEFAULT_BOOK_FEATURE_TOGGLES.physical_printing,
   };
+}
+
+export function normalizeBuyerFormatVisibility(value: any): BuyerFormatVisibility {
+  return {
+    ebook: value?.ebook ?? DEFAULT_BUYER_FORMAT_VISIBILITY.ebook,
+    paperback: value?.paperback ?? DEFAULT_BUYER_FORMAT_VISIBILITY.paperback,
+    hardcover: value?.hardcover ?? DEFAULT_BUYER_FORMAT_VISIBILITY.hardcover,
+  };
+}
+
+export function isBuyerFormatVisible(
+  format: string | null | undefined,
+  visibility: BuyerFormatVisibility
+) {
+  const normalized = format?.trim().toLowerCase();
+  if (normalized === "ebook") return visibility.ebook !== false;
+  if (normalized === "paperback") return visibility.paperback !== false;
+  if (normalized === "hardcover") return visibility.hardcover !== false;
+  return true;
+}
+
+export function getBuyerVisibleFormatsFromVariants(
+  variants: Array<{ format?: string | null }> | null | undefined,
+  visibility: BuyerFormatVisibility
+) {
+  if (!Array.isArray(variants)) return [];
+
+  return (["ebook", "paperback", "hardcover"] as const).filter((format) =>
+    variants.some(
+      (variant) =>
+        variant.format?.toLowerCase() === format &&
+        isBuyerFormatVisible(variant.format, visibility)
+    )
+  );
 }
 
 export function normalizeBookSizeRanges(value: any): BookSizeRanges {

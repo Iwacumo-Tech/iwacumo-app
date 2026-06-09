@@ -1,6 +1,7 @@
 import { Author, Book, Chapter, Publisher, User } from "@prisma/client";
 import Image from "next/image";
 import { useRef } from "react";
+import { formatPublicNairaPrice } from "@/lib/public-price";
 
 interface HomeProps {
   books: (Book & {author: Author | null; chapters: Chapter[]}) [] | undefined;
@@ -64,7 +65,7 @@ export default function Home2 ({ authors, books }: HomeProps) {
                   <Image src={book.book_cover ?? "/book.jpg"} alt="Book Cover" width={250} height={100} className="rounded-lg object-contain h-full w-full " />
                 </div>
                 <h3 className="text-xl font-bold mt-4">{book.title}</h3>
-                <p className="text-gray-700 mt-2">${book.price}</p>
+                <p className="text-gray-700 mt-2">{formatPublicNairaPrice(book.price)}</p>
                 <div className="flex justify-between mt-4">
                   <button className="text-primary font-semibold hover:underline">View</button>
                   <button className="bg-primary text-white px-4 py-2 rounded hover:bg-primary-dark">Buy Now</button>

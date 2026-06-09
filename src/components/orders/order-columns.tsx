@@ -2,6 +2,7 @@
 
 import { ColumnDef } from "@tanstack/react-table";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -27,7 +28,9 @@ const STATUS_COLORS: Record<string, string> = {
   draft:      "bg-gray-200 text-black",
   unfulfilled:"bg-gray-200 text-black",
   in_progress:"bg-yellow-400 text-black",
+  in_print:   "bg-yellow-400 text-black",
   shipped:    "bg-blue-400 text-white",
+  ready_to_ship:"bg-blue-400 text-white",
   delivered:  "bg-green-500 text-white",
 };
 
@@ -53,6 +56,11 @@ const ORDER_STATUS_OPTIONS = [
 function OrderStatusCell({ order }: { order: any }) {
   const { toast } = useToast();
   const utils     = trpc.useUtils();
+  const { data: session } = useSession();
+  const roleNames = session?.roles?.map((role) => role.name.toLowerCase()) ?? [];
+  const canEditOrderStatus = roleNames.some(
+    (role) => role === "super-admin" || role.startsWith("staff-")
+  );
 
   const mutation = trpc.updateOrderStatus.useMutation({
     onSuccess: () => {
@@ -65,7 +73,7 @@ function OrderStatusCell({ order }: { order: any }) {
 
   // Only physical / paid orders make sense to update status on
   // Payment status controls are separate — we only touch order.status here
-  return (
+  return canEditOrderStatus ? (
     <Select
       value={order.status}
       onValueChange={(val) =>
@@ -88,6 +96,8 @@ function OrderStatusCell({ order }: { order: any }) {
         ))}
       </SelectContent>
     </Select>
+  ) : (
+    <StatusBadge label={order.status} variant={order.status} />
   );
 }
 

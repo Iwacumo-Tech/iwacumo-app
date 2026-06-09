@@ -16,6 +16,7 @@ import {
   getGatewayDisplayName,
   normalizePaymentGatewaySettings,
 } from "@/lib/payment-config";
+import { formatPublicCurrencyPrice } from "@/lib/public-price";
 
 export default function OrderDetailsPage() {
   const params = useParams();
@@ -108,7 +109,7 @@ export default function OrderDetailsPage() {
                         <TableCell className="font-bold py-6">{item.book_variant?.book?.title || "Unknown Book"} <span className="block text-[8px] opacity-40 italic">{item.book_variant?.format}</span></TableCell>
                         <TableCell className="text-center font-bold">{item.quantity}</TableCell>
                         <TableCell className="text-right font-black italic">
-                          {formatMoney(item.total_price, order.currency || "NGN")}
+                          {formatPublicCurrencyPrice(item.total_price, order.currency || "NGN")}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -166,15 +167,15 @@ export default function OrderDetailsPage() {
               </div>
 
               <div className="space-y-4">
-                <div className="flex justify-between font-bold uppercase text-[10px] opacity-50"><span>Subtotal</span><span>{formatMoney(checkoutSubtotal, checkoutCurrency)}</span></div>
-                <div className="flex justify-between font-bold uppercase text-[10px] opacity-50"><span>Shipping</span><span>{formatMoney(checkoutShipping, checkoutCurrency)}</span></div>
+                <div className="flex justify-between font-bold uppercase text-[10px] opacity-50"><span>Subtotal</span><span>{formatPublicCurrencyPrice(checkoutSubtotal, checkoutCurrency)}</span></div>
+                <div className="flex justify-between font-bold uppercase text-[10px] opacity-50"><span>Shipping</span><span>{formatPublicCurrencyPrice(checkoutShipping, checkoutCurrency)}</span></div>
                 <div className="pt-4 border-t-2 border-black flex justify-between items-end">
                   <span className="font-black uppercase text-xs">Total</span>
-                  <span className="text-4xl font-black italic text-primary tracking-tighter">{formatMoney(checkoutTotal, checkoutCurrency)}</span>
+                  <span className="text-4xl font-black italic text-primary tracking-tighter">{formatPublicCurrencyPrice(checkoutTotal, checkoutCurrency)}</span>
                 </div>
                 {(order as any).checkout_currency && (order as any).checkout_currency !== order.currency && (
                   <div className="text-right text-[10px] font-bold uppercase tracking-widest opacity-40">
-                    Base total {formatMoney(order.total_amount, order.currency || "NGN")}
+                    Base total {formatPublicCurrencyPrice(order.total_amount, order.currency || "NGN")}
                   </div>
                 )}
               </div>

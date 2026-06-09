@@ -28,7 +28,7 @@ import { imageUpload, createImageUpload } from "./module/uploads";
 import { createHeroSlide, getAllHeroSlides, getGlobalHeroSlides, deleteHeroSlide } from "./module/slider";
 import { getAllBanners, createBanner, toggleBannerVisibility, getGlobalBanners, deleteBanner } from "./module/banner";
 import { createReview, getReviewsByBook } from "./module/review";
-import { createCart, getCartsByUser, deleteCartItem} from "./module/cart";
+import { createCart, getCartsByUser, deleteCartItem, transferGuestCartToUser} from "./module/cart";
 import {
   createAdminUser,
   updateAdminUser,
@@ -216,6 +216,7 @@ export const appRouter = router({
   createCart,
   getCartsByUser,
   deleteCartItem,
+  transferGuestCartToUser,
   // Order management
   createOrderFromCart,
   getOrderById,

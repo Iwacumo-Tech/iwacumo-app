@@ -102,11 +102,11 @@ export default function PaymentSuccessPage({ params }: { params: { orderId: stri
                       {item.book_variant.book?.title}
                     </p>
                     <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mt-1 capitalize">
-                      {item.book_variant.format} — Being prepared for dispatch
+                      {item.book_variant.format} — Being prepared for fulfillment
                     </p>
                   </div>
                   <div className="text-[11px] font-medium text-gray-500 italic border-l-2 border-black pl-4 max-w-xs">
-                    You'll receive a shipping notification with your tracking number once dispatched.
+                    We'll email you when fulfillment status changes.
                   </div>
                 </div>
               ))}
@@ -117,7 +117,7 @@ export default function PaymentSuccessPage({ params }: { params: { orderId: stri
               <div>
                 <p className="font-black uppercase italic text-sm">In the meantime</p>
                 <p className="text-xs text-white/60 mt-1 font-medium">
-                  Track your order status and manage your books from your dashboard.
+                  View your books and fulfillment updates from your dashboard.
                 </p>
               </div>
               <Link href="/app/books">
@@ -125,7 +125,7 @@ export default function PaymentSuccessPage({ params }: { params: { orderId: stri
                   variant="outline"
                   className="border-2 border-white bg-accent text-white hover:bg-white hover:text-black font-black uppercase italic text-xs h-12 px-6 rounded-none shrink-0 flex items-center gap-2"
                 >
-                  My Orders <ArrowRight size={14} />
+                  My Books <ArrowRight size={14} />
                 </Button>
               </Link>
             </div>
