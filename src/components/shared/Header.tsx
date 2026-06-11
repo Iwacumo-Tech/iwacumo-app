@@ -72,17 +72,17 @@ function HeaderContent() {
 
   return (
     <header className="sticky top-0 z-50 w-full bg-white/80 backdrop-blur-md border-b-[1.5px] border-black">
-      <div className="max-w-[95%] lg:max-w-[90%] mx-auto px-4 h-20 flex items-center justify-between gap-4 relative">
+      <div className="w-full max-w-[95%] lg:max-w-[90%] mx-auto px-2 sm:px-4 h-20 flex items-center justify-between gap-2 sm:gap-4 relative">
         
         {/* --- 1. LOGO --- */}
-        <Link href="/" className="shrink-0 hover:opacity-80 transition-opacity">
+        <Link href="/" className="shrink min-w-0 hover:opacity-80 transition-opacity">
           <Image 
             src="/black-logo.png" 
             alt="Iwacumo Logo" 
             width={140} 
             height={40} 
             priority
-            className="h-8 md:h-10 w-auto brightness-0" 
+            className="h-7 w-auto max-w-[112px] sm:h-8 sm:max-w-[140px] md:h-10 brightness-0"
           />
         </Link>
 
@@ -187,8 +187,8 @@ function HeaderContent() {
         </nav>
 
         {/* --- 4. MOBILE ACTIONS --- */}
-        <div className="flex items-center gap-2 lg:hidden">
-          <LanguageSwitcher compact className="shrink-0" />
+        <div className="flex shrink-0 items-center gap-1 sm:gap-2 lg:hidden">
+          <LanguageSwitcher compact className="shrink-0 [&>span:first-of-type]:hidden sm:[&>span:first-of-type]:inline-flex" />
 
           <div ref={mobileSearchButtonRef} className="relative md:hidden">
             <Button
