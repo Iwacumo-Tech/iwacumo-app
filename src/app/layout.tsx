@@ -6,6 +6,7 @@ import TRPCProvider from "./_providers/trpc-provider";
 import { SessionProvider } from "next-auth/react";
 import CartDrawer from "@/components/shared/CartDrawer";
 import { PublicTranslationProvider } from "@/components/shared/translation-provider";
+import { Analytics } from "@vercel/analytics/next";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -29,6 +30,7 @@ export default function RootLayout ({ children }: Readonly<{
             </TRPCProvider>
           </SessionProvider>
         </PublicTranslationProvider>
+        <Analytics />
       </body> 
     </html>
   );
