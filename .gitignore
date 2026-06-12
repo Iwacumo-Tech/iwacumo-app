@@ -48,3 +48,6 @@ firebase-adminsdk-*.json
 # Agents
 CLAUDE.md
 /docs
+
+# Codex local dev server logs
+.codex-dev-server*.log
