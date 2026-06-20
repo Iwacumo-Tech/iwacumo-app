@@ -43,6 +43,7 @@ export const createUser = publicProcedure
       name,
       publisher_id,
       tenant_slug,
+      email_verified,
     } = opts.input;
  
     const user = await prisma.$transaction(async (tx) => {
@@ -67,7 +68,7 @@ export const createUser = publicProcedure
           password: bcrypt.hashSync(password as string, 10),
           first_name: first_name as string,
           last_name: last_name as string,
-          // email_verified_at intentionally null
+          email_verified_at: email_verified ? new Date() : null,
         },
       });
  

@@ -3,6 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
   Form,
@@ -58,6 +59,7 @@ const UserForm = ({ user, action }: UserFormProps) => {
       email: user.email ?? "",
       phone_number: user.phone_number ?? "",
       password: user.password ?? "",
+      email_verified: false,
       date_of_birth: new Date(),
     },
   });
@@ -293,6 +295,24 @@ const UserForm = ({ user, action }: UserFormProps) => {
                             )}
                           />
                         </div>
+                        <FormField
+                          control={form.control}
+                          name="email_verified"
+                          render={({ field }) => (
+                            <FormItem className="flex flex-row items-center gap-2 space-y-0 pt-2">
+                              <FormControl>
+                                <Checkbox
+                                  checked={field.value}
+                                  onCheckedChange={field.onChange}
+                                />
+                              </FormControl>
+                              <FormLabel className="text-gray-700 text-xs cursor-pointer">
+                                Email already verified (skip verification for jumpstart accounts)
+                              </FormLabel>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
                       </div>
                       <div className="flex justify-end my-5">
                         <Button

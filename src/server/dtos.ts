@@ -19,6 +19,7 @@ export const createUserSchema = z.object({
   website: z.string().optional(),
   author_name: z.string().optional(),
   tenant_slug: z.string().optional(),
+  email_verified: z.boolean().optional(),
 });
 
 export const createRoleSchema = z.object({

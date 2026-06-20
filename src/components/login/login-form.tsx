@@ -45,7 +45,7 @@ export default function LoginForm() {
         toast({
           variant: "destructive",
           title: "Login failed",
-          description: "Check your login credentials.",
+          description: "Invalid email or password. If you recently joined, reset your password to verify your email.",
         });
         return;
       }
