@@ -523,7 +523,7 @@ export default function CartPage() {
       if (update) await update();
       await utils.getCartsByUser.invalidate();
       setShowRegistrationDialog(false);
-      toast({ title: "Welcome back!", description: "Your bag is ready. Continuing checkoutâ€¦" });
+      toast({ title: "Welcome back!", description: "Your bag is ready. Continuing checkout\u2026" });
 
       setTimeout(() => {
         if (requiresDelivery) setShowCheckoutDialog(true);

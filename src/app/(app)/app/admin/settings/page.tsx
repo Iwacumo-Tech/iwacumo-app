@@ -506,7 +506,7 @@ export default function SystemSettingsPage() {
               <h2 className="text-2xl font-black uppercase italic">Fez Shipping Rates</h2>
               <p className="text-xs opacity-50 font-medium -mt-4">
                 Fez uses group-based rates. Up to the kg cut-off, the customer pays a fixed amount.
-                Above the cut-off, cost = Group Constant + (Group Variable Ã— (Rounded Weight kg âˆ’ Cut-off)).
+                Above the cut-off, cost = Group Constant + (Group Variable \u00D7 (Rounded Weight kg \u2212 Cut-off)).
               </p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -519,7 +519,7 @@ export default function SystemSettingsPage() {
               </div>
 
               <div className="space-y-6">
-                <h3 className="text-lg font-black uppercase italic border-b-2 border-black pb-2">Group Rates (â‚¦)</h3>
+                <h3 className="text-lg font-black uppercase italic border-b-2 border-black pb-2">Group Rates (\u20A6)</h3>
                 {(["G1","G2","G3","G4","G5","G6"] as const).map((group) => (
                   <div key={group} className="grid grid-cols-2 gap-4">
                     <NumberField control={form.control} name={`fez_shipping_rates.${group}.constant`} label={`${group} Constant`} placeholder="e.g. 1500" />
@@ -1005,7 +1005,7 @@ export default function SystemSettingsPage() {
               <h2 className="text-2xl font-black uppercase italic">Fez Shipping Rates</h2>
               <p className="text-xs opacity-50 font-medium -mt-4">
                 Fez uses group-based rates. Up to the kg cut-off, the customer pays a fixed amount.
-                Above the cut-off, cost = Group Constant + (Group Variable Ã— (Rounded Weight kg âˆ’ Cut-off)).
+                Above the cut-off, cost = Group Constant + (Group Variable \u00D7 (Rounded Weight kg \u2212 Cut-off)).
               </p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1018,7 +1018,7 @@ export default function SystemSettingsPage() {
               </div>
 
               <div className="space-y-6">
-                <h3 className="text-lg font-black uppercase italic border-b-2 border-black pb-2">Group Rates (â‚¦)</h3>
+                <h3 className="text-lg font-black uppercase italic border-b-2 border-black pb-2">Group Rates (\u20A6)</h3>
                 {(["G1","G2","G3","G4","G5","G6"] as const).map((group) => (
                   <div key={group} className="grid grid-cols-2 gap-4">
                     <NumberField control={form.control} name={`fez_shipping_rates.${group}.constant`} label={`${group} Constant`} placeholder="e.g. 1500" />
