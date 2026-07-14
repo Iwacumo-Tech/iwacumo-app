@@ -41,9 +41,16 @@ function StatusBadge({ published, status }: { published: boolean; status: string
       </span>
     );
   }
+  if (status === "pending_review") {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-100 border border-blue-400 text-blue-800 text-[10px] font-black uppercase tracking-widest">
+        <Clock size={10} /> Under Review
+      </span>
+    );
+  }
   return (
-    <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-100 border border-amber-400 text-amber-800 text-[10px] font-black uppercase tracking-widest">
-      <Clock size={10} /> {status ?? "Draft"} — Pending Approval
+    <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-gray-100 border border-gray-400 text-gray-800 text-[10px] font-black uppercase tracking-widest">
+      <Clock size={10} /> Draft
     </span>
   );
 }

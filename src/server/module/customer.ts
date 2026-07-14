@@ -155,6 +155,23 @@ export const registerGuestAndTransferCart = publicProcedure
     })
   )
   .mutation(async (opts) => {
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { username: opts.input.customer_data.username ?? "" },
+          { email: opts.input.customer_data.email ?? "" },
+        ],
+      },
+    });
+
+    if (existingUser) {
+      const field = existingUser.email === opts.input.customer_data.email ? "Email" : "Username";
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: `${field} is already taken. Please sign in instead.`,
+      });
+    }
+
     return await prisma.$transaction(async (tx) => {
       
       // 1. CREATE THE USER ONLY (Identity)

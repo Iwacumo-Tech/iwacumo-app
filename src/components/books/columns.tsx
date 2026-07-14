@@ -269,9 +269,13 @@ function StaffBookAction({ book, meta }: { book: any; meta: any }) {
                 <span className="flex items-center gap-1 text-red-300 text-[9px] font-bold uppercase">
                   <Archive size={8} /> Deactivated
                 </span>
+              ) : book.status === "pending_review" ? (
+                <span className="flex items-center gap-1 text-blue-400 text-[9px] font-bold uppercase">
+                  <Clock size={8} /> Under Review
+                </span>
               ) : (
-                <span className="flex items-center gap-1 text-amber-400 text-[9px] font-bold uppercase">
-                  <Clock size={8} /> Pending Approval
+                <span className="flex items-center gap-1 text-gray-400 text-[9px] font-bold uppercase">
+                  <Clock size={8} /> Draft
                 </span>
               )}
             </div>
@@ -426,9 +430,13 @@ export const staffBookColumns: ColumnDef<any>[] = [
             <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase text-red-600">
               <Archive size={9} /> Deactivated
             </span>
+          ) : row.original.status === "pending_review" ? (
+            <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase text-blue-600">
+              <Clock size={9} /> Under Review
+            </span>
           ) : (
-            <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase text-amber-600">
-              <Clock size={9} /> Pending Approval
+            <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase text-gray-600">
+              <Clock size={9} /> Draft
             </span>
           )}
         </div>

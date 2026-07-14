@@ -828,6 +828,7 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
           status:     "active" as const,
         }] : []),
       ],
+      status: (activeProfile === "publisher" || activeProfile === "author") ? "pending_review" : undefined,
     };
 
       submitBook(payload as any);
@@ -1943,7 +1944,7 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
               disabled={isPending || Object.values(uploads).some((u) => u.loading) || isSubmitBlockedByPayout || isPayoutGateBusy}
               className="w-full h-16 bg-[#82d236] text-black font-black uppercase text-xl rounded-none border-2 border-black gumroad-shadow hover:translate-x-[3px] transition-all disabled:opacity-50 disabled:bg-gray-200 disabled:cursor-not-allowed"
             >
-              {isPending ? <Loader2 className="animate-spin" /> : `${action} Product`}
+              {isPending ? <Loader2 className="animate-spin" /> : (activeProfile === "publisher" || activeProfile === "author") ? "Submit for Review" : `${action} Product`}
             </Button>
           </form>
         </Form>

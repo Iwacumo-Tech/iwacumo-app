@@ -981,6 +981,13 @@ export const getBookById = publicProcedure
 export const approveBook = publicProcedure
   .input(z.object({ id: z.string() }))
   .mutation(async ({ input }) => {
+    const session = await auth();
+    const roleNames = session?.roles?.map(r => r.name.toLowerCase()) ?? [];
+    const canApprove = roleNames.some(r => r === "super-admin" || r.startsWith("staff-"));
+    if (!canApprove) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "Only admins can approve books." });
+    }
+
     // 1. Fetch the book with enough context to send the email
     const book = await prisma.book.findUnique({
       where: { id: input.id, deleted_at: null },
@@ -994,18 +1001,18 @@ export const approveBook = publicProcedure
         },
       },
     });
- 
+
     if (!book) {
       throw new TRPCError({ code: "NOT_FOUND", message: "Book not found" });
     }
- 
+
     if (book.published) {
       throw new TRPCError({
         code: "BAD_REQUEST",
         message: "Book is already published",
       });
     }
- 
+
     // 2. Approve — flip both flags atomically
     const approved = await prisma.book.update({
       where: { id: input.id },
@@ -1041,6 +1048,13 @@ export const denyBook = publicProcedure
     reviewerNotes: z.string().optional(),
   }))
   .mutation(async ({ input }) => {
+    const session = await auth();
+    const roleNames = session?.roles?.map(r => r.name.toLowerCase()) ?? [];
+    const canDeny = roleNames.some(r => r === "super-admin" || r.startsWith("staff-"));
+    if (!canDeny) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "Only admins can deny books." });
+    }
+
     const book = await prisma.book.findUnique({
       where: { id: input.id, deleted_at: null },
       include: {
