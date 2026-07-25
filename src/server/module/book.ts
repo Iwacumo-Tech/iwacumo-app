@@ -190,7 +190,7 @@ const MAMMOTH_STYLE_MAP = [
   "p[style-name='Heading 6'] => h6:fresh",
 ];
 
-const CHAPTER_NUMBER_PATTERN = /^chapter\s+[\divxlcdm]+[.:]?\s*$/i;
+const CHAPTER_NUMBER_PATTERN = /^chapter\s+[\divxlcdm\d]+[.:]?\s*$/i;
 
 function isChapterNumberHeading(text: string): boolean {
   return CHAPTER_NUMBER_PATTERN.test(text.trim());
@@ -213,7 +213,7 @@ function splitIntoSections(html: string): string[] {
 
 function splitOnChapterParagraphs(html: string): string[] {
   const chapterPattern =
-    /(?=<p[^>]*>\s*(?:<(strong|b)[^>]*>\s*)?chapter\s+[\divxlcdm]+[.:]?\s*(?:\s*<\/(strong|b)>)?\s*<\/p>)/gi;
+    /(?=<p[^>]*>\s*(?:<(strong|b)[^>]*>\s*)?chapter\s+[\divxlcdm\d]+[.:]?\s*(?:\s*<\/(strong|b)>)?\s*<\/p>)/gi;
   const split = html.split(chapterPattern).filter(Boolean);
   return split.length > 0 ? split : [html];
 }
@@ -242,7 +242,7 @@ function extractHeadingTitle(section: string, index: number): string {
     }
   }
 
-  const chapterMatch = section.match(/chapter\s+([\divxlcdm]+)[.:]?/i);
+  const chapterMatch = section.match(/chapter\s+([\divxlcdm\d]+)[.:]?/i);
   if (chapterMatch) {
     return `Chapter ${chapterMatch[1].toUpperCase()}`;
   }
@@ -275,7 +275,7 @@ function filterFrontMatter(sections: string[]): string[] {
     const text = section.replace(/<[^>]+>/g, "").trim().toLowerCase();
 
     if (!foundFirstChapter) {
-      if (/^chapter\s+[\divxlcdm]+\b/.test(text) || /^chapter\s+(one|two|three|four|five|six|seven|eight|nine|ten)\b/.test(text)) {
+      if (/^chapter\s+[\divxlcdm\d]+\b/.test(text) || /^chapter\s+(one|two|three|four|five|six|seven|eight|nine|ten)\b/.test(text)) {
         foundFirstChapter = true;
         return true;
       }
