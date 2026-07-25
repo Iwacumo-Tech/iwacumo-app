@@ -57,6 +57,8 @@ function ConnectedAccountCard({
     is_verified:           boolean;
     subaccount_ready:      boolean;
     recipient_ready:       boolean;
+    flw_subaccount_ready:  boolean;
+    flw_beneficiary_ready: boolean;
     payout_ready:          boolean;
     blocking_reason_labels: string[];
     updated_at:            Date | string;
@@ -101,8 +103,12 @@ function ConnectedAccountCard({
           <p className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-2">Status</p>
           <div className="flex flex-col gap-1.5">
             <StatusBadge ready={account.payout_ready} label={account.payout_ready ? "Payout ready" : "Payout blocked"} />
+            <p className="text-[8px] font-black uppercase tracking-widest text-gray-300 mt-1">Paystack</p>
             <StatusBadge ready={account.subaccount_ready} label={account.subaccount_ready ? "Auto-split ready" : "Auto-split pending"} />
             <StatusBadge ready={account.recipient_ready}  label={account.recipient_ready  ? "Transfers ready"  : "Transfers pending"} />
+            <p className="text-[8px] font-black uppercase tracking-widest text-gray-300 mt-1">Flutterwave</p>
+            <StatusBadge ready={account.flw_subaccount_ready} label={account.flw_subaccount_ready ? "Split ready" : "Split pending"} />
+            <StatusBadge ready={account.flw_beneficiary_ready}  label={account.flw_beneficiary_ready  ? "Beneficiary ready"  : "Beneficiary pending"} />
           </div>
         </div>
       </div>

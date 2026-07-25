@@ -24,6 +24,7 @@ import { mergeOrderNotes, parseOrderNotes } from "@/lib/order-notes";
 import { finalizeCapturedPayment, finalizeFailedPayment } from "@/lib/payment-ops";
 import {
   buildPaystackSettlementPlan,
+  buildFlutterwaveSettlementPlan,
   resolveOrderPayoutRoutingSnapshot,
 } from "@/lib/payout-routing";
 
@@ -206,6 +207,7 @@ export const initializePayment = publicProcedure
     );
 
     let paystackSettlementPlan = null;
+    let flutterwaveSettlementPlan = null;
     if (resolvedGateway === PAYMENT_GATEWAYS.PAYSTACK) {
       if ((order.currency || "").toUpperCase() !== "NGN") {
         throw new TRPCError({
@@ -243,6 +245,43 @@ export const initializePayment = publicProcedure
             : "The payout settlement split for this order could not be prepared.",
         });
       }
+    } else if (resolvedGateway === PAYMENT_GATEWAYS.FLUTTERWAVE) {
+      if ((order.currency || "").toUpperCase() !== "NGN") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Flutterwave direct settlement splitting is currently available only when the order base currency is NGN.",
+        });
+      }
+
+      try {
+        flutterwaveSettlementPlan = buildFlutterwaveSettlementPlan({
+          orderNumber: order.order_number,
+          currency: resolvedCurrency,
+          subtotalAmount: order.subtotal_amount,
+          totalAmount: order.total_amount,
+          shippingAmount: order.shipping_amount,
+          taxAmount: order.tax_amount,
+          discountAmount: order.discount_amount,
+          publisher: order.publisher
+            ? {
+                id: order.publisher.id,
+                display_name: order.publisher.tenant?.name
+                  || `${order.publisher.user?.first_name ?? ""} ${order.publisher.user?.last_name ?? ""}`.trim()
+                  || "Publisher",
+                flw_subaccount_id: order.publisher.user?.payment_account?.flutterwave_subaccount_id ?? null,
+              }
+            : null,
+          payoutRouting: resolvedPayoutRouting,
+          lineItems: order.line_items,
+        });
+      } catch (error) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: error instanceof Error
+            ? error.message
+            : "The Flutterwave settlement split for this order could not be prepared.",
+        });
+      }
     }
 
     let session;
@@ -266,7 +305,13 @@ export const initializePayment = publicProcedure
                 split: paystackSettlementPlan.split,
               },
             }
-          : undefined,
+          : flutterwaveSettlementPlan
+            ? {
+                flutterwave: {
+                  subaccounts: flutterwaveSettlementPlan.subaccounts,
+                },
+              }
+            : undefined,
       });
     } catch (error: any) {
       if (axios.isAxiosError(error)) {

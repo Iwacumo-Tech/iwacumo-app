@@ -378,6 +378,10 @@ model PaymentAccount {
   paystack_subaccount_code String?   @unique  // e.g. "ACCT_xxxxxxxxxx" — for split payments
   paystack_recipient_code  String?   @unique  // e.g. "RCP_xxxxxxxxxx"  — for manual transfers
 
+  // Flutterwave v3 identifiers — set after successful subaccount/beneficiary creation
+  flutterwave_subaccount_id  String?   @unique  // e.g. "RS_xxxxxxxxxx" — for split payments
+  flutterwave_beneficiary_id String?   @unique  // e.g. "BEN_xxxxxxxxxx" — for manual transfers
+
   is_verified              Boolean   @default(false)
   created_at               DateTime  @default(now())
   updated_at               DateTime  @updatedAt

@@ -89,6 +89,12 @@ export type CreatePaymentSessionInput = {
         }>;
       };
     };
+    flutterwave?: {
+      subaccounts: Array<{
+        id: string;
+        transaction_split_ratio: number;
+      }>;
+    };
   };
 };
 
@@ -397,6 +403,10 @@ function buildCredentialHealth(required: Array<[string, string | undefined]>) {
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || "";
 const PAYSTACK_BASE_URL = "https://api.paystack.co";
 
+const FLUTTERWAVE_SECRET_KEY = process.env.FLUTTERWAVE_SECRET_KEY || "";
+const FLUTTERWAVE_WEBHOOK_SECRET = process.env.FLUTTERWAVE_WEBHOOK_SECRET || "";
+const FLUTTERWAVE_BASE_URL = "https://api.flutterwave.com";
+
 const paystackAdapter: PaymentGatewayAdapter = {
   gateway: PAYMENT_GATEWAYS.PAYSTACK,
   displayName: "Paystack",
@@ -535,6 +545,100 @@ function createScaffoldAdapter(
   };
 }
 
+const flutterwaveV3Adapter: PaymentGatewayAdapter = {
+  gateway: PAYMENT_GATEWAYS.FLUTTERWAVE,
+  displayName: "Flutterwave",
+  implemented: true,
+  supportsCurrency: (currency, settings) =>
+    settings.supported_currencies.includes(normalizeCurrencyCode(currency)),
+  supportsMethod: (method, settings) =>
+    settings.supported_methods.includes(method),
+  getCredentialHealth: () => buildCredentialHealth([
+    ["FLUTTERWAVE_SECRET_KEY", FLUTTERWAVE_SECRET_KEY],
+    ["FLUTTERWAVE_WEBHOOK_SECRET", FLUTTERWAVE_WEBHOOK_SECRET],
+  ]),
+  createPaymentSession: async (input) => {
+    const flwSettlement = input.settlement?.flutterwave;
+    const body: Record<string, unknown> = {
+      tx_ref: `order_${input.orderNumber}_${Date.now()}`,
+      amount: input.amount,
+      currency: normalizeCurrencyCode(input.currency) || "NGN",
+      redirect_url: input.callbackUrl,
+      customer: {
+        email: input.email,
+      },
+      meta: {
+        order_id: input.orderId,
+        order_number: input.orderNumber,
+      },
+    };
+
+    if (flwSettlement?.subaccounts?.length) {
+      body.subaccounts = flwSettlement.subaccounts;
+    }
+
+    const response = await axios.post(
+      `${FLUTTERWAVE_BASE_URL}/v3/payments`,
+      body,
+      {
+        headers: {
+          Authorization: `Bearer ${FLUTTERWAVE_SECRET_KEY}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    const { data } = response.data;
+    return {
+      authorization_url: data.link || data.data?.link || null,
+      access_code: String(data.id ?? data.data?.id ?? ""),
+      reference: data.tx_ref || data.data?.tx_ref || body.tx_ref as string,
+      provider: PAYMENT_GATEWAYS.FLUTTERWAVE,
+      processor_response: response.data,
+    };
+  },
+  verifyPayment: async (reference) => {
+    const response = await axios.get(
+      `${FLUTTERWAVE_BASE_URL}/v3/transactions/verify/${reference}`,
+      {
+        headers: { Authorization: `Bearer ${FLUTTERWAVE_SECRET_KEY}` },
+      }
+    );
+
+    const { data } = response.data;
+    return {
+      success: data.status === "successful",
+      reference: data.tx_ref || reference,
+      amount: data.amount ?? 0,
+      currency: data.currency || "NGN",
+      status: data.status,
+      processor_response: response.data,
+    };
+  },
+  normalizeWebhookEvent: async (request) => {
+    const body = await request.text();
+    const signature = request.headers.get("x-flutterwave-signature");
+
+    if (!FLUTTERWAVE_WEBHOOK_SECRET || signature !== FLUTTERWAVE_WEBHOOK_SECRET) {
+      throw new Error("Invalid Flutterwave webhook signature");
+    }
+
+    const event = JSON.parse(body);
+    const data = event.data ?? {};
+
+    return {
+      type: event.event === "charge.completed"
+        ? "charge.success"
+        : "unknown",
+      orderId: data.meta?.order_id || null,
+      reference: data.tx_ref || null,
+      amount: data.amount ?? 0,
+      currency: data.currency || "NGN",
+      processor_response: event,
+    };
+  },
+};
+
 const adapters: Record<PaymentGateway, PaymentGatewayAdapter> = {
   paystack: paystackAdapter,
   stripe: createScaffoldAdapter(PAYMENT_GATEWAYS.STRIPE, "Stripe", [
@@ -545,10 +649,7 @@ const adapters: Record<PaymentGateway, PaymentGatewayAdapter> = {
     "PAYPAL_CLIENT_ID",
     "PAYPAL_CLIENT_SECRET",
   ]),
-  flutterwave: createScaffoldAdapter(PAYMENT_GATEWAYS.FLUTTERWAVE, "Flutterwave", [
-    "FLUTTERWAVE_SECRET_KEY",
-    "FLUTTERWAVE_WEBHOOK_SECRET",
-  ]),
+  flutterwave: flutterwaveV3Adapter,
 };
 
 export function getPaymentGatewayAdapter(gateway: PaymentGateway) {

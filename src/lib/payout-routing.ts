@@ -3,6 +3,8 @@ export const PAYOUT_BLOCKING_REASONS = {
   ACCOUNT_UNVERIFIED: "account_unverified",
   SUBACCOUNT_PENDING: "subaccount_pending",
   RECIPIENT_PENDING: "recipient_pending",
+  FLW_SUBACCOUNT_PENDING: "flw_subaccount_pending",
+  FLW_BENEFICIARY_PENDING: "flw_beneficiary_pending",
 } as const;
 
 export type PayoutBlockingReason =
@@ -12,6 +14,8 @@ type PaymentAccountLike = {
   is_verified?: boolean | null;
   paystack_subaccount_code?: string | null;
   paystack_recipient_code?: string | null;
+  flutterwave_subaccount_id?: string | null;
+  flutterwave_beneficiary_id?: string | null;
 };
 
 export type PaymentAccountReadiness = {
@@ -19,6 +23,8 @@ export type PaymentAccountReadiness = {
   is_verified: boolean;
   subaccount_ready: boolean;
   recipient_ready: boolean;
+  flw_subaccount_ready: boolean;
+  flw_beneficiary_ready: boolean;
   payout_ready: boolean;
   blocking_reasons: PayoutBlockingReason[];
   blocking_reason_labels: string[];
@@ -83,9 +89,10 @@ type SettlementLineItem = {
           active?: boolean | null;
           first_name?: string | null;
           last_name?: string | null;
-          payment_account?: {
-            paystack_subaccount_code?: string | null;
-          } | null;
+           payment_account?: {
+             paystack_subaccount_code?: string | null;
+             flutterwave_subaccount_id?: string | null;
+           } | null;
         } | null;
       } | null;
     } | null;
@@ -127,9 +134,13 @@ export function getPayoutBlockingReasonLabel(reason: PayoutBlockingReason) {
     case PAYOUT_BLOCKING_REASONS.ACCOUNT_UNVERIFIED:
       return "The saved bank account still needs verification.";
     case PAYOUT_BLOCKING_REASONS.SUBACCOUNT_PENDING:
-      return "Automatic split registration is still pending.";
+      return "Paystack automatic split registration is still pending.";
     case PAYOUT_BLOCKING_REASONS.RECIPIENT_PENDING:
-      return "Transfer recipient registration is still pending.";
+      return "Paystack transfer recipient registration is still pending.";
+    case PAYOUT_BLOCKING_REASONS.FLW_SUBACCOUNT_PENDING:
+      return "Flutterwave split registration is still pending.";
+    case PAYOUT_BLOCKING_REASONS.FLW_BENEFICIARY_PENDING:
+      return "Flutterwave beneficiary registration is still pending.";
     default:
       return "Payout setup is incomplete.";
   }
@@ -142,6 +153,8 @@ export function buildPaymentAccountReadiness(
   const isVerified = !!account?.is_verified;
   const subaccountReady = !!account?.paystack_subaccount_code;
   const recipientReady = !!account?.paystack_recipient_code;
+  const flwSubaccountReady = !!account?.flutterwave_subaccount_id;
+  const flwBeneficiaryReady = !!account?.flutterwave_beneficiary_id;
   const blockingReasons: PayoutBlockingReason[] = [];
 
   if (!hasAccount) {
@@ -156,14 +169,25 @@ export function buildPaymentAccountReadiness(
     if (!recipientReady) {
       blockingReasons.push(PAYOUT_BLOCKING_REASONS.RECIPIENT_PENDING);
     }
+    if (!flwSubaccountReady) {
+      blockingReasons.push(PAYOUT_BLOCKING_REASONS.FLW_SUBACCOUNT_PENDING);
+    }
+    if (!flwBeneficiaryReady) {
+      blockingReasons.push(PAYOUT_BLOCKING_REASONS.FLW_BENEFICIARY_PENDING);
+    }
   }
+
+  const paystackReady = isVerified && subaccountReady && recipientReady;
+  const flutterwaveReady = isVerified && flwSubaccountReady && flwBeneficiaryReady;
 
   return {
     has_account: hasAccount,
     is_verified: isVerified,
     subaccount_ready: subaccountReady,
     recipient_ready: recipientReady,
-    payout_ready: blockingReasons.length === 0,
+    flw_subaccount_ready: flwSubaccountReady,
+    flw_beneficiary_ready: flwBeneficiaryReady,
+    payout_ready: paystackReady || flutterwaveReady,
     blocking_reasons: blockingReasons,
     blocking_reason_labels: blockingReasons.map(getPayoutBlockingReasonLabel),
   };
@@ -392,5 +416,73 @@ export function buildPaystackSettlementPlan(params: {
         share: recipient.amount_minor_unit,
       })),
     },
+  };
+}
+
+export type FlutterwaveSettlementPlan = {
+  currency: string;
+  total_amount: number;
+  subaccounts: Array<{
+    id: string;
+    transaction_split_ratio: number;
+  }>;
+};
+
+export function buildFlutterwaveSettlementPlan(params: {
+  orderNumber: string;
+  currency: string;
+  subtotalAmount: number;
+  totalAmount: number;
+  shippingAmount: number;
+  taxAmount: number;
+  discountAmount: number;
+  publisher: {
+    id: string | null;
+    display_name: string;
+    flw_subaccount_id: string | null;
+  } | null;
+  payoutRouting: OrderPayoutRoutingSnapshot;
+  lineItems: SettlementLineItem[];
+}): FlutterwaveSettlementPlan {
+  if ((params.currency || "").toUpperCase() !== "NGN") {
+    throw new Error("Flutterwave payout splitting is currently available only for NGN orders.");
+  }
+
+  const publisher = params.publisher;
+  const publisherSubaccountId = publisher?.flw_subaccount_id?.trim() || null;
+
+  if (!publisherSubaccountId) {
+    throw new Error("The Flutterwave publisher payout account is not fully ready.");
+  }
+
+  const totalAmount = params.totalAmount > 0 ? params.totalAmount : params.subtotalAmount;
+  const subaccounts: Array<{ id: string; transaction_split_ratio: number }> = [];
+
+  for (const item of params.lineItems) {
+    const publisherEarnings = item.publisher_earnings || 0;
+    const authorEarnings = item.author_earnings || 0;
+
+    if (publisherEarnings > 0 && totalAmount > 0) {
+      subaccounts.push({
+        id: publisherSubaccountId,
+        transaction_split_ratio: publisherEarnings / totalAmount,
+      });
+    }
+
+    if (authorEarnings > 0 && totalAmount > 0) {
+      const authorSubaccountId = item.book_variant?.book?.author?.user?.payment_account?.flutterwave_subaccount_id?.trim() || null;
+      if (authorSubaccountId) {
+        subaccounts.push({
+          id: authorSubaccountId,
+          transaction_split_ratio: authorEarnings / totalAmount,
+        });
+      }
+    }
+  }
+
+  return {
+    currency: params.currency,
+    total_amount: totalAmount,
+    subaccounts,
   };
 }
