@@ -192,97 +192,84 @@ const MAMMOTH_STYLE_MAP = [
 
 const CHAPTER_NUMBER_PATTERN = /^chapter\s+[\divxlcdm\d]+[.:]?\s*$/i;
 
-function isChapterNumberHeading(text: string): boolean {
+function isChapterNumberText(text: string): boolean {
   return CHAPTER_NUMBER_PATTERN.test(text.trim());
 }
 
-function splitIntoSections(html: string): string[] {
-  const headingSplit = html.split(/(?=<h[1-6][^>]*>)/i).filter(Boolean);
+function extractTextFromHtml(html: string): string {
+  return html.replace(/<[^>]+>/g, "").trim();
+}
 
-  if (headingSplit.length <= 1) {
-    return splitOnChapterParagraphs(html);
-  }
-
-  const result: string[] = [];
-  for (const section of headingSplit) {
-    result.push(...splitOnChapterParagraphs(section));
-  }
-
-  return result;
+function splitOnHeadings(html: string): string[] {
+  return html.split(/(?=<h[1-6][^>]*>)/i).filter(Boolean);
 }
 
 function splitOnChapterParagraphs(html: string): string[] {
-  const chapterPattern =
-    /(?=<p[^>]*>\s*(?:<(strong|b)[^>]*>\s*)?chapter\s+[\divxlcdm\d]+[.:]?\s*(?:\s*<\/(strong|b)>)?\s*<\/p>)/gi;
-  const split = html.split(chapterPattern).filter(Boolean);
-  return split.length > 0 ? split : [html];
+  const pattern = /(?=<p[^>]*>\s*(?:<(?:strong|b)[^>]*>\s*)?chapter\s+[\divxlcdm\d]+[.:]?\s*(?:\s*<\/(?:strong|b)>)?\s*<\/p>)/gi;
+  return html.split(pattern).filter(Boolean);
 }
 
-function isChapterNumberSection(section: string): boolean {
-  const text = section.replace(/<[^>]+>/g, "").trim();
-  return isChapterNumberHeading(text);
-}
+function extractTitle(section: string, fallbackIndex: number): string {
+  const text = extractTextFromHtml(section);
 
-function extractHeadingTitle(section: string, index: number): string {
+  if (isChapterNumberText(text)) {
+    return `Chapter ${fallbackIndex + 1}`;
+  }
+
   const headingPattern = /<h[1-6][^>]*>(.*?)<\/h[1-6]>/gi;
-  let headingMatch: RegExpExecArray | null;
-  while ((headingMatch = headingPattern.exec(section)) !== null) {
-    const text = headingMatch[1].replace(/<[^>]+>/g, "").trim();
-    if (!isChapterNumberHeading(text)) {
-      return text;
+  let match: RegExpExecArray | null;
+  while ((match = headingPattern.exec(section)) !== null) {
+    const headingText = match[1].replace(/<[^>]+>/g, "").trim();
+    if (!isChapterNumberText(headingText)) {
+      return headingText;
     }
   }
 
-  const boldPattern = /<(strong|b)[^>]*>(.*?)<\/(strong|b)>/gi;
-  let boldMatch: RegExpExecArray | null;
-  while ((boldMatch = boldPattern.exec(section)) !== null) {
-    const text = boldMatch[2].replace(/<[^>]+>/g, "").trim();
-    if (text.length > 0 && !isChapterNumberHeading(text)) {
-      return text;
+  const boldPattern = /<(?:strong|b)[^>]*>(.*?)<\/(?:strong|b)>/gi;
+  while ((match = boldPattern.exec(section)) !== null) {
+    const boldText = match[1].replace(/<[^>]+>/g, "").trim();
+    if (boldText.length > 0 && !isChapterNumberText(boldText)) {
+      return boldText;
     }
   }
 
-  const chapterMatch = section.match(/chapter\s+([\divxlcdm\d]+)[.:]?/i);
+  const chapterMatch = text.match(/chapter\s+([\divxlcdm\d]+)[.:]?/i);
   if (chapterMatch) {
     return `Chapter ${chapterMatch[1].toUpperCase()}`;
   }
 
-  return `Chapter ${index + 1}`;
+  const firstLine = text.split("\n")[0]?.trim();
+  if (firstLine && firstLine.length <= 100) {
+    return firstLine;
+  }
+
+  return `Chapter ${fallbackIndex + 1}`;
 }
 
-function mergeChapterSections(sections: string[]): string[] {
+function mergeChapterWithNextTitle(sections: string[]): string[] {
   const merged: string[] = [];
   let i = 0;
 
   while (i < sections.length) {
     const currentSection = sections[i];
+    const currentText = extractTextFromHtml(currentSection);
 
-    if (isChapterNumberSection(currentSection) && i + 1 < sections.length) {
-      merged.push(currentSection + sections[i + 1]);
-      i += 2;
-    } else {
-      merged.push(currentSection);
-      i++;
+    if (isChapterNumberText(currentText) && i + 1 < sections.length) {
+      const nextSection = sections[i + 1];
+      const nextText = extractTextFromHtml(nextSection);
+
+      if (!isChapterNumberText(nextText)) {
+        merged.push(currentSection + nextSection);
+        i += 2;
+        continue;
+      }
     }
+
+    merged.push(currentSection);
+    i++;
   }
 
   return merged;
-}
-
-function filterFrontMatter(sections: string[]): string[] {
-  let foundFirstChapter = false;
-  return sections.filter((section) => {
-    const text = section.replace(/<[^>]+>/g, "").trim().toLowerCase();
-
-    if (!foundFirstChapter) {
-      if (/^chapter\s+[\divxlcdm\d]+\b/.test(text) || /^chapter\s+(one|two|three|four|five|six|seven|eight|nine|ten)\b/.test(text)) {
-        foundFirstChapter = true;
-        return true;
-      }
-      return false;
-    }
-    return true;
-  });
 }
 
 async function extractChaptersFromDocx(docxUrl?: string | null) {
@@ -296,25 +283,40 @@ async function extractChaptersFromDocx(docxUrl?: string | null) {
     );
     const fullHtml = result.value;
 
+    console.log("[extractChaptersFromDocx] HTML length:", fullHtml.length);
+    console.log("[extractChaptersFromDocx] First 500 chars:", fullHtml.substring(0, 500));
+
     if (result.messages.length > 0) {
       console.log("[extractChaptersFromDocx] Mammoth messages:", result.messages);
     }
 
-    const sections = splitIntoSections(fullHtml);
-    const mergedSections = mergeChapterSections(sections);
-    const filteredSections = filterFrontMatter(mergedSections);
+    let sections = splitOnHeadings(fullHtml);
+    console.log("[extractChaptersFromDocx] After heading split:", sections.length, "sections");
 
-    if (filteredSections.length > 1) {
-      console.log(`[extractChaptersFromDocx] Split into ${filteredSections.length} sections`);
+    if (sections.length <= 1) {
+      sections = splitOnChapterParagraphs(fullHtml);
+      console.log("[extractChaptersFromDocx] After chapter paragraph split:", sections.length, "sections");
     }
 
-    return filteredSections.map((section, index) => {
-      const title = extractHeadingTitle(section, index);
+    const mergedSections = mergeChapterWithNextTitle(sections);
+    console.log("[extractChaptersFromDocx] After merge:", mergedSections.length, "sections");
+
+    if (mergedSections.length === 0) {
+      console.log("[extractChaptersFromDocx] No sections found, returning empty");
+      return [];
+    }
+
+    return mergedSections.map((section, index) => {
+      const title = extractTitle(section, index);
+      const wordCount = extractTextFromHtml(section).split(/\s+/).filter(Boolean).length;
+
+      console.log(`[extractChaptersFromDocx] Chapter ${index + 1}: "${title}" (${wordCount} words)`);
+
       return {
         title,
         content: section,
         chapter_number: index + 1,
-        word_count: section.replace(/<[^>]+>/g, "").split(/\s+/).length,
+        word_count: wordCount,
       };
     });
   } catch (error) {
