@@ -190,7 +190,7 @@ const MAMMOTH_STYLE_MAP = [
   "p[style-name='Heading 6'] => h6:fresh",
 ];
 
-const CHAPTER_NUMBER_PATTERN = /^chapter\s+[\divxlcdm]+\.?\s*$/i;
+const CHAPTER_NUMBER_PATTERN = /^chapter\s+[\divxlcdm]+[.:]?\s*$/i;
 
 function isChapterNumberHeading(text: string): boolean {
   return CHAPTER_NUMBER_PATTERN.test(text.trim());
@@ -198,46 +198,55 @@ function isChapterNumberHeading(text: string): boolean {
 
 function splitIntoSections(html: string): string[] {
   const headingSplit = html.split(/(?=<h[1-6][^>]*>)/i).filter(Boolean);
-  if (headingSplit.length > 1) return headingSplit;
 
-  const hasHeadingTags = /<h[1-6][^>]*>/i.test(html);
-  if (hasHeadingTags && headingSplit.length === 1) return headingSplit;
-
-  const boldChapterPattern = /<p[^>]*>\s*<(strong|b)[^>]*>(.*?)<\/(strong|b)>\s*<\/p>/gi;
-  const matchPositions: { index: number; text: string }[] = [];
-  let match: RegExpExecArray | null;
-  while ((match = boldChapterPattern.exec(html)) !== null) {
-    const innerText = match[2].replace(/<[^>]+>/g, "").trim();
-    if (innerText.length > 0 && innerText.length <= 250) {
-      matchPositions.push({ index: match.index, text: match[0] });
-    }
+  if (headingSplit.length <= 1) {
+    return splitOnChapterParagraphs(html);
   }
 
-  if (matchPositions.length === 0) return [html];
-
-  boldChapterPattern.lastIndex = 0;
-  const sections: string[] = [];
-  let lastIndex = 0;
-  for (const pos of matchPositions) {
-    if (pos.index > lastIndex) {
-      sections.push(html.slice(lastIndex, pos.index));
-    }
-    lastIndex = pos.index;
+  const result: string[] = [];
+  for (const section of headingSplit) {
+    result.push(...splitOnChapterParagraphs(section));
   }
-  sections.push(html.slice(lastIndex));
 
-  return sections.filter(Boolean);
+  return result;
+}
+
+function splitOnChapterParagraphs(html: string): string[] {
+  const chapterPattern =
+    /(?=<p[^>]*>\s*(?:<(strong|b)[^>]*>\s*)?chapter\s+[\divxlcdm]+[.:]?\s*(?:\s*<\/(strong|b)>)?\s*<\/p>)/gi;
+  const split = html.split(chapterPattern).filter(Boolean);
+  return split.length > 0 ? split : [html];
+}
+
+function isChapterNumberSection(section: string): boolean {
+  const text = section.replace(/<[^>]+>/g, "").trim();
+  return isChapterNumberHeading(text);
 }
 
 function extractHeadingTitle(section: string, index: number): string {
-  const headingMatch = section.match(/<h[1-6][^>]*>(.*?)<\/h[1-6]>/i);
-  if (headingMatch) {
-    return headingMatch[1].replace(/<[^>]+>/g, "").trim();
+  const headingPattern = /<h[1-6][^>]*>(.*?)<\/h[1-6]>/gi;
+  let headingMatch: RegExpExecArray | null;
+  while ((headingMatch = headingPattern.exec(section)) !== null) {
+    const text = headingMatch[1].replace(/<[^>]+>/g, "").trim();
+    if (!isChapterNumberHeading(text)) {
+      return text;
+    }
   }
-  const boldMatch = section.match(/<(strong|b)[^>]*>(.*?)<\/(strong|b)>/i);
-  if (boldMatch) {
-    return boldMatch[2].replace(/<[^>]+>/g, "").trim();
+
+  const boldPattern = /<(strong|b)[^>]*>(.*?)<\/(strong|b)>/gi;
+  let boldMatch: RegExpExecArray | null;
+  while ((boldMatch = boldPattern.exec(section)) !== null) {
+    const text = boldMatch[2].replace(/<[^>]+>/g, "").trim();
+    if (text.length > 0 && !isChapterNumberHeading(text)) {
+      return text;
+    }
   }
+
+  const chapterMatch = section.match(/chapter\s+([\divxlcdm]+)[.:]?/i);
+  if (chapterMatch) {
+    return `Chapter ${chapterMatch[1].toUpperCase()}`;
+  }
+
   return `Chapter ${index + 1}`;
 }
 
@@ -247,20 +256,14 @@ function mergeChapterSections(sections: string[]): string[] {
 
   while (i < sections.length) {
     const currentSection = sections[i];
-    const title = extractHeadingTitle(currentSection, i);
 
-    if (isChapterNumberHeading(title) && i + 1 < sections.length) {
-      const nextSection = sections[i + 1];
-      const nextTitle = extractHeadingTitle(nextSection, i + 1);
-      if (!isChapterNumberHeading(nextTitle)) {
-        merged.push(currentSection + nextSection);
-        i += 2;
-        continue;
-      }
+    if (isChapterNumberSection(currentSection) && i + 1 < sections.length) {
+      merged.push(currentSection + sections[i + 1]);
+      i += 2;
+    } else {
+      merged.push(currentSection);
+      i++;
     }
-
-    merged.push(currentSection);
-    i++;
   }
 
   return merged;
@@ -270,14 +273,9 @@ function filterFrontMatter(sections: string[]): string[] {
   let foundFirstChapter = false;
   return sections.filter((section) => {
     const text = section.replace(/<[^>]+>/g, "").trim().toLowerCase();
-    const title = extractHeadingTitle(section, 0);
 
     if (!foundFirstChapter) {
-      if (isChapterNumberHeading(title)) {
-        foundFirstChapter = true;
-        return true;
-      }
-      if (text.includes("chapter 1") || text.includes("chapter one")) {
+      if (/^chapter\s+[\divxlcdm]+\b/.test(text) || /^chapter\s+(one|two|three|four|five|six|seven|eight|nine|ten)\b/.test(text)) {
         foundFirstChapter = true;
         return true;
       }
