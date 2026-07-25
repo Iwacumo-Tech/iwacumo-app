@@ -182,8 +182,6 @@ function resolveVariantDimensions(input: {
 }
 
 const MAMMOTH_STYLE_MAP = [
-  "p[style-name='Title'] => h1:fresh",
-  "p[style-name='Subtitle'] => h2:fresh",
   "p[style-name='Heading 1'] => h1:fresh",
   "p[style-name='Heading 2'] => h2:fresh",
   "p[style-name='Heading 3'] => h3:fresh",
@@ -191,6 +189,12 @@ const MAMMOTH_STYLE_MAP = [
   "p[style-name='Heading 5'] => h5:fresh",
   "p[style-name='Heading 6'] => h6:fresh",
 ];
+
+const CHAPTER_NUMBER_PATTERN = /^chapter\s+[\divxlcdm]+\.?\s*$/i;
+
+function isChapterNumberHeading(text: string): boolean {
+  return CHAPTER_NUMBER_PATTERN.test(text.trim());
+}
 
 function splitIntoSections(html: string): string[] {
   const headingSplit = html.split(/(?=<h[1-6][^>]*>)/i).filter(Boolean);
@@ -237,6 +241,52 @@ function extractHeadingTitle(section: string, index: number): string {
   return `Chapter ${index + 1}`;
 }
 
+function mergeChapterSections(sections: string[]): string[] {
+  const merged: string[] = [];
+  let i = 0;
+
+  while (i < sections.length) {
+    const currentSection = sections[i];
+    const title = extractHeadingTitle(currentSection, i);
+
+    if (isChapterNumberHeading(title) && i + 1 < sections.length) {
+      const nextSection = sections[i + 1];
+      const nextTitle = extractHeadingTitle(nextSection, i + 1);
+      if (!isChapterNumberHeading(nextTitle)) {
+        merged.push(currentSection + nextSection);
+        i += 2;
+        continue;
+      }
+    }
+
+    merged.push(currentSection);
+    i++;
+  }
+
+  return merged;
+}
+
+function filterFrontMatter(sections: string[]): string[] {
+  let foundFirstChapter = false;
+  return sections.filter((section) => {
+    const text = section.replace(/<[^>]+>/g, "").trim().toLowerCase();
+    const title = extractHeadingTitle(section, 0);
+
+    if (!foundFirstChapter) {
+      if (isChapterNumberHeading(title)) {
+        foundFirstChapter = true;
+        return true;
+      }
+      if (text.includes("chapter 1") || text.includes("chapter one")) {
+        foundFirstChapter = true;
+        return true;
+      }
+      return false;
+    }
+    return true;
+  });
+}
+
 async function extractChaptersFromDocx(docxUrl?: string | null) {
   if (!docxUrl) return [];
 
@@ -253,12 +303,14 @@ async function extractChaptersFromDocx(docxUrl?: string | null) {
     }
 
     const sections = splitIntoSections(fullHtml);
+    const mergedSections = mergeChapterSections(sections);
+    const filteredSections = filterFrontMatter(mergedSections);
 
-    if (sections.length > 1) {
-      console.log(`[extractChaptersFromDocx] Split into ${sections.length} sections`);
+    if (filteredSections.length > 1) {
+      console.log(`[extractChaptersFromDocx] Split into ${filteredSections.length} sections`);
     }
 
-    return sections.map((section, index) => {
+    return filteredSections.map((section, index) => {
       const title = extractHeadingTitle(section, index);
       return {
         title,
