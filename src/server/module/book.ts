@@ -181,35 +181,92 @@ function resolveVariantDimensions(input: {
   };
 }
 
+const MAMMOTH_STYLE_MAP = [
+  "p[style-name='Title'] => h1:fresh",
+  "p[style-name='Subtitle'] => h2:fresh",
+  "p[style-name='Heading 1'] => h1:fresh",
+  "p[style-name='Heading 2'] => h2:fresh",
+  "p[style-name='Heading 3'] => h3:fresh",
+  "p[style-name='Heading 4'] => h4:fresh",
+  "p[style-name='Heading 5'] => h5:fresh",
+  "p[style-name='Heading 6'] => h6:fresh",
+];
+
+function splitIntoSections(html: string): string[] {
+  const headingSplit = html.split(/(?=<h[1-6][^>]*>)/i).filter(Boolean);
+  if (headingSplit.length > 1) return headingSplit;
+
+  const hasHeadingTags = /<h[1-6][^>]*>/i.test(html);
+  if (hasHeadingTags && headingSplit.length === 1) return headingSplit;
+
+  const boldChapterPattern = /<p[^>]*>\s*<(strong|b)[^>]*>(.*?)<\/(strong|b)>\s*<\/p>/gi;
+  const matchPositions: { index: number; text: string }[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = boldChapterPattern.exec(html)) !== null) {
+    const innerText = match[2].replace(/<[^>]+>/g, "").trim();
+    if (innerText.length > 0 && innerText.length <= 250) {
+      matchPositions.push({ index: match.index, text: match[0] });
+    }
+  }
+
+  if (matchPositions.length === 0) return [html];
+
+  boldChapterPattern.lastIndex = 0;
+  const sections: string[] = [];
+  let lastIndex = 0;
+  for (const pos of matchPositions) {
+    if (pos.index > lastIndex) {
+      sections.push(html.slice(lastIndex, pos.index));
+    }
+    lastIndex = pos.index;
+  }
+  sections.push(html.slice(lastIndex));
+
+  return sections.filter(Boolean);
+}
+
+function extractHeadingTitle(section: string, index: number): string {
+  const headingMatch = section.match(/<h[1-6][^>]*>(.*?)<\/h[1-6]>/i);
+  if (headingMatch) {
+    return headingMatch[1].replace(/<[^>]+>/g, "").trim();
+  }
+  const boldMatch = section.match(/<(strong|b)[^>]*>(.*?)<\/(strong|b)>/i);
+  if (boldMatch) {
+    return boldMatch[2].replace(/<[^>]+>/g, "").trim();
+  }
+  return `Chapter ${index + 1}`;
+}
+
 async function extractChaptersFromDocx(docxUrl?: string | null) {
   if (!docxUrl) return [];
 
   try {
     const response = await axios.get(docxUrl, { responseType: "arraybuffer" });
-    const result = await mammoth.convertToHtml({ buffer: Buffer.from(response.data) });
+    const result = await mammoth.convertToHtml(
+      { buffer: Buffer.from(response.data) },
+      { styleMap: MAMMOTH_STYLE_MAP },
+    );
     const fullHtml = result.value;
-    const sections = fullHtml.split(/(?=<h[1-2][^>]*>)/i).filter(Boolean);
 
-    if (sections.length > 0) {
-      return sections.map((section, index) => {
-        const titleMatch = section.match(/<h[1-2][^>]*>(.*?)<\/h[1-2]>/i);
-        const title = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, "").trim() : `Chapter ${index + 1}`;
-
-        return {
-          title,
-          content: section,
-          chapter_number: index + 1,
-          word_count: section.replace(/<[^>]+>/g, "").split(/\s+/).length,
-        };
-      });
+    if (result.messages.length > 0) {
+      console.log("[extractChaptersFromDocx] Mammoth messages:", result.messages);
     }
 
-    return [{
-      title: "Full Content",
-      content: fullHtml,
-      chapter_number: 1,
-      word_count: fullHtml.replace(/<[^>]+>/g, "").split(/\s+/).length,
-    }];
+    const sections = splitIntoSections(fullHtml);
+
+    if (sections.length > 1) {
+      console.log(`[extractChaptersFromDocx] Split into ${sections.length} sections`);
+    }
+
+    return sections.map((section, index) => {
+      const title = extractHeadingTitle(section, index);
+      return {
+        title,
+        content: section,
+        chapter_number: index + 1,
+        word_count: section.replace(/<[^>]+>/g, "").split(/\s+/).length,
+      };
+    });
   } catch (error) {
     console.error("Failed to parse DOCX for chapter extraction:", error);
     return [];
