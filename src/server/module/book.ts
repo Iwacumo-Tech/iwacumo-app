@@ -308,7 +308,7 @@ const aiDocumentSchema = z.object({
   sections: z.array(z.object({
     type: z.enum(["front_matter", "chapter", "back_matter"]),
     title: z.string(),
-    chapter_number: z.number().optional(),
+    chapter_number: z.number(),
     start_marker: z.string().describe("Exact first words or heading that marks where this section's body begins. Must be a verbatim substring from the original text."),
   })),
 });
@@ -342,8 +342,9 @@ Rules:
 2. Front matter = everything before Chapter 1. Back matter = everything after the last chapter.
 3. For chapters, extract the EXACT title (e.g., "MOUNT MUBI"). NOT "Chapter N" unless that IS the only title.
 4. Use the ACTUAL chapter number from the text (e.g., "Chapter 4" → 4, "Chapter I" → 1)
-5. start_marker MUST be an exact, verbatim substring from the original text
-6. Return ONLY the JSON — no explanations, no markdown
+5. For front_matter and back_matter, set chapter_number to 0
+6. start_marker MUST be an exact, verbatim substring from the original text
+7. Return ONLY the JSON — no explanations, no markdown
 
 Text to parse:
 ${truncatedText}`,
