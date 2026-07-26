@@ -161,6 +161,11 @@ type SettingsFormValues = {
   };
   book_live_pricing_enabled: boolean;
   book_custom_fields: BookCustomFieldDefinition[];
+  ai_chapter_extraction: {
+    enabled: boolean;
+    provider: string;
+    model: string;
+  };
 };
 
 // ---------------------------------------------------------------------------
@@ -216,6 +221,7 @@ const DEFAULTS: SettingsFormValues = {
   book_flap_costs: DEFAULT_BOOK_FLAP_COSTS,
   book_live_pricing_enabled: DEFAULT_BOOK_LIVE_PRICING_ENABLED,
   book_custom_fields: [],
+  ai_chapter_extraction: { enabled: false, provider: "openai", model: "gpt-4o-mini" },
 };
 
 const CHECKOUT_CURRENCIES = ["NGN", "USD", "GBP", "EUR"] as const;
@@ -419,6 +425,7 @@ export default function SystemSettingsPage() {
       book_flap_costs: (settings as any).book_flap_costs ?? DEFAULTS.book_flap_costs,
       book_live_pricing_enabled: normalizeBookLivePricingEnabled((settings as any).book_live_pricing_enabled),
       book_custom_fields: (settings as any).book_custom_fields ?? DEFAULTS.book_custom_fields,
+      ai_chapter_extraction: (settings as any).ai_chapter_extraction ?? DEFAULTS.ai_chapter_extraction,
     });
   }, [settings, form]);
 
@@ -458,6 +465,7 @@ export default function SystemSettingsPage() {
     updateSettings({ key: "book_flap_costs", value: data.book_flap_costs });
     updateSettings({ key: "book_live_pricing_enabled", value: data.book_live_pricing_enabled });
     updateSettings({ key: "book_custom_fields", value: data.book_custom_fields });
+    updateSettings({ key: "ai_chapter_extraction", value: data.ai_chapter_extraction });
   };
 
   return (
@@ -1292,10 +1300,38 @@ export default function SystemSettingsPage() {
                   </FormItem>
                 )}
               />
+
+              <FormField
+                control={form.control}
+                name="ai_chapter_extraction.enabled"
+                render={({ field }) => (
+                  <FormItem className="flex items-start gap-4 space-y-0 border-2 border-black p-4">
+                    <FormControl>
+                      <Checkbox
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        className="mt-0.5 border-2 border-black data-[state=checked]:bg-black data-[state=checked]:text-accent"
+                      />
+                    </FormControl>
+                    <div className="space-y-1">
+                      <FormLabel className="font-black uppercase text-[11px] tracking-widest cursor-pointer">
+                        AI Chapter Extraction
+                      </FormLabel>
+                      <p className="text-xs opacity-60">
+                        Uses AI to intelligently parse uploaded DOCX files into chapters with accurate titles and numbering.
+                      </p>
+                    </div>
+                  </FormItem>
+                )}
+              />
             </section>
 
             <section className="bg-white border-4 border-black gumroad-shadow p-6 space-y-8">
+
+
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+
+
                 <div>
                   <h2 className="text-2xl font-black uppercase italic">Book Custom Fields</h2>
                   <p className="text-xs opacity-50 font-medium mt-1">

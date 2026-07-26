@@ -15,6 +15,8 @@ import mammoth from "mammoth";
 import axios from "axios"
 import { watermarkPdf } from "@/lib/watermark";
 import { put } from "@vercel/blob";
+import { generateObject } from "ai";
+import { getAIChapterProvider, getAIModel } from "@/lib/ai";
 
 import { sendBookApprovedEmail, sendBookDeniedEmail, sendBookIssueReportEmail } from "@/lib/email";
 import { resolveBookCreationPayoutStatus } from "@/server/module/payment-accounts";
@@ -131,6 +133,7 @@ async function getBookSettings() {
     book_flap_costs: normalizeBookFlapCosts(settingsMap.book_flap_costs),
     book_live_pricing_enabled: normalizeBookLivePricingEnabled(settingsMap.book_live_pricing_enabled),
     book_custom_fields: settingsMap.book_custom_fields ?? [],
+    ai_chapter_extraction: settingsMap.ai_chapter_extraction ?? { enabled: false },
   };
 }
 
@@ -299,6 +302,93 @@ function mergeChapterWithNextTitle(sections: string[]): string[] {
   }
 
   return merged;
+}
+
+const aiChapterResultSchema = z.object({
+  chapters: z.array(z.object({
+    chapter_number: z.number(),
+    title: z.string(),
+    start_marker: z.string().describe("Exact first sentence or heading that marks where this chapter's body starts. Must be a verbatim substring from the text."),
+  })),
+});
+
+async function extractChaptersWithAI(plainText: string, config: { provider: string; model: string }): Promise<{ title: string; content: string; chapter_number: number; word_count: number }[]> {
+  const maxChars = 100000;
+  const truncatedText = plainText.length > maxChars ? plainText.substring(0, maxChars) : plainText;
+
+  console.log(`[extractChaptersWithAI] Sending ${truncatedText.length} chars to AI (provider: ${config.provider}, model: ${config.model})`);
+
+  const provider = getAIChapterProvider({ provider: config.provider });
+  const model = getAIModel({ model: config.model });
+
+  const result = await generateObject({
+    model: provider.chat(model),
+    schema: aiChapterResultSchema,
+    temperature: 0,
+    system: `You are a precise book chapter parser. Identify all chapter boundaries and titles from the provided text.`,
+    prompt: `Analyze this book text and identify all chapter boundaries.
+
+For each chapter, return:
+- "chapter_number": The number from the text (e.g., "Chapter 4" → 4, "Chapter I" → 1)
+- "title": The EXACT chapter title (e.g., "MOUNT MUBI"). NOT "Chapter N" unless that IS the only title
+- "start_marker": The EXACT first sentence or heading text that marks where this chapter's body begins. Copy this VERBATIM from the text
+
+Rules:
+1. Identify chapters by "Chapter N" patterns and section headings
+2. Skip ALL front matter: dedications, title pages, copyright, author notes
+3. Use the ACTUAL chapter number from the text
+4. start_marker MUST be an exact, verbatim substring from the original text
+5. Return ONLY the JSON
+
+Text to parse:
+${truncatedText}`,
+  });
+
+  const aiChapters = result.object.chapters;
+  console.log(`[extractChaptersWithAI] AI returned ${aiChapters.length} chapters`);
+
+  return aiChapters.map((ch, i) => {
+    let startIdx = plainText.indexOf(ch.start_marker);
+    if (startIdx === -1) {
+      const words = ch.start_marker.split(/\s+/).slice(0, 3).join(" ");
+      startIdx = plainText.indexOf(words);
+      if (startIdx === -1) {
+        startIdx = plainText.indexOf(ch.title);
+      }
+    }
+
+    const nextChapter = aiChapters[i + 1];
+    let endIdx = plainText.length;
+
+    if (nextChapter) {
+      let nextStart = plainText.indexOf(nextChapter.start_marker, startIdx + 1);
+      if (nextStart === -1) {
+        const nextWords = nextChapter.start_marker.split(/\s+/).slice(0, 3).join(" ");
+        nextStart = plainText.indexOf(nextWords, startIdx + 1);
+        if (nextStart === -1) {
+          nextStart = plainText.indexOf(nextChapter.title, startIdx + 1);
+        }
+      }
+      if (nextStart > startIdx) {
+        endIdx = nextStart;
+      }
+    }
+
+    const content = plainText.substring(
+      startIdx > 0 ? startIdx : 0,
+      endIdx,
+    ).trim();
+    const wordCount = content.split(/\s+/).filter(Boolean).length;
+
+    console.log(`[extractChaptersWithAI] Ch ${ch.chapter_number}: "${ch.title}" (${wordCount} words, start:${startIdx}, end:${endIdx})`);
+
+    return {
+      title: ch.title,
+      content,
+      chapter_number: ch.chapter_number,
+      word_count: wordCount,
+    };
+  });
 }
 
 async function extractChaptersFromDocx(docxUrl?: string | null) {
@@ -569,7 +659,21 @@ export const createBook = publicProcedure.input(createBookSchema).mutation(async
   }
 
   const docxSourceUrl = opts.input.text_url ?? opts.input.docx_url ?? null;
-  const autoChapters = await extractChaptersFromDocx(docxSourceUrl);
+  const aiConfig = bookSettings.ai_chapter_extraction as { enabled?: boolean; provider?: string; model?: string } | undefined;
+  const autoChapters = docxSourceUrl && aiConfig?.enabled
+    ? await (async () => {
+        const response = await axios.get(docxSourceUrl, { responseType: "arraybuffer" });
+        const result = await mammoth.convertToHtml(
+          { buffer: Buffer.from(response.data) },
+          { styleMap: MAMMOTH_STYLE_MAP },
+        );
+        const plainText = extractTextFromHtml(result.value);
+        return extractChaptersWithAI(plainText, {
+          provider: aiConfig.provider || "openai",
+          model: aiConfig.model || "gpt-4o-mini",
+        });
+      })()
+    : await extractChaptersFromDocx(docxSourceUrl);
 
   const tagArray = opts.input.tags
     ? opts.input.tags.split("*").map(tag => tag.trim())
@@ -773,9 +877,23 @@ export const updateBook = publicProcedure.input(createBookSchema).mutation(async
     select: { metadata: true, _count: { select: { chapters: true } } },
   });
   const docxSourceUrl = opts.input.text_url ?? opts.input.docx_url ?? null;
+  const aiConfig = bookSettings.ai_chapter_extraction as { enabled?: boolean; provider?: string; model?: string } | undefined;
   const autoChapters =
     docxSourceUrl && (existingBook?._count?.chapters ?? 0) === 0
-      ? await extractChaptersFromDocx(docxSourceUrl)
+      ? aiConfig?.enabled
+        ? await (async () => {
+            const response = await axios.get(docxSourceUrl, { responseType: "arraybuffer" });
+            const result = await mammoth.convertToHtml(
+              { buffer: Buffer.from(response.data) },
+              { styleMap: MAMMOTH_STYLE_MAP },
+            );
+            const plainText = extractTextFromHtml(result.value);
+            return extractChaptersWithAI(plainText, {
+              provider: aiConfig.provider || "openai",
+              model: aiConfig.model || "gpt-4o-mini",
+            });
+          })()
+        : await extractChaptersFromDocx(docxSourceUrl)
       : [];
   const metadata = {
     ...((existingBook?.metadata as Record<string, any> | null) ?? {}),

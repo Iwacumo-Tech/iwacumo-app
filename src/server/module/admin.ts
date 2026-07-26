@@ -530,6 +530,7 @@ export const getSystemSettings = publicProcedure.query(async () => {
     currency_settings: currencySettings,
     payment_gateway_settings: paymentGatewaySettings,
     payment_gateway_health: paymentGatewayHealth,
+    ai_chapter_extraction: settingsMap.ai_chapter_extraction ?? { enabled: false },
   };
 });
 
