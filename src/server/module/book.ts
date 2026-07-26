@@ -415,9 +415,13 @@ ${truncatedText}`,
 }
 
 function cleanSectionContent(content: string): string {
-  return content
-    .replace(/^[\s\n]*(?:Chapter\s+[\divxlcdm\d]+[.:]?\s*)+[\s\n]*/gi, "")
-    .trim();
+  let cleaned = content
+    .replace(/^[\s\n]*(?:Chapter\s+[\divxlcdm\d]+[.:]?\s*)+[\s\n]*/gi, "");
+  
+  // Strip trailing chapter heading patterns (e.g., "Chapter 2A LOGICIAN'S THEOREM")
+  cleaned = cleaned.replace(/[\s\n]*Chapter\s+[\divxlcdm\d]+[.:]?\s*[A-Z][A-Z\s'\-]+$/gi, "");
+  
+  return cleaned.trim();
 }
 
 async function extractChaptersFromDocx(docxUrl?: string | null) {
