@@ -304,12 +304,14 @@ function mergeChapterWithNextTitle(sections: string[]): string[] {
   return merged;
 }
 
+const MARKER_LENGTH = 100;
+
 const aiDocumentSchema = z.object({
   sections: z.array(z.object({
     type: z.enum(["front_matter", "chapter", "back_matter"]),
     title: z.string(),
     chapter_number: z.number(),
-    start_marker: z.string().describe("Exact first words or heading that marks where this section's body begins. Must be a verbatim substring from the original text."),
+    start_marker: z.string().describe(`The EXACT first ${MARKER_LENGTH} characters of this section's BODY TEXT (not the heading/title). Must be a unique, verbatim substring from the original text. This is used to locate the section boundary in the document.`),
   })),
 });
 
@@ -328,23 +330,22 @@ async function extractChaptersWithAI(plainText: string, config: { provider: stri
       model: provider.chat(model),
       schema: aiDocumentSchema,
       temperature: 0,
-      system: `You are a precise book document parser. Identify ALL sections of a book from the provided text — front matter, every chapter, and back matter.`,
+      system: `You are a precise book document parser. Identify ALL sections of a book — front matter, chapters, and back matter.`,
       prompt: `Analyze this book text and identify ALL sections in their EXACT order.
 
 For EACH section, return:
 - "type": One of "front_matter", "chapter", or "back_matter"
-- "title": The section's descriptive title (e.g., "Dedication", "MOUNT MUBI", "Acknowledgments", "About the Author")
-- "chapter_number": (number, ONLY for chapters) The actual chapter number from the text
-- "start_marker": The EXACT first words of this section's body text. Copy this VERBATIM from the original text
+- "title": The section's descriptive title (e.g., "Dedication", "MOUNT MUBI", "Acknowledgments")
+- "chapter_number": The actual chapter number from the text, or 0 for front/back matter
+- "start_marker": Copy VERBATIM the FIRST ${MARKER_LENGTH} characters of this section's BODY TEXT — NOT the heading, NOT the title, NOT "Chapter N" text. This is the actual content text that begins the section. It must be long enough to be unique in the document and an EXACT substring.
 
 Rules:
-1. Include EVERYTHING — dedications, title pages, forewords, introductions, ALL chapters, epilogues, afterwords, acknowledgments, about the author, etc.
+1. Include EVERYTHING — dedications, title pages, forewords, ALL chapters, epilogues, afterwords, acknowledgments, about the author
 2. Front matter = everything before Chapter 1. Back matter = everything after the last chapter.
-3. For chapters, extract the EXACT title (e.g., "MOUNT MUBI"). NOT "Chapter N" unless that IS the only title.
-4. Use the ACTUAL chapter number from the text (e.g., "Chapter 4" → 4, "Chapter I" → 1)
-5. For front_matter and back_matter, set chapter_number to 0
-6. start_marker MUST be an exact, verbatim substring from the original text
-7. Return ONLY the JSON — no explanations, no markdown
+3. For chapters, the title is the ACTUAL chapter name (e.g., "MOUNT MUBI"), not "Chapter 1"
+4. start_marker is the BODY TEXT that starts the section — skip the chapter heading/Chapter N text. For example, if the text is "Chapter 1\\nMOUNT MUBI\\n\\nTHE STENCH CAUGHT...", the start_marker is "THE STENCH CAUGHT..." (the actual first sentence of the chapter body)
+5. start_marker MUST be ${MARKER_LENGTH} characters long, copied VERBATIM — every character, space, and line break must match exactly
+6. Return ONLY the JSON — no explanations
 
 Text to parse:
 ${truncatedText}`,
@@ -355,18 +356,24 @@ ${truncatedText}`,
 
     let maxChapterNum = 0;
     for (const s of sections) {
-      if (s.type === "chapter" && s.chapter_number && s.chapter_number > maxChapterNum) {
+      if (s.type === "chapter" && s.chapter_number > maxChapterNum) {
         maxChapterNum = s.chapter_number;
       }
     }
 
     return sections.map((s, i) => {
-      let startIdx = i === 0 ? 0 : plainText.indexOf(s.start_marker);
-      if (startIdx === -1 && i > 0) {
-        const words = s.start_marker.split(/\s+/).slice(0, 3).join(" ");
-        startIdx = plainText.indexOf(words);
+      let startIdx = 0;
+      if (i > 0) {
+        startIdx = plainText.indexOf(s.start_marker);
         if (startIdx === -1) {
-          startIdx = plainText.indexOf(s.title);
+          console.warn(`[extractChaptersWithAI] start_marker not found for section "${s.title}", trying shorter match`);
+          const shortMarker = s.start_marker.substring(0, 60);
+          startIdx = plainText.indexOf(shortMarker);
+        }
+        if (startIdx === -1) {
+          console.warn(`[extractChaptersWithAI] Short marker also not found for "${s.title}", skipping section`);
+          const content = `[Content boundary not found: "${s.title}"]`;
+          return { title: s.title, content, chapter_number: s.type === "front_matter" ? 0 : s.type === "back_matter" ? maxChapterNum + 1 : s.chapter_number, word_count: 0 };
         }
       }
 
@@ -374,24 +381,22 @@ ${truncatedText}`,
       let endIdx = plainText.length;
 
       if (nextSection) {
-        let nextStart = plainText.indexOf(nextSection.start_marker, startIdx > 0 ? startIdx + 1 : 0);
+        let nextStart = plainText.indexOf(nextSection.start_marker, startIdx + 1);
         if (nextStart === -1) {
-          const nextWords = nextSection.start_marker.split(/\s+/).slice(0, 3).join(" ");
-          nextStart = plainText.indexOf(nextWords, startIdx > 0 ? startIdx + 1 : 0);
-          if (nextStart === -1) {
-            nextStart = plainText.indexOf(nextSection.title, startIdx > 0 ? startIdx + 1 : 0);
-          }
+          const shortNext = nextSection.start_marker.substring(0, 60);
+          nextStart = plainText.indexOf(shortNext, startIdx + 1);
         }
         if (nextStart > startIdx) {
           endIdx = nextStart;
         }
       }
 
-      const content = plainText.substring(startIdx, endIdx).trim();
+      const rawContent = plainText.substring(startIdx, endIdx).trim();
+      const content = cleanSectionContent(rawContent);
       const wordCount = content.split(/\s+/).filter(Boolean).length;
 
       let chapterNumber: number;
-      if (s.type === "chapter" && s.chapter_number) {
+      if (s.type === "chapter") {
         chapterNumber = s.chapter_number;
       } else if (s.type === "front_matter") {
         chapterNumber = 0;
@@ -401,17 +406,18 @@ ${truncatedText}`,
 
       console.log(`[extractChaptersWithAI] ${s.type} #${chapterNumber}: "${s.title}" (${wordCount} words, start:${startIdx}, end:${endIdx})`);
 
-      return {
-        title: s.title,
-        content,
-        chapter_number: chapterNumber,
-        word_count: wordCount,
-      };
+      return { title: s.title, content, chapter_number: chapterNumber, word_count: wordCount };
     });
   } catch (error) {
     console.error(`[extractChaptersWithAI] generateObject or mapping failed:`, error);
     throw error;
   }
+}
+
+function cleanSectionContent(content: string): string {
+  return content
+    .replace(/^[\s\n]*(?:Chapter\s+[\divxlcdm\d]+[.:]?\s*)+[\s\n]*/gi, "")
+    .trim();
 }
 
 async function extractChaptersFromDocx(docxUrl?: string | null) {
