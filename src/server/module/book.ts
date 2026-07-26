@@ -313,20 +313,22 @@ const aiChapterResultSchema = z.object({
 });
 
 async function extractChaptersWithAI(plainText: string, config: { provider: string; model: string }): Promise<{ title: string; content: string; chapter_number: number; word_count: number }[]> {
+  console.log(`[extractChaptersWithAI] Starting — provider: ${config.provider}, model: ${config.model}`);
   const maxChars = 100000;
   const truncatedText = plainText.length > maxChars ? plainText.substring(0, maxChars) : plainText;
-
-  console.log(`[extractChaptersWithAI] Sending ${truncatedText.length} chars to AI (provider: ${config.provider}, model: ${config.model})`);
 
   const provider = getAIChapterProvider({ provider: config.provider });
   const model = getAIModel({ model: config.model });
 
-  const result = await generateObject({
-    model: provider.chat(model),
-    schema: aiChapterResultSchema,
-    temperature: 0,
-    system: `You are a precise book chapter parser. Identify all chapter boundaries and titles from the provided text.`,
-    prompt: `Analyze this book text and identify all chapter boundaries.
+  console.log(`[extractChaptersWithAI] Calling generateObject with ${truncatedText.length} chars`);
+
+  try {
+    const result = await generateObject({
+      model: provider.chat(model),
+      schema: aiChapterResultSchema,
+      temperature: 0,
+      system: `You are a precise book chapter parser. Identify all chapter boundaries and titles from the provided text.`,
+      prompt: `Analyze this book text and identify all chapter boundaries.
 
 For each chapter, return:
 - "chapter_number": The number from the text (e.g., "Chapter 4" → 4, "Chapter I" → 1)
@@ -342,53 +344,57 @@ Rules:
 
 Text to parse:
 ${truncatedText}`,
-  });
+    });
 
-  const aiChapters = result.object.chapters;
-  console.log(`[extractChaptersWithAI] AI returned ${aiChapters.length} chapters`);
+    const aiChapters = result.object.chapters;
+    console.log(`[extractChaptersWithAI] generateObject returned ${aiChapters.length} chapters`);
 
-  return aiChapters.map((ch, i) => {
-    let startIdx = plainText.indexOf(ch.start_marker);
-    if (startIdx === -1) {
-      const words = ch.start_marker.split(/\s+/).slice(0, 3).join(" ");
-      startIdx = plainText.indexOf(words);
+    return aiChapters.map((ch, i) => {
+      let startIdx = plainText.indexOf(ch.start_marker);
       if (startIdx === -1) {
-        startIdx = plainText.indexOf(ch.title);
-      }
-    }
-
-    const nextChapter = aiChapters[i + 1];
-    let endIdx = plainText.length;
-
-    if (nextChapter) {
-      let nextStart = plainText.indexOf(nextChapter.start_marker, startIdx + 1);
-      if (nextStart === -1) {
-        const nextWords = nextChapter.start_marker.split(/\s+/).slice(0, 3).join(" ");
-        nextStart = plainText.indexOf(nextWords, startIdx + 1);
-        if (nextStart === -1) {
-          nextStart = plainText.indexOf(nextChapter.title, startIdx + 1);
+        const words = ch.start_marker.split(/\s+/).slice(0, 3).join(" ");
+        startIdx = plainText.indexOf(words);
+        if (startIdx === -1) {
+          startIdx = plainText.indexOf(ch.title);
         }
       }
-      if (nextStart > startIdx) {
-        endIdx = nextStart;
+
+      const nextChapter = aiChapters[i + 1];
+      let endIdx = plainText.length;
+
+      if (nextChapter) {
+        let nextStart = plainText.indexOf(nextChapter.start_marker, startIdx + 1);
+        if (nextStart === -1) {
+          const nextWords = nextChapter.start_marker.split(/\s+/).slice(0, 3).join(" ");
+          nextStart = plainText.indexOf(nextWords, startIdx + 1);
+          if (nextStart === -1) {
+            nextStart = plainText.indexOf(nextChapter.title, startIdx + 1);
+          }
+        }
+        if (nextStart > startIdx) {
+          endIdx = nextStart;
+        }
       }
-    }
 
-    const content = plainText.substring(
-      startIdx > 0 ? startIdx : 0,
-      endIdx,
-    ).trim();
-    const wordCount = content.split(/\s+/).filter(Boolean).length;
+      const content = plainText.substring(
+        startIdx > 0 ? startIdx : 0,
+        endIdx,
+      ).trim();
+      const wordCount = content.split(/\s+/).filter(Boolean).length;
 
-    console.log(`[extractChaptersWithAI] Ch ${ch.chapter_number}: "${ch.title}" (${wordCount} words, start:${startIdx}, end:${endIdx})`);
+      console.log(`[extractChaptersWithAI] Ch ${ch.chapter_number}: "${ch.title}" (${wordCount} words, start:${startIdx}, end:${endIdx})`);
 
-    return {
-      title: ch.title,
-      content,
-      chapter_number: ch.chapter_number,
-      word_count: wordCount,
-    };
-  });
+      return {
+        title: ch.title,
+        content,
+        chapter_number: ch.chapter_number,
+        word_count: wordCount,
+      };
+    });
+  } catch (error) {
+    console.error(`[extractChaptersWithAI] generateObject or mapping failed:`, error);
+    throw error;
+  }
 }
 
 async function extractChaptersFromDocx(docxUrl?: string | null) {
@@ -660,18 +666,27 @@ export const createBook = publicProcedure.input(createBookSchema).mutation(async
 
   const docxSourceUrl = opts.input.text_url ?? opts.input.docx_url ?? null;
   const aiConfig = bookSettings.ai_chapter_extraction as { enabled?: boolean; provider?: string; model?: string } | undefined;
+  console.log(`[AI] createBook ai_chapter_extraction config:`, JSON.stringify(aiConfig));
+  console.log(`[AI] createBook docxSourceUrl:`, docxSourceUrl ? "present" : "missing");
   const autoChapters = docxSourceUrl && aiConfig?.enabled
     ? await (async () => {
-        const response = await axios.get(docxSourceUrl, { responseType: "arraybuffer" });
-        const result = await mammoth.convertToHtml(
-          { buffer: Buffer.from(response.data) },
-          { styleMap: MAMMOTH_STYLE_MAP },
-        );
-        const plainText = extractTextFromHtml(result.value);
-        return extractChaptersWithAI(plainText, {
-          provider: aiConfig.provider || "openai",
-          model: aiConfig.model || "gpt-4o-mini",
-        });
+        try {
+          console.log(`[AI] Fetching DOCX for AI extraction, provider: ${aiConfig.provider || "openai"}, model: ${aiConfig.model || "gpt-4o-mini"}`);
+          const response = await axios.get(docxSourceUrl, { responseType: "arraybuffer" });
+          const result = await mammoth.convertToHtml(
+            { buffer: Buffer.from(response.data) },
+            { styleMap: MAMMOTH_STYLE_MAP },
+          );
+          const plainText = extractTextFromHtml(result.value);
+          console.log(`[AI] DOCX converted to ${plainText.length} chars of plain text`);
+          return extractChaptersWithAI(plainText, {
+            provider: aiConfig.provider || "openai",
+            model: aiConfig.model || "gpt-4o-mini",
+          });
+        } catch (error) {
+          console.error(`[AI] AI extraction failed, falling back to regex:`, error);
+          return extractChaptersFromDocx(docxSourceUrl);
+        }
       })()
     : await extractChaptersFromDocx(docxSourceUrl);
 
@@ -878,20 +893,29 @@ export const updateBook = publicProcedure.input(createBookSchema).mutation(async
   });
   const docxSourceUrl = opts.input.text_url ?? opts.input.docx_url ?? null;
   const aiConfig = bookSettings.ai_chapter_extraction as { enabled?: boolean; provider?: string; model?: string } | undefined;
+  console.log(`[AI] updateBook ai_chapter_extraction config:`, JSON.stringify(aiConfig));
+  console.log(`[AI] updateBook docxSourceUrl:`, docxSourceUrl ? "present" : "missing", `existing chapters:`, existingBook?._count?.chapters ?? 0);
   const autoChapters =
     docxSourceUrl && (existingBook?._count?.chapters ?? 0) === 0
       ? aiConfig?.enabled
         ? await (async () => {
-            const response = await axios.get(docxSourceUrl, { responseType: "arraybuffer" });
-            const result = await mammoth.convertToHtml(
-              { buffer: Buffer.from(response.data) },
-              { styleMap: MAMMOTH_STYLE_MAP },
-            );
-            const plainText = extractTextFromHtml(result.value);
-            return extractChaptersWithAI(plainText, {
-              provider: aiConfig.provider || "openai",
-              model: aiConfig.model || "gpt-4o-mini",
-            });
+            try {
+              console.log(`[AI] Fetching DOCX for AI extraction (update), provider: ${aiConfig.provider || "openai"}, model: ${aiConfig.model || "gpt-4o-mini"}`);
+              const response = await axios.get(docxSourceUrl, { responseType: "arraybuffer" });
+              const result = await mammoth.convertToHtml(
+                { buffer: Buffer.from(response.data) },
+                { styleMap: MAMMOTH_STYLE_MAP },
+              );
+              const plainText = extractTextFromHtml(result.value);
+              console.log(`[AI] DOCX converted to ${plainText.length} chars of plain text (update)`);
+              return extractChaptersWithAI(plainText, {
+                provider: aiConfig.provider || "openai",
+                model: aiConfig.model || "gpt-4o-mini",
+              });
+            } catch (error) {
+              console.error(`[AI] AI extraction failed on update, falling back to regex:`, error);
+              return extractChaptersFromDocx(docxSourceUrl);
+            }
           })()
         : await extractChaptersFromDocx(docxSourceUrl)
       : [];

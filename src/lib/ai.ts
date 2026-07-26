@@ -40,14 +40,21 @@ export function getAIChapterProvider(config?: {
 }) {
   const provider = (config?.provider || process.env.AI_CHAPTER_PROVIDER || AI_CHAPTER_DEFAULT_PROVIDER) as AIProvider;
 
+  console.log(`[AI] Provider requested: ${provider}`);
+
   if (!SUPPORTED_PROVIDERS.includes(provider)) {
+    console.error(`[AI] Unsupported provider: "${provider}". Supported: ${SUPPORTED_PROVIDERS.join(", ")}`);
     throw new Error(`Unsupported AI provider: ${provider}. Supported: ${SUPPORTED_PROVIDERS.join(", ")}`);
   }
 
-  const apiKey = config?.apiKey || (provider === "openrouter" ? process.env.OPENROUTER_API_KEY : process.env.OPENAI_API_KEY);
+  const envVarName = provider === "openrouter" ? "OPENROUTER_API_KEY" : "OPENAI_API_KEY";
+  const apiKey = config?.apiKey || process.env[envVarName];
+
+  console.log(`[AI] Env ${envVarName}: ${apiKey ? `present (length: ${apiKey.length})` : "MISSING"}`);
 
   if (!apiKey) {
-    throw new Error(`Missing API key for ${provider}. Set ${provider === "openrouter" ? "OPENROUTER_API_KEY" : "OPENAI_API_KEY"} environment variable.`);
+    console.error(`[AI] Missing ${envVarName} for provider ${provider}`);
+    throw new Error(`Missing API key for ${provider}. Set ${envVarName} environment variable.`);
   }
 
   if (provider === "openrouter") {
