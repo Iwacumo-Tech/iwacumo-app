@@ -361,8 +361,9 @@ ${truncatedText}`,
       }
     }
 
-    return sections.map((s, i) => {
+    const rawResults = sections.map((s, i) => {
       let startIdx = 0;
+      let markerFound = i === 0;
       if (i > 0) {
         startIdx = plainText.indexOf(s.start_marker);
         if (startIdx === -1) {
@@ -372,8 +373,8 @@ ${truncatedText}`,
         }
         if (startIdx === -1) {
           console.warn(`[extractChaptersWithAI] Short marker also not found for "${s.title}", skipping section`);
-          const content = `[Content boundary not found: "${s.title}"]`;
-          return { title: s.title, content, chapter_number: s.type === "front_matter" ? 0 : s.type === "back_matter" ? maxChapterNum + 1 : s.chapter_number, word_count: 0 };
+        } else {
+          markerFound = true;
         }
       }
 
@@ -391,8 +392,31 @@ ${truncatedText}`,
         }
       }
 
-      const rawContent = plainText.substring(startIdx, endIdx).trim();
-      const content = cleanSectionContent(rawContent);
+      const rawContent = markerFound
+        ? plainText.substring(startIdx, endIdx).trim()
+        : "";
+
+      return { section: s, rawContent, startIdx, endIdx, markerFound };
+    });
+
+    const rawContents = rawResults
+      .filter(r => r.markerFound)
+      .map(r => r.rawContent);
+
+    const cleanedContents = rawContents.length > 0
+      ? await cleanTailsWithAI(rawContents, provider, model)
+      : [];
+
+    let cleanedIdx = 0;
+    return rawResults.map((r, i) => {
+      const s = r.section;
+
+      if (!r.markerFound) {
+        const cn = s.type === "front_matter" ? 0 : s.type === "back_matter" ? maxChapterNum + 1 : s.chapter_number;
+        return { title: s.title, content: `[Content boundary not found: "${s.title}"]`, chapter_number: cn, word_count: 0 };
+      }
+
+      const content = cleanedContents[cleanedIdx++] || r.rawContent;
       const wordCount = content.split(/\s+/).filter(Boolean).length;
 
       let chapterNumber: number;
@@ -404,7 +428,7 @@ ${truncatedText}`,
         chapterNumber = maxChapterNum + 1 + i;
       }
 
-      console.log(`[extractChaptersWithAI] ${s.type} #${chapterNumber}: "${s.title}" (${wordCount} words, start:${startIdx}, end:${endIdx})`);
+      console.log(`[extractChaptersWithAI] ${s.type} #${chapterNumber}: "${s.title}" (${wordCount} words, start:${r.startIdx}, end:${r.endIdx})`);
 
       return { title: s.title, content, chapter_number: chapterNumber, word_count: wordCount };
     });
@@ -422,6 +446,62 @@ function cleanSectionContent(content: string): string {
   cleaned = cleaned.replace(/[\s\n]*Chapter\s+[\divxlcdm\d]+[.:]?\s*[A-Z][A-Z\s'\-]+$/gi, "");
   
   return cleaned.trim();
+}
+
+const cleanTailsSchema = z.object({
+  cleaned_tails: z.array(z.string()),
+});
+
+async function cleanTailsWithAI(
+  rawContents: string[],
+  provider: ReturnType<typeof getAIChapterProvider>,
+  modelStr: string,
+): Promise<string[]> {
+  const TAIL_LEN = 300;
+  const tails = rawContents.map((c, i) => ({
+    index: i,
+    isLast: i === rawContents.length - 1,
+    prefix: c.length > TAIL_LEN ? c.substring(0, c.length - TAIL_LEN) : "",
+    tail: c.length > TAIL_LEN ? c.substring(c.length - TAIL_LEN) : c,
+  }));
+
+  const tailsToClean = tails.filter(t => !t.isLast && t.tail.length > 50);
+  
+  if (tailsToClean.length === 0) return rawContents;
+
+  console.log(`[cleanTailsWithAI] Sending ${tailsToClean.length} tails to AI for cleanup`);
+
+  try {
+    const result = await generateObject({
+      model: provider.chat(modelStr),
+      schema: cleanTailsSchema,
+      temperature: 0,
+      system: `You clean trailing chapter headings from book section text.`,
+      prompt: `The following are the ENDINGS of ${tailsToClean.length} book sections. Each may have a trailing chapter heading that bled in from the next section (e.g., "Chapter 2 A LOGICIAN'S THEOREM" appearing at the end of the previous chapter).
+
+Strip any such trailing chapter heading from each tail. If there is no bleeding heading, return the tail unchanged.
+
+Return ONLY a JSON array of ${tailsToClean.length} cleaned tails in the EXACT same order.
+
+${tailsToClean.map((t, i) => `Tail ${i + 1}:\n${t.tail}\n`).join("\n---\n")}`,
+    });
+
+    const cleaned = result.object.cleaned_tails;
+
+    const cleanedMap = new Map<number, string>();
+    tailsToClean.forEach((t, i) => {
+      cleanedMap.set(t.index, cleanSectionContent(cleaned[i] || t.tail));
+    });
+
+    return rawContents.map((content, i) => {
+      if (!cleanedMap.has(i)) return content;
+      const t = tails.find(tx => tx.index === i)!;
+      return (t.prefix + cleanedMap.get(i)!).trim();
+    });
+  } catch (error) {
+    console.warn(`[cleanTailsWithAI] AI cleanup failed, falling back to regex:`, error);
+    return rawContents.map(c => cleanSectionContent(c));
+  }
 }
 
 async function extractChaptersFromDocx(docxUrl?: string | null) {
