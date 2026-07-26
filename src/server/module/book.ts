@@ -246,6 +246,35 @@ function extractTitle(section: string, fallbackIndex: number): string {
   return `Chapter ${fallbackIndex + 1}`;
 }
 
+function romanToArabic(roman: string): number {
+  const map: Record<string, number> = { I: 1, V: 5, X: 10, L: 50, C: 100, D: 500, M: 1000 };
+  let result = 0;
+  for (let i = 0; i < roman.length; i++) {
+    const current = map[roman[i].toUpperCase()] || 0;
+    const next = map[roman[i + 1]?.toUpperCase() ?? ""] || 0;
+    if (next > current) {
+      result += next - current;
+      i++;
+    } else {
+      result += current;
+    }
+  }
+  return result;
+}
+
+function extractChapterNumber(section: string, fallbackIndex: number): number {
+  const text = extractTextFromHtml(section);
+  const match = text.match(/chapter\s+([\divxlcdm\d]+)[.:]?/i);
+  if (match) {
+    const num = match[1];
+    if (/^[ivxlcdm]+$/i.test(num)) {
+      return romanToArabic(num.toUpperCase());
+    }
+    return parseInt(num, 10) || fallbackIndex;
+  }
+  return fallbackIndex;
+}
+
 function mergeChapterWithNextTitle(sections: string[]): string[] {
   const merged: string[] = [];
   let i = 0;
@@ -308,14 +337,15 @@ async function extractChaptersFromDocx(docxUrl?: string | null) {
 
     return mergedSections.map((section, index) => {
       const title = extractTitle(section, index);
+      const chapterNumber = extractChapterNumber(section, index + 1);
       const wordCount = extractTextFromHtml(section).split(/\s+/).filter(Boolean).length;
 
-      console.log(`[extractChaptersFromDocx] Chapter ${index + 1}: "${title}" (${wordCount} words)`);
+      console.log(`[extractChaptersFromDocx] Chapter ${chapterNumber}: "${title}" (${wordCount} words)`);
 
       return {
         title,
         content: section,
-        chapter_number: index + 1,
+        chapter_number: chapterNumber,
         word_count: wordCount,
       };
     });
