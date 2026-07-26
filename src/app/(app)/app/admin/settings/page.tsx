@@ -425,7 +425,10 @@ export default function SystemSettingsPage() {
       book_flap_costs: (settings as any).book_flap_costs ?? DEFAULTS.book_flap_costs,
       book_live_pricing_enabled: normalizeBookLivePricingEnabled((settings as any).book_live_pricing_enabled),
       book_custom_fields: (settings as any).book_custom_fields ?? DEFAULTS.book_custom_fields,
-      ai_chapter_extraction: (settings as any).ai_chapter_extraction ?? DEFAULTS.ai_chapter_extraction,
+      ai_chapter_extraction: {
+        ...DEFAULTS.ai_chapter_extraction,
+        ...((settings as any).ai_chapter_extraction || {}),
+      },
     });
   }, [settings, form]);
 
@@ -1324,6 +1327,56 @@ export default function SystemSettingsPage() {
                   </FormItem>
                 )}
               />
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="ai_chapter_extraction.provider"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="font-black uppercase text-[11px] tracking-widest">
+                        Provider
+                      </FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger className="rounded-none border-2 border-black">
+                            <SelectValue placeholder="Select provider" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="openai">OpenAI</SelectItem>
+                          <SelectItem value="openrouter">OpenRouter</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="ai_chapter_extraction.model"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="font-black uppercase text-[11px] tracking-widest">
+                        Model
+                      </FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger className="rounded-none border-2 border-black">
+                            <SelectValue placeholder="Select model" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="gpt-4o-mini">gpt-4o-mini</SelectItem>
+                          <SelectItem value="gpt-4o">gpt-4o</SelectItem>
+                          <SelectItem value="openai/gpt-4o-mini">openai/gpt-4o-mini (OR)</SelectItem>
+                          <SelectItem value="openai/gpt-4o">openai/gpt-4o (OR)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )}
+                />
+              </div>
             </section>
 
             <section className="bg-white border-4 border-black gumroad-shadow p-6 space-y-8">
