@@ -541,6 +541,9 @@ function decorateBookForResponse(book: any, settings: Awaited<ReturnType<typeof 
 }
 
 export const createBook = publicProcedure.input(createBookSchema).mutation(async (opts) => {
+  console.log("[createBook] VERSION: 30841b3-ai-logging");
+  console.log("[createBook] AI env — OPENAI_API_KEY:", process.env.OPENAI_API_KEY ? `present (${process.env.OPENAI_API_KEY.length} chars)` : "missing");
+  console.log("[createBook] AI env — OPENROUTER_API_KEY:", process.env.OPENROUTER_API_KEY ? `present (${process.env.OPENROUTER_API_KEY.length} chars)` : "missing");
   const session = await auth();
 
   if (!session) {
