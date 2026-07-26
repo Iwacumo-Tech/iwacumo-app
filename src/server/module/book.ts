@@ -304,17 +304,18 @@ function mergeChapterWithNextTitle(sections: string[]): string[] {
   return merged;
 }
 
-const aiChapterResultSchema = z.object({
-  chapters: z.array(z.object({
-    chapter_number: z.number(),
+const aiDocumentSchema = z.object({
+  sections: z.array(z.object({
+    type: z.enum(["front_matter", "chapter", "back_matter"]),
     title: z.string(),
-    start_marker: z.string().describe("Exact first sentence or heading that marks where this chapter's body starts. Must be a verbatim substring from the text."),
+    chapter_number: z.number().optional(),
+    start_marker: z.string().describe("Exact first words or heading that marks where this section's body begins. Must be a verbatim substring from the original text."),
   })),
 });
 
 async function extractChaptersWithAI(plainText: string, config: { provider: string; model: string }): Promise<{ title: string; content: string; chapter_number: number; word_count: number }[]> {
   console.log(`[extractChaptersWithAI] Starting — provider: ${config.provider}, model: ${config.model}`);
-  const maxChars = 100000;
+  const maxChars = 120000;
   const truncatedText = plainText.length > maxChars ? plainText.substring(0, maxChars) : plainText;
 
   const provider = getAIChapterProvider({ provider: config.provider });
@@ -325,50 +326,59 @@ async function extractChaptersWithAI(plainText: string, config: { provider: stri
   try {
     const result = await generateObject({
       model: provider.chat(model),
-      schema: aiChapterResultSchema,
+      schema: aiDocumentSchema,
       temperature: 0,
-      system: `You are a precise book chapter parser. Identify all chapter boundaries and titles from the provided text.`,
-      prompt: `Analyze this book text and identify all chapter boundaries.
+      system: `You are a precise book document parser. Identify ALL sections of a book from the provided text — front matter, every chapter, and back matter.`,
+      prompt: `Analyze this book text and identify ALL sections in their EXACT order.
 
-For each chapter, return:
-- "chapter_number": The number from the text (e.g., "Chapter 4" → 4, "Chapter I" → 1)
-- "title": The EXACT chapter title (e.g., "MOUNT MUBI"). NOT "Chapter N" unless that IS the only title
-- "start_marker": The EXACT first sentence or heading text that marks where this chapter's body begins. Copy this VERBATIM from the text
+For EACH section, return:
+- "type": One of "front_matter", "chapter", or "back_matter"
+- "title": The section's descriptive title (e.g., "Dedication", "MOUNT MUBI", "Acknowledgments", "About the Author")
+- "chapter_number": (number, ONLY for chapters) The actual chapter number from the text
+- "start_marker": The EXACT first words of this section's body text. Copy this VERBATIM from the original text
 
 Rules:
-1. Identify chapters by "Chapter N" patterns and section headings
-2. Skip ALL front matter: dedications, title pages, copyright, author notes
-3. Use the ACTUAL chapter number from the text
-4. start_marker MUST be an exact, verbatim substring from the original text
-5. Return ONLY the JSON
+1. Include EVERYTHING — dedications, title pages, forewords, introductions, ALL chapters, epilogues, afterwords, acknowledgments, about the author, etc.
+2. Front matter = everything before Chapter 1. Back matter = everything after the last chapter.
+3. For chapters, extract the EXACT title (e.g., "MOUNT MUBI"). NOT "Chapter N" unless that IS the only title.
+4. Use the ACTUAL chapter number from the text (e.g., "Chapter 4" → 4, "Chapter I" → 1)
+5. start_marker MUST be an exact, verbatim substring from the original text
+6. Return ONLY the JSON — no explanations, no markdown
 
 Text to parse:
 ${truncatedText}`,
     });
 
-    const aiChapters = result.object.chapters;
-    console.log(`[extractChaptersWithAI] generateObject returned ${aiChapters.length} chapters`);
+    const sections = result.object.sections;
+    console.log(`[extractChaptersWithAI] generateObject returned ${sections.length} sections`);
 
-    return aiChapters.map((ch, i) => {
-      let startIdx = plainText.indexOf(ch.start_marker);
-      if (startIdx === -1) {
-        const words = ch.start_marker.split(/\s+/).slice(0, 3).join(" ");
+    let maxChapterNum = 0;
+    for (const s of sections) {
+      if (s.type === "chapter" && s.chapter_number && s.chapter_number > maxChapterNum) {
+        maxChapterNum = s.chapter_number;
+      }
+    }
+
+    return sections.map((s, i) => {
+      let startIdx = i === 0 ? 0 : plainText.indexOf(s.start_marker);
+      if (startIdx === -1 && i > 0) {
+        const words = s.start_marker.split(/\s+/).slice(0, 3).join(" ");
         startIdx = plainText.indexOf(words);
         if (startIdx === -1) {
-          startIdx = plainText.indexOf(ch.title);
+          startIdx = plainText.indexOf(s.title);
         }
       }
 
-      const nextChapter = aiChapters[i + 1];
+      const nextSection = sections[i + 1];
       let endIdx = plainText.length;
 
-      if (nextChapter) {
-        let nextStart = plainText.indexOf(nextChapter.start_marker, startIdx + 1);
+      if (nextSection) {
+        let nextStart = plainText.indexOf(nextSection.start_marker, startIdx > 0 ? startIdx + 1 : 0);
         if (nextStart === -1) {
-          const nextWords = nextChapter.start_marker.split(/\s+/).slice(0, 3).join(" ");
-          nextStart = plainText.indexOf(nextWords, startIdx + 1);
+          const nextWords = nextSection.start_marker.split(/\s+/).slice(0, 3).join(" ");
+          nextStart = plainText.indexOf(nextWords, startIdx > 0 ? startIdx + 1 : 0);
           if (nextStart === -1) {
-            nextStart = plainText.indexOf(nextChapter.title, startIdx + 1);
+            nextStart = plainText.indexOf(nextSection.title, startIdx > 0 ? startIdx + 1 : 0);
           }
         }
         if (nextStart > startIdx) {
@@ -376,18 +386,24 @@ ${truncatedText}`,
         }
       }
 
-      const content = plainText.substring(
-        startIdx > 0 ? startIdx : 0,
-        endIdx,
-      ).trim();
+      const content = plainText.substring(startIdx, endIdx).trim();
       const wordCount = content.split(/\s+/).filter(Boolean).length;
 
-      console.log(`[extractChaptersWithAI] Ch ${ch.chapter_number}: "${ch.title}" (${wordCount} words, start:${startIdx}, end:${endIdx})`);
+      let chapterNumber: number;
+      if (s.type === "chapter" && s.chapter_number) {
+        chapterNumber = s.chapter_number;
+      } else if (s.type === "front_matter") {
+        chapterNumber = 0;
+      } else {
+        chapterNumber = maxChapterNum + 1 + i;
+      }
+
+      console.log(`[extractChaptersWithAI] ${s.type} #${chapterNumber}: "${s.title}" (${wordCount} words, start:${startIdx}, end:${endIdx})`);
 
       return {
-        title: ch.title,
+        title: s.title,
         content,
-        chapter_number: ch.chapter_number,
+        chapter_number: chapterNumber,
         word_count: wordCount,
       };
     });
