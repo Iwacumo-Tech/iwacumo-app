@@ -221,7 +221,7 @@ const DEFAULTS: SettingsFormValues = {
   book_flap_costs: DEFAULT_BOOK_FLAP_COSTS,
   book_live_pricing_enabled: DEFAULT_BOOK_LIVE_PRICING_ENABLED,
   book_custom_fields: [],
-  ai_chapter_extraction: { enabled: false, provider: "openai", model: "gpt-4o-mini" },
+  ai_chapter_extraction: { enabled: false, provider: "openai", model: "gpt-4o" },
 };
 
 const CHECKOUT_CURRENCIES = ["NGN", "USD", "GBP", "EUR"] as const;
@@ -1367,10 +1367,11 @@ export default function SystemSettingsPage() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="gpt-4o-mini">gpt-4o-mini</SelectItem>
-                          <SelectItem value="gpt-4o">gpt-4o</SelectItem>
-                          <SelectItem value="openai/gpt-4o-mini">openai/gpt-4o-mini (OR)</SelectItem>
+                          <SelectItem value="gpt-4o">gpt-4o (Rec)</SelectItem>
+                          <SelectItem value="gpt-4.1">gpt-4.1 (Latest)</SelectItem>
                           <SelectItem value="openai/gpt-4o">openai/gpt-4o (OR)</SelectItem>
+                          <SelectItem value="openai/gpt-4.1">openai/gpt-4.1 (OR)</SelectItem>
+                          <SelectItem value="anthropic/claude-3.5-sonnet">claude-3.5-sonnet (OR)</SelectItem>
                         </SelectContent>
                       </Select>
                     </FormItem>

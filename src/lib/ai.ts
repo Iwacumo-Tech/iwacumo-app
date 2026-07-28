@@ -4,7 +4,7 @@ const SUPPORTED_PROVIDERS = ["openai", "openrouter"] as const;
 export type AIProvider = (typeof SUPPORTED_PROVIDERS)[number];
 
 const AI_CHAPTER_DEFAULT_PROVIDER: AIProvider = "openai";
-const AI_CHAPTER_DEFAULT_MODEL = "gpt-4o-mini";
+const AI_CHAPTER_DEFAULT_MODEL = "gpt-4o";
 
 const providerCache = new Map<string, ReturnType<typeof createOpenAI>>();
 

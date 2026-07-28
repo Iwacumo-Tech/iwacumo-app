@@ -781,7 +781,7 @@ export const createBook = publicProcedure.input(createBookSchema).mutation(async
   const autoChapters = docxSourceUrl && aiConfig?.enabled
     ? await (async () => {
         try {
-          console.log(`[AI] Fetching DOCX for AI extraction, provider: ${aiConfig.provider || "openai"}, model: ${aiConfig.model || "gpt-4o-mini"}`);
+          console.log(`[AI] Fetching DOCX for AI extraction, provider: ${aiConfig.provider || "openai"}, model: ${aiConfig.model || "gpt-4o"}`);
           const response = await axios.get(docxSourceUrl, { responseType: "arraybuffer" });
           const result = await mammoth.convertToHtml(
             { buffer: Buffer.from(response.data) },
@@ -791,7 +791,7 @@ export const createBook = publicProcedure.input(createBookSchema).mutation(async
           console.log(`[AI] DOCX converted to ${plainText.length} chars of plain text`);
           return extractChaptersWithAI(plainText, {
             provider: aiConfig.provider || "openai",
-            model: aiConfig.model || "gpt-4o-mini",
+            model: aiConfig.model || "gpt-4o",
           });
         } catch (error) {
           console.error(`[AI] AI extraction failed, falling back to regex:`, error);
@@ -1010,7 +1010,7 @@ export const updateBook = publicProcedure.input(createBookSchema).mutation(async
       ? aiConfig?.enabled
         ? await (async () => {
             try {
-              console.log(`[AI] Fetching DOCX for AI extraction (update), provider: ${aiConfig.provider || "openai"}, model: ${aiConfig.model || "gpt-4o-mini"}`);
+              console.log(`[AI] Fetching DOCX for AI extraction (update), provider: ${aiConfig.provider || "openai"}, model: ${aiConfig.model || "gpt-4o"}`);
               const response = await axios.get(docxSourceUrl, { responseType: "arraybuffer" });
               const result = await mammoth.convertToHtml(
                 { buffer: Buffer.from(response.data) },
@@ -1020,7 +1020,7 @@ export const updateBook = publicProcedure.input(createBookSchema).mutation(async
               console.log(`[AI] DOCX converted to ${plainText.length} chars of plain text (update)`);
               return extractChaptersWithAI(plainText, {
                 provider: aiConfig.provider || "openai",
-                model: aiConfig.model || "gpt-4o-mini",
+                model: aiConfig.model || "gpt-4o",
               });
             } catch (error) {
               console.error(`[AI] AI extraction failed on update, falling back to regex:`, error);
