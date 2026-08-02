@@ -32,7 +32,12 @@ export const { handlers, auth } = NextAuth({
       },
       async authorize({ username, password }) {
         try {
-          if (!password) return null;
+          if (!password) {
+            console.log("[AUTH] No password provided");
+            return null;
+          }
+
+          console.log(`[AUTH] Login attempt for: ${username}`);
 
           // ── 1. Check standard User table ──────────────────────────────────
           const user = await prisma.user.findFirst({
@@ -54,8 +59,17 @@ export const { handlers, auth } = NextAuth({
             },
           });
 
+          if (user) {
+            console.log(`[AUTH] User found: id=${user.id}, active=${user.active}, email_verified=${!!user.email_verified_at}`);
+          } else {
+            console.log(`[AUTH] User NOT found for: ${username}`);
+          }
+
           if (user && user.active) {
-            if (await compare(password as string, user.password)) {
+            const pwMatch = await compare(password as string, user.password);
+            console.log(`[AUTH] Password match: ${pwMatch}`);
+
+            if (pwMatch) {
 
               // ── Email verification gate ──────────────────────────────────
               if (!user.email_verified_at) {
@@ -65,6 +79,7 @@ export const { handlers, auth } = NextAuth({
                 const isProtectedRole = roleNames.some(
                   (roleName) => roleName === "publisher" || roleName === "author"
                 );
+                console.log(`[AUTH] Email not verified. Protected roles: ${roleNames.join(",")}, isProtected: ${isProtectedRole}`);
                 if (isProtectedRole) {
                   throw new Error("EMAIL_NOT_VERIFIED");
                 }
@@ -76,11 +91,13 @@ export const { handlers, auth } = NextAuth({
               // log in and manage their own dashboard.
               if (user.author && user.author.publisher_id) {
                 const isWhiteLabel = user.author.publisher?.white_label ?? false;
+                console.log(`[AUTH] Author check: publisher_id=${user.author.publisher_id}, white_label=${isWhiteLabel}`);
                 if (!isWhiteLabel) {
                   throw new Error("AUTHOR_NOT_PERMITTED");
                 }
               }
 
+              console.log(`[AUTH] Login SUCCESS for user: ${user.id}`);
               return {
                 id:         user.id,
                 email:      user.email,
@@ -88,13 +105,23 @@ export const { handlers, auth } = NextAuth({
                 last_name:  user.last_name || "",
                 username:   user.username || null,
               };
+            } else {
+              console.log(`[AUTH] Password INCORRECT for user: ${user.id}`);
             }
+          } else if (user && !user.active) {
+            console.log(`[AUTH] User is INACTIVE: ${user.id}`);
           }
 
           // ── 2. Check AdminUser table ───────────────────────────────────────
           const adminUser = await prisma.adminUser.findFirst({
             where: { email: username as string },
           });
+
+          if (adminUser) {
+            console.log(`[AUTH] Admin found: id=${adminUser.id}, status=${adminUser.status}, email_verified=${!!adminUser.email_verified_at}`);
+          } else {
+            console.log(`[AUTH] Admin NOT found for: ${username}`);
+          }
 
           if (
             adminUser &&
@@ -105,6 +132,7 @@ export const { handlers, auth } = NextAuth({
               if (!adminUser.email_verified_at) {
                 throw new Error("EMAIL_NOT_VERIFIED");
               }
+              console.log(`[AUTH] Login SUCCESS for admin: ${adminUser.id}`);
               return {
                 id:         adminUser.id,
                 email:      adminUser.email,
@@ -112,9 +140,14 @@ export const { handlers, auth } = NextAuth({
                 last_name:  adminUser.last_name  || "",
                 username:   adminUser.email.split("@")[0] || null,
               };
+            } else {
+              console.log(`[AUTH] Admin password INCORRECT: ${adminUser.id}`);
             }
+          } else if (adminUser) {
+            console.log(`[AUTH] Admin not eligible: status=${adminUser.status}, hasPassword=${!!adminUser.password_hash}`);
           }
 
+          console.log(`[AUTH] Login FAILED for: ${username} — returning null`);
           return null;
         } catch (error: any) {
           if (
