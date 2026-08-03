@@ -304,204 +304,224 @@ function mergeChapterWithNextTitle(sections: string[]): string[] {
   return merged;
 }
 
-const MARKER_LENGTH = 100;
-
 const aiDocumentSchema = z.object({
   sections: z.array(z.object({
     type: z.enum(["front_matter", "chapter", "back_matter"]),
     title: z.string(),
     chapter_number: z.number(),
-    start_marker: z.string().describe(`The EXACT first ${MARKER_LENGTH} characters of this section's BODY TEXT (not the heading/title). Must be a unique, verbatim substring from the original text. This is used to locate the section boundary in the document.`),
+    start_marker: z.string(),
   })),
 });
 
-async function extractChaptersWithAI(plainText: string, config: { provider: string; model: string }): Promise<{ title: string; content: string; chapter_number: number; word_count: number }[]> {
-  console.log(`[extractChaptersWithAI] Starting — provider: ${config.provider}, model: ${config.model}`);
-  const maxChars = 120000;
-  const truncatedText = plainText.length > maxChars ? plainText.substring(0, maxChars) : plainText;
+const AI_TIMEOUT_MS = 45000;
+const AI_CHUNK_SIZE = 40000;
+const AI_CHUNK_OVERLAP = 2000;
 
-  const provider = getAIChapterProvider({ provider: config.provider });
-  const model = getAIModel({ model: config.model });
+function buildHtmlPositionMap(html: string): { plainText: string; textToHtml: number[] } {
+  let plainText = "";
+  const textToHtml: number[] = [];
+  let inTag = false;
 
-  console.log(`[extractChaptersWithAI] Calling generateObject with ${truncatedText.length} chars`);
+  for (let i = 0; i < html.length; i++) {
+    const ch = html[i];
+    if (ch === "<") { inTag = true; continue; }
+    if (ch === ">") { inTag = false; continue; }
+    if (inTag) continue;
 
-  try {
-    const result = await generateObject({
-      model: provider.chat(model),
+    textToHtml[plainText.length] = i;
+    plainText += ch;
+  }
+
+  return { plainText, textToHtml };
+}
+
+function textPosToHtmlPos(textToHtml: number[], textPos: number): number {
+  if (textPos >= textToHtml.length) return textToHtml[textToHtml.length - 1] || 0;
+  return textToHtml[textPos] || 0;
+}
+
+async function callAI(
+  plainText: string,
+  provider: ReturnType<typeof getAIChapterProvider>,
+  modelName: string,
+  timeoutMs: number,
+): Promise<z.infer<typeof aiDocumentSchema>["sections"]> {
+  const result = await Promise.race([
+    generateObject({
+      model: provider.chat(modelName),
       schema: aiDocumentSchema,
       temperature: 0,
       system: `You are a precise book document parser. Identify ALL sections of a book — front matter, chapters, and back matter.`,
       prompt: `Analyze this book text and identify ALL sections in their EXACT order.
 
-For EACH section, return:
-- "type": One of "front_matter", "chapter", or "back_matter"
-- "title": The section's descriptive title (e.g., "Dedication", "MOUNT MUBI", "Acknowledgments")
-- "chapter_number": The actual chapter number from the text, or 0 for front/back matter
-- "start_marker": Copy VERBATIM the FIRST ${MARKER_LENGTH} characters of this section's BODY TEXT — NOT the heading, NOT the title, NOT "Chapter N" text. This is the actual content text that begins the section. It must be long enough to be unique in the document and an EXACT substring.
+For EACH section return:
+- "type": "front_matter" | "chapter" | "back_matter"
+- "title": The section's title (e.g., "Dedication", "MOUNT MUBI", "Acknowledgments")
+- "chapter_number": Actual chapter number from the text, or 0 for non-chapters
+- "start_marker": Copy VERBATIM the EXACT heading text that marks the START of this section. Must be an exact, unique substring from the original text.
 
 Rules:
-1. Include EVERYTHING — dedications, title pages, forewords, ALL chapters, epilogues, afterwords, acknowledgments, about the author
-2. Front matter = everything before Chapter 1. Back matter = everything after the last chapter.
-3. For chapters, the title is the ACTUAL chapter name (e.g., "MOUNT MUBI"), not "Chapter 1"
-4. start_marker is the BODY TEXT that starts the section — skip the chapter heading/Chapter N text. For example, if the text is "Chapter 1\\nMOUNT MUBI\\n\\nTHE STENCH CAUGHT...", the start_marker is "THE STENCH CAUGHT..." (the actual first sentence of the chapter body)
-5. start_marker MUST be ${MARKER_LENGTH} characters long, copied VERBATIM — every character, space, and line break must match exactly
-6. Return ONLY the JSON — no explanations
+1. Include EVERYTHING — title pages, dedications, forewords, ALL chapters, epilogues, afterwords
+2. Front matter = everything before Chapter 1. Back matter = everything after last chapter.
+3. start_marker is the heading/separator that marks section start. For chapters use "Chapter 1" or the actual heading text like "Chapter 1 MOUNT MUBI" — whatever distinct text signals a new chapter. For front matter, the first section does NOT need a marker (it starts at position 0).
+4. Use ACTUAL chapter numbers from the text
+5. Return ONLY JSON — no explanations
 
 Text to parse:
-${truncatedText}`,
-    });
+${plainText}`,
+    }),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("AI_TIMEOUT")), timeoutMs)
+    ),
+  ]);
 
-    const sections = result.object.sections;
-    console.log(`[extractChaptersWithAI] generateObject returned ${sections.length} sections`);
-
-    let maxChapterNum = 0;
-    for (const s of sections) {
-      if (s.type === "chapter" && s.chapter_number > maxChapterNum) {
-        maxChapterNum = s.chapter_number;
-      }
-    }
-
-    const rawResults = sections.map((s, i) => {
-      let startIdx = 0;
-      let markerFound = i === 0;
-      if (i > 0) {
-        startIdx = plainText.indexOf(s.start_marker);
-        if (startIdx === -1) {
-          console.warn(`[extractChaptersWithAI] start_marker not found for section "${s.title}", trying shorter match`);
-          const shortMarker = s.start_marker.substring(0, 60);
-          startIdx = plainText.indexOf(shortMarker);
-        }
-        if (startIdx === -1) {
-          console.warn(`[extractChaptersWithAI] Short marker also not found for "${s.title}", skipping section`);
-        } else {
-          markerFound = true;
-        }
-      }
-
-      const nextSection = sections[i + 1];
-      let endIdx = plainText.length;
-
-      if (nextSection) {
-        let nextStart = plainText.indexOf(nextSection.start_marker, startIdx + 1);
-        if (nextStart === -1) {
-          const shortNext = nextSection.start_marker.substring(0, 60);
-          nextStart = plainText.indexOf(shortNext, startIdx + 1);
-        }
-        if (nextStart > startIdx) {
-          endIdx = nextStart;
-        }
-      }
-
-      const rawContent = markerFound
-        ? plainText.substring(startIdx, endIdx).trim()
-        : "";
-
-      return { section: s, rawContent, startIdx, endIdx, markerFound };
-    });
-
-    const rawContents = rawResults
-      .filter(r => r.markerFound)
-      .map(r => r.rawContent);
-
-    const cleanedContents = rawContents.length > 0
-      ? await cleanTailsWithAI(rawContents, provider, model)
-      : [];
-
-    let cleanedIdx = 0;
-    return rawResults.map((r, i) => {
-      const s = r.section;
-
-      if (!r.markerFound) {
-        const cn = s.type === "front_matter" ? 0 : s.type === "back_matter" ? maxChapterNum + 1 : s.chapter_number;
-        return { title: s.title, content: `[Content boundary not found: "${s.title}"]`, chapter_number: cn, word_count: 0 };
-      }
-
-      const content = cleanedContents[cleanedIdx++] || r.rawContent;
-      const wordCount = content.split(/\s+/).filter(Boolean).length;
-
-      let chapterNumber: number;
-      if (s.type === "chapter") {
-        chapterNumber = s.chapter_number;
-      } else if (s.type === "front_matter") {
-        chapterNumber = 0;
-      } else {
-        chapterNumber = maxChapterNum + 1 + i;
-      }
-
-      console.log(`[extractChaptersWithAI] ${s.type} #${chapterNumber}: "${s.title}" (${wordCount} words, start:${r.startIdx}, end:${r.endIdx})`);
-
-      return { title: s.title, content, chapter_number: chapterNumber, word_count: wordCount };
-    });
-  } catch (error) {
-    console.error(`[extractChaptersWithAI] generateObject or mapping failed:`, error);
-    throw error;
-  }
+  return result.object.sections;
 }
 
-function cleanSectionContent(content: string): string {
-  let cleaned = content
-    .replace(/^[\s\n]*(?:Chapter\s+[\divxlcdm\d]+[.:]?\s*)+[\s\n]*/gi, "");
-  
-  // Strip trailing chapter heading patterns (e.g., "Chapter 2A LOGICIAN'S THEOREM")
-  cleaned = cleaned.replace(/[\s\n]*Chapter\s+[\divxlcdm\d]+[.:]?\s*[A-Z][A-Z\s'\-]+$/gi, "");
-  
-  return cleaned.trim();
-}
-
-const cleanTailsSchema = z.object({
-  cleaned_tails: z.array(z.string()),
-});
-
-async function cleanTailsWithAI(
-  rawContents: string[],
+async function callAIChunked(
+  plainText: string,
   provider: ReturnType<typeof getAIChapterProvider>,
-  modelStr: string,
-): Promise<string[]> {
-  const TAIL_LEN = 300;
-  const tails = rawContents.map((c, i) => ({
-    index: i,
-    isLast: i === rawContents.length - 1,
-    prefix: c.length > TAIL_LEN ? c.substring(0, c.length - TAIL_LEN) : "",
-    tail: c.length > TAIL_LEN ? c.substring(c.length - TAIL_LEN) : c,
-  }));
+  modelName: string,
+): Promise<z.infer<typeof aiDocumentSchema>["sections"]> {
+  const chunks: { text: string; offset: number }[] = [];
+  let pos = 0;
+  while (pos < plainText.length) {
+    const end = Math.min(pos + AI_CHUNK_SIZE, plainText.length);
+    chunks.push({ text: plainText.substring(pos, end), offset: pos });
+    pos = end - AI_CHUNK_OVERLAP;
+  }
 
-  const tailsToClean = tails.filter(t => !t.isLast && t.tail.length > 50);
-  
-  if (tailsToClean.length === 0) return rawContents;
+  console.log(`[AI Chunked] Split ${plainText.length} chars into ${chunks.length} chunks`);
 
-  console.log(`[cleanTailsWithAI] Sending ${tailsToClean.length} tails to AI for cleanup`);
+  const CONCURRENCY = 3;
+  const allResults: (z.infer<typeof aiDocumentSchema>["sections"][number] & { _offset: number })[] = [];
+
+  for (let i = 0; i < chunks.length; i += CONCURRENCY) {
+    const batch = chunks.slice(i, i + CONCURRENCY);
+    const results = await Promise.all(
+      batch.map(async (chunk, batchIdx) => {
+        const chunkNum = i + batchIdx + 1;
+        console.log(`[AI Chunked] Processing chunk ${chunkNum}/${chunks.length} (${chunk.text.length} chars)`);
+        const sections = await callAI(chunk.text, provider, modelName, 30000);
+        console.log(`[AI Chunked] Chunk ${chunkNum} returned ${sections.length} sections`);
+        return sections.map(s => ({ ...s, _offset: chunk.offset }));
+      })
+    );
+    allResults.push(...results.flat());
+  }
+
+  const seen = new Set<string>();
+  const deduped: typeof allResults = [];
+  for (const s of allResults) {
+    const key = `${s.type}|${s.title}|${s.chapter_number}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      deduped.push(s);
+    }
+  }
+
+  console.log(`[AI Chunked] Total ${deduped.length} unique sections across all chunks`);
+  return deduped;
+}
+
+async function extractChaptersWithAI(docxUrl: string, config: { provider: string; model: string }): Promise<{ title: string; content: string; chapter_number: number; word_count: number }[]> {
+  console.log(`[extractChaptersWithAI] Starting — provider: ${config.provider}, model: ${config.model}`);
+
+  const response = await axios.get(docxUrl, { responseType: "arraybuffer" });
+  const result = await mammoth.convertToHtml(
+    { buffer: Buffer.from(response.data) },
+    { styleMap: MAMMOTH_STYLE_MAP },
+  );
+  const fullHtml = result.value;
+  console.log(`[extractChaptersWithAI] DOCX converted to ${fullHtml.length} chars of HTML`);
+
+  if (result.messages.length > 0) {
+    console.log("[extractChaptersWithAI] Mammoth messages:", result.messages);
+  }
+
+  const { plainText, textToHtml } = buildHtmlPositionMap(fullHtml);
+  console.log(`[extractChaptersWithAI] Plain text: ${plainText.length} chars`);
+
+  const provider = getAIChapterProvider({ provider: config.provider });
+  const modelName = getAIModel({ model: config.model });
+
+  let sections: z.infer<typeof aiDocumentSchema>["sections"];
 
   try {
-    const result = await generateObject({
-      model: provider.chat(modelStr),
-      schema: cleanTailsSchema,
-      temperature: 0,
-      system: `You clean trailing chapter headings from book section text.`,
-      prompt: `The following are the ENDINGS of ${tailsToClean.length} book sections. Each may have a trailing chapter heading that bled in from the next section (e.g., "Chapter 2 A LOGICIAN'S THEOREM" appearing at the end of the previous chapter).
-
-Strip any such trailing chapter heading from each tail. If there is no bleeding heading, return the tail unchanged.
-
-Return ONLY a JSON array of ${tailsToClean.length} cleaned tails in the EXACT same order.
-
-${tailsToClean.map((t, i) => `Tail ${i + 1}:\n${t.tail}\n`).join("\n---\n")}`,
-    });
-
-    const cleaned = result.object.cleaned_tails;
-
-    const cleanedMap = new Map<number, string>();
-    tailsToClean.forEach((t, i) => {
-      cleanedMap.set(t.index, cleanSectionContent(cleaned[i] || t.tail));
-    });
-
-    return rawContents.map((content, i) => {
-      if (!cleanedMap.has(i)) return content;
-      const t = tails.find(tx => tx.index === i)!;
-      return (t.prefix + cleanedMap.get(i)!).trim();
-    });
-  } catch (error) {
-    console.warn(`[cleanTailsWithAI] AI cleanup failed, falling back to regex:`, error);
-    return rawContents.map(c => cleanSectionContent(c));
+    console.log(`[extractChaptersWithAI] Phase 1: single call with ${AI_TIMEOUT_MS / 1000}s timeout`);
+    sections = await callAI(plainText, provider, modelName, AI_TIMEOUT_MS);
+    console.log(`[extractChaptersWithAI] Phase 1 SUCCESS: ${sections.length} sections`);
+  } catch (error: any) {
+    if (error.message === "AI_TIMEOUT") {
+      console.log(`[extractChaptersWithAI] Phase 1 timed out, starting Phase 2: chunked processing`);
+      const chunked = await callAIChunked(plainText, provider, modelName);
+      sections = chunked.map(s => ({ type: s.type, title: s.title, chapter_number: s.chapter_number, start_marker: s.start_marker }));
+      console.log(`[extractChaptersWithAI] Phase 2 SUCCESS: ${sections.length} sections`);
+    } else {
+      console.error(`[extractChaptersWithAI] Phase 1 error:`, error);
+      throw error;
+    }
   }
+
+  // Find text positions of each section heading
+  const boundaries: { textPos: number; section: typeof sections[number] }[] = [];
+  let lastTextPos = 0;
+
+  // First section starts at 0 if it's front matter, otherwise from first marker
+  if (sections.length > 0 && sections[0].type === "front_matter") {
+    boundaries.push({ textPos: 0, section: sections[0] });
+  }
+
+  for (let i = (boundaries.length > 0 ? 1 : 0); i < sections.length; i++) {
+    const s = sections[i];
+    let pos = plainText.indexOf(s.start_marker, lastTextPos + 1);
+    if (pos === -1) {
+      pos = plainText.indexOf(s.start_marker.substring(0, 30), lastTextPos + 1);
+    }
+    if (pos === -1) {
+      console.warn(`[extractChaptersWithAI] Marker not found for "${s.title}", placing sequentially`);
+      pos = lastTextPos + 1;
+    }
+
+    boundaries.push({ textPos: pos, section: s });
+    lastTextPos = pos;
+  }
+
+  // Map text positions to HTML positions and split
+  const htmlBoundaries = boundaries.map(b => textPosToHtmlPos(textToHtml, b.textPos));
+
+  let maxChapterNum = 0;
+  for (const s of sections) {
+    if (s.type === "chapter" && s.chapter_number > maxChapterNum) {
+      maxChapterNum = s.chapter_number;
+    }
+  }
+
+  const chapterResults: { title: string; content: string; chapter_number: number; word_count: number }[] = [];
+
+  for (let i = 0; i < htmlBoundaries.length; i++) {
+    const startHtmlPos = htmlBoundaries[i];
+    const endHtmlPos = i + 1 < htmlBoundaries.length ? htmlBoundaries[i + 1] : fullHtml.length;
+    const content = fullHtml.substring(startHtmlPos, endHtmlPos).trim();
+    const wordCount = extractTextFromHtml(content).split(/\s+/).filter(Boolean).length;
+
+    const s = boundaries[i].section;
+
+    let chapterNumber: number;
+    if (s.type === "chapter") {
+      chapterNumber = s.chapter_number;
+    } else if (s.type === "front_matter") {
+      chapterNumber = 0;
+    } else {
+      chapterNumber = maxChapterNum + 1 + i;
+    }
+
+    console.log(`[extractChaptersWithAI] ${s.type} #${chapterNumber}: "${s.title}" (${wordCount} words)`);
+
+    chapterResults.push({ title: s.title, content, chapter_number: chapterNumber, word_count: wordCount });
+  }
+
+  return chapterResults;
 }
 
 async function extractChaptersFromDocx(docxUrl?: string | null) {
@@ -781,15 +801,8 @@ export const createBook = publicProcedure.input(createBookSchema).mutation(async
   const autoChapters = docxSourceUrl && aiConfig?.enabled
     ? await (async () => {
         try {
-          console.log(`[AI] Fetching DOCX for AI extraction, provider: ${aiConfig.provider || "openai"}, model: ${aiConfig.model || "gpt-4o"}`);
-          const response = await axios.get(docxSourceUrl, { responseType: "arraybuffer" });
-          const result = await mammoth.convertToHtml(
-            { buffer: Buffer.from(response.data) },
-            { styleMap: MAMMOTH_STYLE_MAP },
-          );
-          const plainText = extractTextFromHtml(result.value);
-          console.log(`[AI] DOCX converted to ${plainText.length} chars of plain text`);
-          return extractChaptersWithAI(plainText, {
+          console.log(`[AI] AI extraction with model: ${aiConfig.model || "gpt-4o"}`);
+          return extractChaptersWithAI(docxSourceUrl, {
             provider: aiConfig.provider || "openai",
             model: aiConfig.model || "gpt-4o",
           });
@@ -1010,15 +1023,8 @@ export const updateBook = publicProcedure.input(createBookSchema).mutation(async
       ? aiConfig?.enabled
         ? await (async () => {
             try {
-              console.log(`[AI] Fetching DOCX for AI extraction (update), provider: ${aiConfig.provider || "openai"}, model: ${aiConfig.model || "gpt-4o"}`);
-              const response = await axios.get(docxSourceUrl, { responseType: "arraybuffer" });
-              const result = await mammoth.convertToHtml(
-                { buffer: Buffer.from(response.data) },
-                { styleMap: MAMMOTH_STYLE_MAP },
-              );
-              const plainText = extractTextFromHtml(result.value);
-              console.log(`[AI] DOCX converted to ${plainText.length} chars of plain text (update)`);
-              return extractChaptersWithAI(plainText, {
+              console.log(`[AI] AI extraction with model (update): ${aiConfig.model || "gpt-4o"}`);
+              return extractChaptersWithAI(docxSourceUrl, {
                 provider: aiConfig.provider || "openai",
                 model: aiConfig.model || "gpt-4o",
               });

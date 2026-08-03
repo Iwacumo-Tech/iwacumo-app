@@ -1372,7 +1372,8 @@ export default function SystemSettingsPage() {
                           <SelectItem value="openai/gpt-4o">openai/gpt-4o (OR)</SelectItem>
                           <SelectItem value="openai/gpt-4.1">openai/gpt-4.1 (OR)</SelectItem>
                           <SelectItem value="deepseek/deepseek-v4-pro">deepseek-v4-pro (OR)</SelectItem>
-                          <SelectItem value="anthropic/claude-3.5-sonnet">claude-3.5-sonnet (OR)</SelectItem>
+                          <SelectItem value="anthropic/claude-3-5-sonnet-20241022">claude-3.5-sonnet</SelectItem>
+                          <SelectItem value="anthropic/claude-3-5-haiku-20241022">claude-3.5-haiku (fast)</SelectItem>
                         </SelectContent>
                       </Select>
                     </FormItem>
