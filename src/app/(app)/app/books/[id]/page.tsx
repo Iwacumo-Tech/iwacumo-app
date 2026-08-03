@@ -79,7 +79,13 @@ export default function BookDetailsPage() {
           chapters.map((chapter) => (
             <div key={chapter.id} className="flex items-center justify-between gap-4 border-2 border-black bg-white p-4 gumroad-shadow">
               <div>
-                <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Chapter {chapter.chapter_number}</p>
+                <p className="text-[10px] font-black uppercase tracking-widest opacity-40">
+                  {chapter.section_type === "front_matter"
+                    ? "Front Matter"
+                    : chapter.section_type === "back_matter"
+                      ? "Back Matter"
+                      : `Chapter ${chapter.chapter_number}`}
+                </p>
                 <h3 className="text-lg font-semibold">{chapter.title}</h3>
               </div>
               <div className="flex gap-2">

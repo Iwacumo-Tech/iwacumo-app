@@ -313,6 +313,15 @@ const aiDocumentSchema = z.object({
   })),
 });
 
+type ExtractedChapter = {
+  title: string;
+  content: string;
+  chapter_number: number;
+  section_type: "front_matter" | "chapter" | "back_matter";
+  sort_order: number;
+  word_count: number;
+};
+
 const AI_TIMEOUT_MS = 45000;
 const AI_CHUNK_SIZE = 40000;
 const AI_CHUNK_OVERLAP = 2000;
@@ -424,7 +433,7 @@ async function callAIChunked(
   return deduped;
 }
 
-async function extractChaptersWithAI(docxUrl: string, config: { provider: string; model: string }): Promise<{ title: string; content: string; chapter_number: number; word_count: number }[]> {
+async function extractChaptersWithAI(docxUrl: string, config: { provider: string; model: string }): Promise<ExtractedChapter[]> {
   console.log(`[extractChaptersWithAI] Starting — provider: ${config.provider}, model: ${config.model}`);
 
   const response = await axios.get(docxUrl, { responseType: "arraybuffer" });
@@ -490,14 +499,7 @@ async function extractChaptersWithAI(docxUrl: string, config: { provider: string
   // Map text positions to HTML positions and split
   const htmlBoundaries = boundaries.map(b => textPosToHtmlPos(textToHtml, b.textPos));
 
-  let maxChapterNum = 0;
-  for (const s of sections) {
-    if (s.type === "chapter" && s.chapter_number > maxChapterNum) {
-      maxChapterNum = s.chapter_number;
-    }
-  }
-
-  const chapterResults: { title: string; content: string; chapter_number: number; word_count: number }[] = [];
+  const chapterResults: ExtractedChapter[] = [];
 
   for (let i = 0; i < htmlBoundaries.length; i++) {
     const startHtmlPos = htmlBoundaries[i];
@@ -513,18 +515,25 @@ async function extractChaptersWithAI(docxUrl: string, config: { provider: string
     } else if (s.type === "front_matter") {
       chapterNumber = 0;
     } else {
-      chapterNumber = maxChapterNum + 1 + i;
+      chapterNumber = 0;
     }
 
     console.log(`[extractChaptersWithAI] ${s.type} #${chapterNumber}: "${s.title}" (${wordCount} words)`);
 
-    chapterResults.push({ title: s.title, content, chapter_number: chapterNumber, word_count: wordCount });
+    chapterResults.push({
+      title: s.title,
+      content,
+      chapter_number: chapterNumber,
+      section_type: s.type,
+      sort_order: i,
+      word_count: wordCount,
+    });
   }
 
   return chapterResults;
 }
 
-async function extractChaptersFromDocx(docxUrl?: string | null) {
+async function extractChaptersFromDocx(docxUrl?: string | null): Promise<ExtractedChapter[]> {
   if (!docxUrl) return [];
 
   try {
@@ -569,6 +578,8 @@ async function extractChaptersFromDocx(docxUrl?: string | null) {
         title,
         content: section,
         chapter_number: chapterNumber,
+        section_type: "chapter",
+        sort_order: index,
         word_count: wordCount,
       };
     });
@@ -1268,7 +1279,9 @@ export const getAllBooks = publicProcedure.query(async ({ ctx }) => {
       ...(isSuperAdmin ? {} : { published: true }) 
     },
     include: {
-      chapters: true,
+      chapters: {
+        orderBy: [{ sort_order: "asc" }, { chapter_number: "asc" }, { created_at: "asc" }],
+      },
       author: {
         include: {
           user: {
@@ -1357,7 +1370,9 @@ export const getBookById = publicProcedure
             },
           },
         },
-        chapters: true,
+        chapters: {
+          orderBy: [{ sort_order: "asc" }, { chapter_number: "asc" }, { created_at: "asc" }],
+        },
         variants: true,
         publisher: true,
         categories: true,
@@ -1598,7 +1613,9 @@ export const getBookByAuthor = publicProcedure.input(findBookByIdSchema).query(a
   });
 
   const baseInclude = { 
-    chapters: true, 
+    chapters: {
+      orderBy: { sort_order: "asc" as const },
+    },
     author: true, 
     categories: true,
     variants: {
@@ -1646,7 +1663,13 @@ export const toggleBookFeatured = publicProcedure.input(toggleFeaturedSchema).mu
 export const getAllFeaturedBooks = publicProcedure.query(async () => {
   return await prisma.book.findMany({
     where: { featured: true, deleted_at: null, published: true, status: { not: "archived" } },
-    include: { chapters: true, author: true, variants: true },
+     include: {
+       chapters: {
+         orderBy: [{ sort_order: "asc" }, { chapter_number: "asc" }, { created_at: "asc" }],
+       },
+       author: true,
+       variants: true,
+     },
   });
 });
 
@@ -1654,7 +1677,13 @@ export const getNewArrivalBooks = publicProcedure.query(async () => {
   return await prisma.book.findMany({
     where: { deleted_at: null, published: true, status: { not: "archived" } },
     orderBy: { created_at: "desc" },
-    include: { chapters: true, author: true, variants: true },
+     include: {
+       chapters: {
+         orderBy: [{ sort_order: "asc" }, { chapter_number: "asc" }, { created_at: "asc" }],
+       },
+       author: true,
+       variants: true,
+     },
     take: 12,
   });
 });
@@ -1684,7 +1713,14 @@ export const getPurchasedBooksByCustomer = publicProcedure
             book_variant: {
               include: {
                 book: {
-                  include: { author: true, chapters: true, variants: true, issue_reports: true },
+                  include: {
+                    author: true,
+                    chapters: {
+                      orderBy: [{ sort_order: "asc" }, { chapter_number: "asc" }, { created_at: "asc" }],
+                    },
+                    variants: true,
+                    issue_reports: true,
+                  },
                 },
               },
             },

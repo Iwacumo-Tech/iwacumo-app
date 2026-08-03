@@ -106,6 +106,8 @@ const ChapterForm = ({ chapter, action, setShowForm, bookId }: ChapterFormProps)
     if (chapter?.id) {
       updateChapter.mutate({
         ...values,
+        section_type: chapter.section_type as TCreateChapterSchema["section_type"] ?? "chapter",
+        sort_order: chapter.sort_order,
         id: chapter.id,
       });
     } else {

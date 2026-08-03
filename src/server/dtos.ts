@@ -298,6 +298,8 @@ export const createChapterSchema = z.object({
   title: z.string(),
   content: z.string(),
   chapter_number: z.number().optional(),
+  section_type: z.enum(["front_matter", "chapter", "back_matter"]).optional(),
+  sort_order: z.number().optional(),
   summary: z.string().optional(),
   word_count: z.coerce.number().optional(),
   book_id: z.string().optional(),

@@ -52,6 +52,8 @@ export const getChapterContent = publicProcedure
         title: chapter.title,
         content: chapter.content,
         chapter_number: chapter.chapter_number,
+        section_type: chapter.section_type,
+        sort_order: chapter.sort_order,
         book_title: chapter.book!.title,
       };
     } catch (error) {

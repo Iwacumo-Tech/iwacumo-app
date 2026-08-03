@@ -153,7 +153,11 @@ export default function ViewBookPage({ book }: BookViewerProps) {
             </h2>
             {currentChapter ? (
               <p className="text-[9px] font-bold uppercase text-accent bg-black px-2 py-0.5 rounded-full inline-block mt-1">
-                Chapter {currentChapter.chapter_number}
+                {currentChapter.section_type === "front_matter"
+                  ? "Front Matter"
+                  : currentChapter.section_type === "back_matter"
+                    ? "Back Matter"
+                    : `Chapter ${currentChapter.chapter_number}`}
               </p>
             ) : (
               <p className="text-[9px] font-bold uppercase text-accent bg-black px-2 py-0.5 rounded-full inline-block mt-1">

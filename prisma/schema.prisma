@@ -429,6 +429,8 @@ model Chapter {
   content        String
   summary        String?
   chapter_number Int
+  section_type   String         @default("chapter")
+  sort_order     Int            @default(0)
   word_count     Int            @default(0)
   chapter_images ChapterImage[]
   book_id        String?
