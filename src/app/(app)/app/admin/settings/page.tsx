@@ -232,6 +232,12 @@ const PAYMENT_METHOD_OPTIONS = [
   { value: PAYMENT_METHODS.MOBILE_MONEY, label: "Mobile Money" },
 ] as const;
 
+const STATIC_AI_MODEL_OPTIONS = [
+  { id: "gpt-4o", label: "gpt-4o (OpenAI)", context_length: 128000, supports_structured_outputs: true },
+  { id: "gpt-4.1", label: "gpt-4.1 (OpenAI)", context_length: 1000000, supports_structured_outputs: true },
+  { id: "~anthropic/claude-sonnet-latest", label: "Claude Sonnet Latest (OR)", context_length: 200000, supports_structured_outputs: true },
+] as const;
+
 const SETTINGS_TABS = [
   { value: "commerce", label: "Commerce" },
   { value: "payments", label: "Payments" },
@@ -378,6 +384,7 @@ export default function SystemSettingsPage() {
   const { toast } = useToast();
 
   const { data: settings, isLoading } = trpc.getSystemSettings.useQuery();
+  const { data: aiModels, isLoading: isAIModelsLoading } = trpc.getAIModelOptions.useQuery();
 
   const { mutate: updateSettings, isPending } =
     trpc.updateSystemSettings.useMutation({
@@ -1367,13 +1374,26 @@ export default function SystemSettingsPage() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="gpt-4o">gpt-4o (Rec)</SelectItem>
-                          <SelectItem value="gpt-4.1">gpt-4.1 (Latest)</SelectItem>
-                          <SelectItem value="openai/gpt-4o">openai/gpt-4o (OR)</SelectItem>
-                          <SelectItem value="openai/gpt-4.1">openai/gpt-4.1 (OR)</SelectItem>
-                          <SelectItem value="deepseek/deepseek-v4-pro">deepseek-v4-pro (OR)</SelectItem>
-                          <SelectItem value="anthropic/claude-3-5-sonnet-20241022">claude-3.5-sonnet</SelectItem>
-                          <SelectItem value="anthropic/claude-3-5-haiku-20241022">claude-3.5-haiku (fast)</SelectItem>
+                          {STATIC_AI_MODEL_OPTIONS.map((model) => (
+                            <SelectItem key={model.id} value={model.id}>
+                              {model.label} · {Math.round(model.context_length / 1000)}K context
+                            </SelectItem>
+                          ))}
+                          {aiModels?.map((model) => (
+                            <SelectItem
+                              key={model.id}
+                              value={model.id}
+                              disabled={!model.supports_structured_outputs}
+                            >
+                              {model.name} · {Math.round(model.context_length / 1000)}K context
+                              {!model.supports_structured_outputs ? " · JSON unsupported" : ""}
+                            </SelectItem>
+                          ))}
+                          {isAIModelsLoading && (
+                            <SelectItem value="models-loading" disabled>
+                              Loading OpenRouter models...
+                            </SelectItem>
+                          )}
                         </SelectContent>
                       </Select>
                     </FormItem>

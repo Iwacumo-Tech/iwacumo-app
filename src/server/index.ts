@@ -42,6 +42,7 @@ import {
   getGlobalPlatformStats,
   toggleFeatured,
   getSystemSettings,
+  getAIModelOptions,
   updateSystemSettings,
   inviteStaff,
   setupStaffAccount,
@@ -256,6 +257,7 @@ export const appRouter = router({
   toggleFeatured,
   getGlobalPlatformStats,
   getSystemSettings,
+  getAIModelOptions,
   updateSystemSettings,
 
   inviteStaff,

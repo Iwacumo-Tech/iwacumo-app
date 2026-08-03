@@ -534,6 +534,67 @@ export const getSystemSettings = publicProcedure.query(async () => {
   };
 });
 
+type OpenRouterModel = {
+  id: string;
+  name?: string;
+  context_length?: number;
+  pricing?: { prompt?: string; completion?: string };
+  supported_parameters?: string[];
+};
+
+type AIModelOption = {
+  id: string;
+  name: string;
+  context_length: number;
+  supports_structured_outputs: boolean;
+  input_price: string | null;
+  output_price: string | null;
+};
+
+let aiModelOptionsCache: { expires_at: number; models: AIModelOption[] } | null = null;
+
+export const getAIModelOptions = publicProcedure.query(async () => {
+  if (aiModelOptionsCache && aiModelOptionsCache.expires_at > Date.now()) {
+    return aiModelOptionsCache.models;
+  }
+
+  const response = await fetch("https://openrouter.ai/api/v1/models", {
+    headers: {
+      "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "http://localhost:8090",
+      "X-Title": "Revelation Book Platform",
+    },
+    signal: AbortSignal.timeout(10000),
+  });
+
+  if (!response.ok) {
+    throw new Error(`OpenRouter model catalog returned ${response.status}`);
+  }
+
+  const payload = (await response.json()) as { data?: OpenRouterModel[] };
+  const models = (payload.data ?? [])
+    .filter((model) => {
+      const isSupportedFamily = model.id.startsWith("openai/") || model.id.startsWith("deepseek/");
+      const hasBookContext = (model.context_length ?? 0) >= 60000;
+      return isSupportedFamily && hasBookContext;
+    })
+    .map((model) => ({
+      id: model.id,
+      name: model.name ?? model.id,
+      context_length: model.context_length ?? 0,
+      supports_structured_outputs: model.supported_parameters?.includes("structured_outputs") ?? false,
+      input_price: model.pricing?.prompt ?? null,
+      output_price: model.pricing?.completion ?? null,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  aiModelOptionsCache = {
+    expires_at: Date.now() + 15 * 60 * 1000,
+    models,
+  };
+
+  return models;
+});
+ 
 export const updateSystemSettings = publicProcedure
   .input(z.object({ key: z.string(), value: z.any() }))
   .mutation(async ({ input }) => {
