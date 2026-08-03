@@ -77,5 +77,16 @@ export function getAIConfig(): {
 }
 
 export function getAIModel(config?: { model?: string }) {
-  return config?.model || process.env.AI_CHAPTER_MODEL || AI_CHAPTER_DEFAULT_MODEL;
+  const configuredModel = config?.model || process.env.AI_CHAPTER_MODEL || AI_CHAPTER_DEFAULT_MODEL;
+  const legacyModelAliases: Record<string, string> = {
+    "anthropic/claude-3.5-sonnet": "~anthropic/claude-sonnet-latest",
+    "anthropic/claude-3-5-sonnet-20241022": "~anthropic/claude-sonnet-latest",
+  };
+  const normalizedModel = legacyModelAliases[configuredModel] || configuredModel;
+
+  if (normalizedModel !== configuredModel) {
+    console.warn(`[AI] Replaced unavailable legacy model "${configuredModel}" with "${normalizedModel}"`);
+  }
+
+  return normalizedModel;
 }
