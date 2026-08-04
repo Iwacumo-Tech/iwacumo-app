@@ -7,7 +7,7 @@ import { trpc } from "@/app/_providers/trpc-provider";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import ChapterForm from "@/components/chapters/chapter-form";
-import { Edit, Plus, ChevronLeft, BookOpen } from "lucide-react";
+import { Edit, Plus, ChevronLeft, BookOpen, RefreshCw } from "lucide-react";
 import Link from "next/link";
 
 export default function BookDetailsPage() {
@@ -25,6 +25,16 @@ export default function BookDetailsPage() {
     { book_id: bookId },
     { enabled: !!bookId && !!book?.text_url }
   );
+  const { data: processingJob } = trpc.getDocumentProcessingStatus.useQuery(
+    { book_id: bookId },
+    { enabled: !!bookId, refetchInterval: 3000 },
+  );
+  const utils = trpc.useUtils();
+  const retryProcessing = trpc.retryDocumentProcessing.useMutation({
+    onSuccess: async () => {
+      await utils.getDocumentProcessingStatus.invalidate({ book_id: bookId });
+    },
+  });
 
   const handleEdit = (chapter: any) => {
     setSelectedChapter(chapter);
@@ -71,6 +81,30 @@ export default function BookDetailsPage() {
           <Plus className="mr-2 h-4 w-4" /> Add Chapter
         </Button>
       </div>
+
+      {processingJob && processingJob.status !== "completed" && (
+        <div className="flex flex-col gap-3 border-2 border-black bg-yellow-100 p-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-widest">
+              Document processing: {processingJob.status}
+            </p>
+            <p className="mt-1 text-sm">
+              {processingJob.status === "failed"
+                ? processingJob.error_message || "The document could not be processed."
+                : "Your DOCX is being analyzed. Chapters will appear when processing finishes."}
+            </p>
+          </div>
+          {processingJob.status === "failed" && (
+            <Button
+              onClick={() => retryProcessing.mutate({ book_id: bookId })}
+              disabled={retryProcessing.isPending}
+              className="rounded-none border-2 border-black bg-black text-white"
+            >
+              <RefreshCw className="mr-2 h-4 w-4" /> Retry Processing
+            </Button>
+          )}
+        </div>
+      )}
 
       <div className="space-y-4">
         {isLoading ? (

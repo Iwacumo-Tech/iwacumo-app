@@ -269,6 +269,7 @@ model Book {
   special_addon_fee  Float        @default(0)
   special_addon_description String?
   chapters          Chapter[]
+  document_processing_job DocumentProcessingJob?
   variants          BookVariant[]
   publisher         Publisher?    @relation(fields: [publisher_id], references: [id])
   author_id         String?
@@ -440,6 +441,24 @@ model Chapter {
   deleted_at     DateTime?
 
   @@map("chapters")
+}
+
+model DocumentProcessingJob {
+  id               String   @id @default(uuid())
+  book_id          String   @unique
+  book             Book     @relation(fields: [book_id], references: [id], onDelete: Cascade)
+  status           String   @default("queued")
+  progress         Int      @default(0)
+  total_steps      Int      @default(1)
+  completed_steps  Int      @default(0)
+  error_message    String?
+  attempt_count    Int      @default(0)
+  started_at       DateTime?
+  completed_at     DateTime?
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  @@map("document_processing_jobs")
 }
 
 model ChapterImage {

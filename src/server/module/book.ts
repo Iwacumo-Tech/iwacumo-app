@@ -16,6 +16,7 @@ import axios from "axios"
 import { randomUUID } from "crypto";
 import { watermarkPdf } from "@/lib/watermark";
 import { put } from "@vercel/blob";
+import { send } from "@vercel/queue";
 import { generateObject } from "ai";
 import { getAIChapterProvider, getAIModel } from "@/lib/ai";
 
@@ -337,7 +338,7 @@ const aiDocumentSchema = z.object({
   })),
 });
 
-type ExtractedChapter = {
+export type ExtractedChapter = {
   title: string;
   content: string;
   chapter_number: number;
@@ -457,7 +458,7 @@ async function callAIChunked(
   return deduped;
 }
 
-async function extractChaptersWithAI(docxUrl: string, config: { provider: string; model: string }): Promise<ExtractedChapter[]> {
+export async function extractChaptersWithAI(docxUrl: string, config: { provider: string; model: string }): Promise<ExtractedChapter[]> {
   console.log(`[extractChaptersWithAI] Starting — provider: ${config.provider}, model: ${config.model}`);
 
   const response = await axios.get(docxUrl, { responseType: "arraybuffer" });
@@ -556,7 +557,7 @@ async function extractChaptersWithAI(docxUrl: string, config: { provider: string
   return chapterResults;
 }
 
-async function extractChaptersFromDocx(docxUrl?: string | null): Promise<ExtractedChapter[]> {
+export async function extractChaptersFromDocx(docxUrl?: string | null): Promise<ExtractedChapter[]> {
   if (!docxUrl) return [];
 
   try {
@@ -610,6 +611,97 @@ async function extractChaptersFromDocx(docxUrl?: string | null): Promise<Extract
     return [];
   }
 }
+
+export async function enqueueBookDocumentProcessing(bookId: string) {
+  const job = await prisma.documentProcessingJob.upsert({
+    where: { book_id: bookId },
+    update: {
+      status: "queued",
+      progress: 0,
+      completed_steps: 0,
+      error_message: null,
+      started_at: null,
+      completed_at: null,
+    },
+    create: { book_id: bookId },
+  });
+
+  await send("book-document-processing", { bookId, jobId: job.id }, {
+    retentionSeconds: 7 * 24 * 60 * 60,
+    idempotencyKey: `book-document-processing:${job.id}:${job.updated_at.getTime()}`,
+  });
+
+  return job;
+}
+
+export async function processBookDocument(jobId: string, bookId: string) {
+  const job = await prisma.documentProcessingJob.update({
+    where: { id: jobId },
+    data: {
+      status: "processing",
+      attempt_count: { increment: 1 },
+      started_at: new Date(),
+      error_message: null,
+    },
+  });
+
+  try {
+    const book = await prisma.book.findUnique({
+      where: { id: bookId },
+      select: { id: true, text_url: true },
+    });
+    if (!book?.text_url) {
+      throw new Error("This book has no DOCX document to process.");
+    }
+
+    const settings = await getBookSettings();
+    const aiConfig = settings.ai_chapter_extraction as { enabled?: boolean; provider?: string; model?: string } | undefined;
+    const extracted = aiConfig?.enabled
+      ? await extractChaptersWithAI(book.text_url, {
+          provider: aiConfig.provider || "openrouter",
+          model: aiConfig.model || "~anthropic/claude-sonnet-latest",
+        })
+      : await extractChaptersFromDocx(book.text_url);
+
+    await prisma.$transaction(async (tx) => {
+      await tx.chapter.deleteMany({ where: { book_id: book.id } });
+      if (extracted.length > 0) {
+        await tx.chapter.createMany({
+          data: extracted.map((chapter) => ({ ...chapter, book_id: book.id })),
+        });
+      }
+      await tx.documentProcessingJob.update({
+        where: { id: job.id },
+        data: {
+          status: "completed",
+          progress: 100,
+          completed_steps: 1,
+          total_steps: 1,
+          completed_at: new Date(),
+        },
+      });
+    });
+
+    return { book_id: book.id, sections: extracted.length };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Document processing failed.";
+    await prisma.documentProcessingJob.update({
+      where: { id: job.id },
+      data: { status: "failed", error_message: message },
+    });
+    throw error;
+  }
+}
+
+export const getDocumentProcessingStatus = publicProcedure
+  .input(z.object({ book_id: z.string() }))
+  .query(async ({ input }) => {
+    return prisma.documentProcessingJob.findUnique({ where: { book_id: input.book_id } });
+  });
+
+export const retryDocumentProcessing = publicProcedure
+  .input(z.object({ book_id: z.string() }))
+  .mutation(async ({ input }) => enqueueBookDocumentProcessing(input.book_id));
 
 function computePhysicalPrice(params: {
   format: "paperback" | "hardcover";
@@ -828,23 +920,7 @@ export const createBook = publicProcedure.input(createBookSchema).mutation(async
   }
 
   const docxSourceUrl = opts.input.text_url ?? opts.input.docx_url ?? null;
-  const aiConfig = bookSettings.ai_chapter_extraction as { enabled?: boolean; provider?: string; model?: string } | undefined;
-  console.log(`[AI] createBook ai_chapter_extraction config:`, JSON.stringify(aiConfig));
-  console.log(`[AI] createBook docxSourceUrl:`, docxSourceUrl ? "present" : "missing");
-  const autoChapters = docxSourceUrl && aiConfig?.enabled
-    ? await (async () => {
-        try {
-          console.log(`[AI] AI extraction with model: ${aiConfig.model || "gpt-4o"}`);
-          return extractChaptersWithAI(docxSourceUrl, {
-            provider: aiConfig.provider || "openai",
-            model: aiConfig.model || "gpt-4o",
-          });
-        } catch (error) {
-          console.error(`[AI] AI extraction failed, falling back to regex:`, error);
-          return extractChaptersFromDocx(docxSourceUrl);
-        }
-      })()
-    : await extractChaptersFromDocx(docxSourceUrl);
+  console.log(`[AI] createBook DOCX processing queued:`, docxSourceUrl ? "yes" : "no");
 
   const tagArray = opts.input.tags
     ? opts.input.tags.split("*").map(tag => tag.trim())
@@ -855,7 +931,7 @@ export const createBook = publicProcedure.input(createBookSchema).mutation(async
   };
 
   // --- DATABASE TRANSACTION ---
-  return await prisma.$transaction(async (tx) => {
+  const createdBook = await prisma.$transaction(async (tx) => {
     // 1. Create the book using 'connect' for all relations
     const createdBook = await tx.book.create({
       data: {
@@ -912,15 +988,6 @@ export const createBook = publicProcedure.input(createBookSchema).mutation(async
         },
       },
     });
-
-    if (autoChapters.length > 0) {
-      await tx.chapter.createMany({
-        data: autoChapters.map(ch => ({
-          ...ch,
-          book_id: createdBook.id,
-        })),
-      });
-    }
 
     // 2. Handle Variants: Priority to 'variants' array, fallback to legacy flags
     if (hasVariants) {
@@ -1005,6 +1072,16 @@ export const createBook = publicProcedure.input(createBookSchema).mutation(async
       // Optional: Explicitly increase timeout to 20 seconds as a safety measure
       timeout: 20000 
     });
+
+  if (docxSourceUrl) {
+    try {
+      await enqueueBookDocumentProcessing(createdBook.id);
+    } catch (error) {
+      console.error("[DOCX] Failed to enqueue document processing:", error);
+    }
+  }
+
+  return createdBook;
   });
 
 export const updateBook = publicProcedure.input(createBookSchema).mutation(async (opts) => {
@@ -1048,26 +1125,8 @@ export const updateBook = publicProcedure.input(createBookSchema).mutation(async
     select: { metadata: true, _count: { select: { chapters: true } } },
   });
   const docxSourceUrl = opts.input.text_url ?? opts.input.docx_url ?? null;
-  const aiConfig = bookSettings.ai_chapter_extraction as { enabled?: boolean; provider?: string; model?: string } | undefined;
-  console.log(`[AI] updateBook ai_chapter_extraction config:`, JSON.stringify(aiConfig));
-  console.log(`[AI] updateBook docxSourceUrl:`, docxSourceUrl ? "present" : "missing", `existing chapters:`, existingBook?._count?.chapters ?? 0);
-  const autoChapters =
-    docxSourceUrl && (existingBook?._count?.chapters ?? 0) === 0
-      ? aiConfig?.enabled
-        ? await (async () => {
-            try {
-              console.log(`[AI] AI extraction with model (update): ${aiConfig.model || "gpt-4o"}`);
-              return extractChaptersWithAI(docxSourceUrl, {
-                provider: aiConfig.provider || "openai",
-                model: aiConfig.model || "gpt-4o",
-              });
-            } catch (error) {
-              console.error(`[AI] AI extraction failed on update, falling back to regex:`, error);
-              return extractChaptersFromDocx(docxSourceUrl);
-            }
-          })()
-        : await extractChaptersFromDocx(docxSourceUrl)
-      : [];
+  const shouldQueueDocument = Boolean(docxSourceUrl && (existingBook?._count?.chapters ?? 0) === 0);
+  console.log(`[AI] updateBook DOCX processing queued:`, shouldQueueDocument ? "yes" : "no");
   const metadata = {
     ...((existingBook?.metadata as Record<string, any> | null) ?? {}),
     custom_fields: opts.input.custom_fields ?? getCustomFieldValueMap(existingBook?.metadata),
@@ -1076,7 +1135,7 @@ export const updateBook = publicProcedure.input(createBookSchema).mutation(async
       ((existingBook?.metadata as Record<string, any> | null)?.private_creator_notes ?? null),
   };
 
-  return await prisma.$transaction(async (tx) => {
+  const updatedBook = await prisma.$transaction(async (tx) => {
     const updatedBook = await tx.book.update({
       where: { id: opts.input.id },
       data: {
@@ -1255,17 +1314,18 @@ export const updateBook = publicProcedure.input(createBookSchema).mutation(async
       }
     }
 
-    if (autoChapters.length > 0) {
-      await tx.chapter.createMany({
-        data: autoChapters.map((chapter) => ({
-          ...chapter,
-          book_id: updatedBook.id,
-        })),
-      });
-    }
-
     return updatedBook;
   });
+
+  if (shouldQueueDocument) {
+    try {
+      await enqueueBookDocumentProcessing(updatedBook.id);
+    } catch (error) {
+      console.error("[DOCX] Failed to enqueue document processing on update:", error);
+    }
+  }
+
+  return updatedBook;
 });
 
 export const deleteBook = publicProcedure.input(deleteBookSchema).mutation(async (opts) => {

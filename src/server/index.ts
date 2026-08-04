@@ -21,7 +21,7 @@ import { publicProcedure, router } from "./trpc";
 import { createPublisher, deletePublisher, getAllPublisher, updatePublisher, getPublisherByOrganization, getPublisherDashboardStats } from "./module/publisher";
 import { createAuthor, updateAuthor, deleteAuthor, getAllAuthors, signUpAuthor, getAuthorsByUser, getAuthorBySlug, getAuthorDashboardStats, inviteAuthor, resendAuthorInvite, setupAuthorAccount } from "./module/author";
 import { createCustomer, deleteCustomer, updateCustomer, getAllCustomers, getCustomersByUser, registerGuestAndTransferCart, getCustomerDashboardStats } from "./module/customer";
-import { createBook, deleteBook, updateBook, getAllBooks, getBookById, getCategories, getBookByAuthor, toggleBookFeatured,getAllFeaturedBooks, getNewArrivalBooks, getPurchasedBooksByCustomer, generateWatermarkedEbook, searchEverything, approveBook, denyBook, deactivateBook, reactivateBook, reportBookIssue, getBookIssueReports, updateBookIssueReportStatus } from "./module/book";
+import { createBook, deleteBook, updateBook, getAllBooks, getBookById, getCategories, getBookByAuthor, toggleBookFeatured,getAllFeaturedBooks, getNewArrivalBooks, getPurchasedBooksByCustomer, generateWatermarkedEbook, searchEverything, approveBook, denyBook, deactivateBook, reactivateBook, reportBookIssue, getBookIssueReports, updateBookIssueReportStatus, getDocumentProcessingStatus, retryDocumentProcessing } from "./module/book";
 import { createChapter, updateChapter, deleteChapter, getAllChapters, viewChapterById, getAllChapterByBookId } from "./module/chapter";
 import {  updateTenant, getAllTenant, deleteTenant, createTenant, getTenantBySlug, getStoreBySlug } from "./module/tenant";
 import { imageUpload, createImageUpload } from "./module/uploads";
@@ -195,6 +195,8 @@ export const appRouter = router({
   reportBookIssue,
   getBookIssueReports,
   updateBookIssueReportStatus,
+  getDocumentProcessingStatus,
+  retryDocumentProcessing,
   searchEverything,
   updateTenant,
   getTenantBySlug,
