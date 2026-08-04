@@ -13,6 +13,7 @@ import { publicProcedure } from "@/server/trpc";
 import { TRPCError } from "@trpc/server";
 import mammoth from "mammoth"; 
 import axios from "axios"
+import { randomUUID } from "crypto";
 import { watermarkPdf } from "@/lib/watermark";
 import { put } from "@vercel/blob";
 import { generateObject } from "ai";
@@ -192,6 +193,29 @@ const MAMMOTH_STYLE_MAP = [
   "p[style-name='Heading 5'] => h5:fresh",
   "p[style-name='Heading 6'] => h6:fresh",
 ];
+
+async function convertDocxToHtml(buffer: Buffer) {
+  let imageCount = 0;
+  const result = await mammoth.convertToHtml(
+    { buffer },
+    {
+      styleMap: MAMMOTH_STYLE_MAP,
+      convertImage: mammoth.images.imgElement(async (image) => {
+        imageCount += 1;
+        const extension = image.contentType.split("/")[1]?.replace(/[^a-z0-9]/gi, "") || "bin";
+        const imageBuffer = await image.readAsBuffer();
+        const asset = await put(`docx-images/${randomUUID()}.${extension}`, imageBuffer, {
+          access: "public",
+          contentType: image.contentType,
+        });
+        return { src: asset.url };
+      }),
+    },
+  );
+
+  console.log(`[DOCX] Converted HTML with ${imageCount} externalized images`);
+  return result;
+}
 
 const CHAPTER_NUMBER_PATTERN = /^chapter\s+[\divxlcdm\d]+[.:]?\s*$/i;
 
@@ -437,10 +461,9 @@ async function extractChaptersWithAI(docxUrl: string, config: { provider: string
   console.log(`[extractChaptersWithAI] Starting — provider: ${config.provider}, model: ${config.model}`);
 
   const response = await axios.get(docxUrl, { responseType: "arraybuffer" });
-  const result = await mammoth.convertToHtml(
-    { buffer: Buffer.from(response.data) },
-    { styleMap: MAMMOTH_STYLE_MAP },
-  );
+  const docxBuffer = Buffer.isBuffer(response.data) ? response.data : Buffer.from(response.data);
+  console.log(`[DOCX] Downloaded ${docxBuffer.byteLength} bytes for AI extraction`);
+  const result = await convertDocxToHtml(docxBuffer);
   const fullHtml = result.value;
   console.log(`[extractChaptersWithAI] DOCX converted to ${fullHtml.length} chars of HTML`);
 
@@ -538,10 +561,9 @@ async function extractChaptersFromDocx(docxUrl?: string | null): Promise<Extract
 
   try {
     const response = await axios.get(docxUrl, { responseType: "arraybuffer" });
-    const result = await mammoth.convertToHtml(
-      { buffer: Buffer.from(response.data) },
-      { styleMap: MAMMOTH_STYLE_MAP },
-    );
+    const docxBuffer = Buffer.isBuffer(response.data) ? response.data : Buffer.from(response.data);
+    console.log(`[DOCX] Downloaded ${docxBuffer.byteLength} bytes for standard extraction`);
+    const result = await convertDocxToHtml(docxBuffer);
     const fullHtml = result.value;
 
     console.log("[extractChaptersFromDocx] HTML length:", fullHtml.length);
@@ -679,7 +701,7 @@ function decorateBookForResponse(book: any, settings: Awaited<ReturnType<typeof 
 }
 
 export const createBook = publicProcedure.input(createBookSchema).mutation(async (opts) => {
-  console.log("[createBook] VERSION: 30841b3-ai-logging");
+  console.log("[createBook] VERSION: memory-safe-docx-images");
   console.log("[createBook] AI env — OPENAI_API_KEY:", process.env.OPENAI_API_KEY ? `present (${process.env.OPENAI_API_KEY.length} chars)` : "missing");
   console.log("[createBook] AI env — OPENROUTER_API_KEY:", process.env.OPENROUTER_API_KEY ? `present (${process.env.OPENROUTER_API_KEY.length} chars)` : "missing");
   const session = await auth();
