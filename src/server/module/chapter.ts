@@ -2,6 +2,8 @@ import prisma from "@/lib/prisma";
 import { createChapterSchema, deleteChapterSchema, findChapterByIdSchema } from "@/server/dtos";
 import { publicProcedure } from "@/server/trpc";
 
+const DOCX_IMAGE_PLACEHOLDER = '<span data-docx-image-placeholder="true">[Image omitted]</span>';
+
 export const createChapter = publicProcedure.input(createChapterSchema).mutation(async (opts)=> {
   const countWords = (text: string) => {
     return text.trim() ? text.trim().split(/\s+/).length : 0;
@@ -57,6 +59,46 @@ export const getAllChapters = publicProcedure.query(async () => {
     orderBy: [{ sort_order: "asc" }, { chapter_number: "asc" }, { created_at: "asc" }],
   });
 });
+
+export const removeChapterImagePlaceholders = publicProcedure
+  .input(findChapterByIdSchema)
+  .mutation(async ({ input }) => {
+    const chapters = await prisma.chapter.findMany({
+      where: { book_id: input.book_id, deleted_at: null },
+      select: { id: true, content: true },
+    });
+
+    const updates = chapters
+      .map((chapter) => {
+        const removed = chapter.content.split(DOCX_IMAGE_PLACEHOLDER).length - 1;
+        if (removed === 0) return null;
+
+        const content = chapter.content
+          .split(DOCX_IMAGE_PLACEHOLDER).join("")
+          .replace(/<p>\s*<\/p>/gi, "")
+          .trim();
+        const word_count = content.replace(/<[^>]+>/g, "").split(/\s+/).filter(Boolean).length;
+
+        return { id: chapter.id, content, word_count, removed };
+      })
+      .filter((update): update is { id: string; content: string; word_count: number; removed: number } => Boolean(update));
+
+    if (updates.length > 0) {
+      await prisma.$transaction(
+        updates.map((update) =>
+          prisma.chapter.update({
+            where: { id: update.id },
+            data: { content: update.content, word_count: update.word_count },
+          }),
+        ),
+      );
+    }
+
+    return {
+      updated_sections: updates.length,
+      removed_placeholders: updates.reduce((total, update) => total + update.removed, 0),
+    };
+  });
 
 export const getAllChapterByBookId = publicProcedure.input(findChapterByIdSchema).query(async (opts) => {
   return await prisma.chapter.findMany({

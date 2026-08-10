@@ -1835,6 +1835,12 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                           Export from Word, Google Docs (<em>File → Download → .docx</em>), or Pages.
                         </p>
                       </div>
+
+                      <div className="border border-amber-300 bg-amber-50 p-3 text-[9px] leading-relaxed text-amber-900">
+                        Embedded images in DOCX files are skipped during web-reader processing.
+                        Text, headings, and formatting are preserved. You can remove all image placeholders
+                        from the generated sections with one action after processing.
+                      </div>
  
                       <div
                         className={cn(

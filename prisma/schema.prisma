@@ -451,6 +451,7 @@ model DocumentProcessingJob {
   progress         Int      @default(0)
   total_steps      Int      @default(1)
   completed_steps  Int      @default(0)
+  images_skipped   Int      @default(0)
   error_message    String?
   attempt_count    Int      @default(0)
   started_at       DateTime?

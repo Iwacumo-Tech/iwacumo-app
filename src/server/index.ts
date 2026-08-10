@@ -22,7 +22,7 @@ import { createPublisher, deletePublisher, getAllPublisher, updatePublisher, get
 import { createAuthor, updateAuthor, deleteAuthor, getAllAuthors, signUpAuthor, getAuthorsByUser, getAuthorBySlug, getAuthorDashboardStats, inviteAuthor, resendAuthorInvite, setupAuthorAccount } from "./module/author";
 import { createCustomer, deleteCustomer, updateCustomer, getAllCustomers, getCustomersByUser, registerGuestAndTransferCart, getCustomerDashboardStats } from "./module/customer";
 import { createBook, deleteBook, updateBook, getAllBooks, getBookById, getCategories, getBookByAuthor, toggleBookFeatured,getAllFeaturedBooks, getNewArrivalBooks, getPurchasedBooksByCustomer, generateWatermarkedEbook, searchEverything, approveBook, denyBook, deactivateBook, reactivateBook, reportBookIssue, getBookIssueReports, updateBookIssueReportStatus, getDocumentProcessingStatus, retryDocumentProcessing } from "./module/book";
-import { createChapter, updateChapter, deleteChapter, getAllChapters, viewChapterById, getAllChapterByBookId } from "./module/chapter";
+import { createChapter, updateChapter, deleteChapter, getAllChapters, viewChapterById, getAllChapterByBookId, removeChapterImagePlaceholders } from "./module/chapter";
 import {  updateTenant, getAllTenant, deleteTenant, createTenant, getTenantBySlug, getStoreBySlug } from "./module/tenant";
 import { imageUpload, createImageUpload } from "./module/uploads";
 import { createHeroSlide, getAllHeroSlides, getGlobalHeroSlides, deleteHeroSlide } from "./module/slider";
@@ -179,6 +179,7 @@ export const appRouter = router({
   getAllChapters,
   deleteChapter,
   updateChapter,
+  removeChapterImagePlaceholders,
   viewChapterById,
   getBookByAuthor,
   getBookById,

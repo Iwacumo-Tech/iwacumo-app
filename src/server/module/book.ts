@@ -13,7 +13,6 @@ import { publicProcedure } from "@/server/trpc";
 import { TRPCError } from "@trpc/server";
 import mammoth from "mammoth"; 
 import axios from "axios"
-import { randomUUID } from "crypto";
 import { watermarkPdf } from "@/lib/watermark";
 import { put } from "@vercel/blob";
 import { send } from "@vercel/queue";
@@ -195,6 +194,9 @@ const MAMMOTH_STYLE_MAP = [
   "p[style-name='Heading 6'] => h6:fresh",
 ];
 
+export const DOCX_IMAGE_PLACEHOLDER =
+  '<span data-docx-image-placeholder="true">[Image omitted]</span>';
+
 async function convertDocxToHtml(buffer: Buffer) {
   let imageCount = 0;
   const result = await mammoth.convertToHtml(
@@ -203,19 +205,18 @@ async function convertDocxToHtml(buffer: Buffer) {
       styleMap: MAMMOTH_STYLE_MAP,
       convertImage: mammoth.images.imgElement(async (image) => {
         imageCount += 1;
-        const extension = image.contentType.split("/")[1]?.replace(/[^a-z0-9]/gi, "") || "bin";
-        const imageBuffer = await image.readAsBuffer();
-        const asset = await put(`docx-images/${randomUUID()}.${extension}`, imageBuffer, {
-          access: "public",
-          contentType: image.contentType,
-        });
-        return { src: asset.url };
+        return { src: "about:blank" };
       }),
     },
   );
 
-  console.log(`[DOCX] Converted HTML with ${imageCount} externalized images`);
-  return result;
+  const html = result.value.replace(
+    /<img\b[^>]*src=["']about:blank["'][^>]*>/gi,
+    DOCX_IMAGE_PLACEHOLDER,
+  );
+
+  console.log(`[DOCX] Converted HTML and skipped ${imageCount} embedded images`);
+  return { ...result, value: html, imageCount };
 }
 
 const CHAPTER_NUMBER_PATTERN = /^chapter\s+[\divxlcdm\d]+[.:]?\s*$/i;
@@ -619,6 +620,7 @@ export async function enqueueBookDocumentProcessing(bookId: string) {
       status: "queued",
       progress: 0,
       completed_steps: 0,
+      images_skipped: 0,
       error_message: null,
       started_at: null,
       completed_at: null,
@@ -662,6 +664,10 @@ export async function processBookDocument(jobId: string, bookId: string) {
           model: aiConfig.model || "~anthropic/claude-sonnet-latest",
         })
       : await extractChaptersFromDocx(book.text_url);
+    const imagesSkipped = extracted.reduce(
+      (count, chapter) => count + chapter.content.split(DOCX_IMAGE_PLACEHOLDER).length - 1,
+      0,
+    );
 
     await prisma.$transaction(async (tx) => {
       await tx.chapter.deleteMany({ where: { book_id: book.id } });
@@ -677,6 +683,7 @@ export async function processBookDocument(jobId: string, bookId: string) {
           progress: 100,
           completed_steps: 1,
           total_steps: 1,
+          images_skipped: imagesSkipped,
           completed_at: new Date(),
         },
       });

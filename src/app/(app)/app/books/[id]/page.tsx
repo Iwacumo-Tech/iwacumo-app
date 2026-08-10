@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useParams } from "next/navigation";
 import { trpc } from "@/app/_providers/trpc-provider";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import ChapterForm from "@/components/chapters/chapter-form";
 import { Edit, Plus, ChevronLeft, BookOpen, RefreshCw } from "lucide-react";
@@ -13,6 +14,7 @@ import Link from "next/link";
 export default function BookDetailsPage() {
   const params = useParams();
   const bookId = params?.id as string;
+  const { toast } = useToast();
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedChapter, setSelectedChapter] = useState<any>(null);
@@ -34,6 +36,20 @@ export default function BookDetailsPage() {
     onSuccess: async () => {
       await utils.getDocumentProcessingStatus.invalidate({ book_id: bookId });
     },
+  });
+  const removePlaceholders = trpc.removeChapterImagePlaceholders.useMutation({
+    onSuccess: async (result) => {
+      await utils.getAllChapterByBookId.invalidate({ book_id: bookId });
+      toast({
+        title: "Image placeholders removed",
+        description: `Removed ${result.removed_placeholders} placeholder${result.removed_placeholders === 1 ? "" : "s"} from ${result.updated_sections} section${result.updated_sections === 1 ? "" : "s"}.`,
+      });
+    },
+    onError: (error) => toast({
+      variant: "destructive",
+      title: "Could not remove placeholders",
+      description: error.message,
+    }),
   });
 
   const handleEdit = (chapter: any) => {
@@ -82,7 +98,7 @@ export default function BookDetailsPage() {
         </Button>
       </div>
 
-      {processingJob && processingJob.status !== "completed" && (
+      {processingJob && (processingJob.status !== "completed" || processingJob.images_skipped > 0) && (
         <div className="flex flex-col gap-3 border-2 border-black bg-yellow-100 p-4 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="text-xs font-black uppercase tracking-widest">
@@ -91,7 +107,9 @@ export default function BookDetailsPage() {
             <p className="mt-1 text-sm">
               {processingJob.status === "failed"
                 ? processingJob.error_message || "The document could not be processed."
-                : "Your DOCX is being analyzed. Chapters will appear when processing finishes."}
+                : processingJob.status === "completed" && processingJob.images_skipped > 0
+                  ? `${processingJob.images_skipped} embedded image${processingJob.images_skipped === 1 ? " was" : "s were"} skipped. Text and formatting were preserved.`
+                  : "Your DOCX is being analyzed. Chapters will appear when processing finishes."}
             </p>
           </div>
           {processingJob.status === "failed" && (
@@ -101,6 +119,20 @@ export default function BookDetailsPage() {
               className="rounded-none border-2 border-black bg-black text-white"
             >
               <RefreshCw className="mr-2 h-4 w-4" /> Retry Processing
+            </Button>
+          )}
+          {processingJob.status === "completed" && processingJob.images_skipped > 0 && (
+            <Button
+              onClick={() => {
+                if (window.confirm("Remove all skipped-image placeholders from this book?")) {
+                  removePlaceholders.mutate({ book_id: bookId });
+                }
+              }}
+              disabled={removePlaceholders.isPending}
+              variant="outline"
+              className="rounded-none border-2 border-black"
+            >
+              Remove Image Placeholders
             </Button>
           )}
         </div>
