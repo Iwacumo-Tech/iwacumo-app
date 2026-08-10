@@ -1129,10 +1129,20 @@ export const updateBook = publicProcedure.input(createBookSchema).mutation(async
   }
   const existingBook = await prisma.book.findUnique({
     where: { id: opts.input.id },
-    select: { metadata: true, _count: { select: { chapters: true } } },
+    select: {
+      metadata: true,
+      text_url: true,
+      _count: { select: { chapters: true } },
+    },
   });
   const docxSourceUrl = opts.input.text_url ?? opts.input.docx_url ?? null;
-  const shouldQueueDocument = Boolean(docxSourceUrl && (existingBook?._count?.chapters ?? 0) === 0);
+  const documentChanged = Boolean(docxSourceUrl && docxSourceUrl !== existingBook?.text_url);
+  const shouldQueueDocument = Boolean(
+    docxSourceUrl && (
+      (existingBook?._count?.chapters ?? 0) === 0 ||
+      documentChanged
+    ),
+  );
   console.log(`[AI] updateBook DOCX processing queued:`, shouldQueueDocument ? "yes" : "no");
   const metadata = {
     ...((existingBook?.metadata as Record<string, any> | null) ?? {}),
