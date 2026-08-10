@@ -1,6 +1,6 @@
 {
   "functions": {
-    "app/api/queues/process-book/route.ts": {
+    "src/app/api/queues/process-book/route.ts": {
       "experimentalTriggers": [
         {
           "type": "queue/v2beta",
