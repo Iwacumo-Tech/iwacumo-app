@@ -41,8 +41,10 @@ export default function BookDetailsPage() {
     onSuccess: async (result) => {
       await utils.getAllChapterByBookId.invalidate({ book_id: bookId });
       toast({
-        title: "Image placeholders removed",
-        description: `Removed ${result.removed_placeholders} placeholder${result.removed_placeholders === 1 ? "" : "s"} from ${result.updated_sections} section${result.updated_sections === 1 ? "" : "s"}.`,
+        title: result.removed_placeholders > 0 ? "Image placeholders removed" : "No image placeholders found",
+        description: result.removed_placeholders > 0
+          ? `Removed ${result.removed_placeholders} placeholder${result.removed_placeholders === 1 ? "" : "s"} from ${result.updated_sections} section${result.updated_sections === 1 ? "" : "s"}.`
+          : "These sections may have been generated before placeholder markers were added.",
       });
     },
     onError: (error) => toast({

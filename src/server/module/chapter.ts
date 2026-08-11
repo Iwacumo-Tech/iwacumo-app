@@ -2,7 +2,27 @@ import prisma from "@/lib/prisma";
 import { createChapterSchema, deleteChapterSchema, findChapterByIdSchema } from "@/server/dtos";
 import { publicProcedure } from "@/server/trpc";
 
-const DOCX_IMAGE_PLACEHOLDER = '<span data-docx-image-placeholder="true">[Image omitted]</span>';
+function removeDocxImagePlaceholders(content: string) {
+  let removed = 0;
+  let cleaned = content;
+  const patterns = [
+    /<span\b[^>]*data-docx-image-placeholder=["']true["'][^>]*>[\s\S]*?<\/span>/gi,
+    /<img\b[^>]*src=["']about:blank["'][^>]*>/gi,
+    /\[Image omitted\]/gi,
+  ];
+
+  for (const pattern of patterns) {
+    cleaned = cleaned.replace(pattern, () => {
+      removed += 1;
+      return "";
+    });
+  }
+
+  return {
+    content: cleaned.replace(/<p(?:\s[^>]*)?>\s*<\/p>/gi, "").trim(),
+    removed,
+  };
+}
 
 export const createChapter = publicProcedure.input(createChapterSchema).mutation(async (opts)=> {
   const countWords = (text: string) => {
@@ -70,16 +90,13 @@ export const removeChapterImagePlaceholders = publicProcedure
 
     const updates = chapters
       .map((chapter) => {
-        const removed = chapter.content.split(DOCX_IMAGE_PLACEHOLDER).length - 1;
-        if (removed === 0) return null;
+        const cleaned = removeDocxImagePlaceholders(chapter.content);
+        if (cleaned.removed === 0) return null;
 
-        const content = chapter.content
-          .split(DOCX_IMAGE_PLACEHOLDER).join("")
-          .replace(/<p>\s*<\/p>/gi, "")
-          .trim();
+        const content = cleaned.content;
         const word_count = content.replace(/<[^>]+>/g, "").split(/\s+/).filter(Boolean).length;
 
-        return { id: chapter.id, content, word_count, removed };
+        return { id: chapter.id, content, word_count, removed: cleaned.removed };
       })
       .filter((update): update is { id: string; content: string; word_count: number; removed: number } => Boolean(update));
 
