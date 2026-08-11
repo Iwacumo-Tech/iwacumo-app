@@ -101,14 +101,20 @@ export const removeChapterImagePlaceholders = publicProcedure
       .filter((update): update is { id: string; content: string; word_count: number; removed: number } => Boolean(update));
 
     if (updates.length > 0) {
-      await prisma.$transaction(
-        updates.map((update) =>
-          prisma.chapter.update({
-            where: { id: update.id },
-            data: { content: update.content, word_count: update.word_count },
-          }),
-        ),
-      );
+      await prisma.$transaction(async (tx) => {
+        await Promise.all(
+          updates.map((update) =>
+            tx.chapter.update({
+              where: { id: update.id },
+              data: { content: update.content, word_count: update.word_count },
+            }),
+          ),
+        );
+        await tx.documentProcessingJob.updateMany({
+          where: { book_id: input.book_id },
+          data: { images_skipped: 0 },
+        });
+      });
     }
 
     return {

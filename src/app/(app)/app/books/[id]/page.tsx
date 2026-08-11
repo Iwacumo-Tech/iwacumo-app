@@ -40,6 +40,7 @@ export default function BookDetailsPage() {
   const removePlaceholders = trpc.removeChapterImagePlaceholders.useMutation({
     onSuccess: async (result) => {
       await utils.getAllChapterByBookId.invalidate({ book_id: bookId });
+      await utils.getDocumentProcessingStatus.invalidate({ book_id: bookId });
       toast({
         title: result.removed_placeholders > 0 ? "Image placeholders removed" : "No image placeholders found",
         description: result.removed_placeholders > 0
