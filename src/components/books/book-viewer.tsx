@@ -26,6 +26,8 @@ export default function ViewBookPage({ book }: BookViewerProps) {
   const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
   const [isGenerating, setIsGenerating] = useState(false);
   const hasReaderContent = !!book.text_url;
+  const hasEbookPdf = !!book.ebook_pdf_url || (!!book.e_copy && !!book.pdf_url);
+  const hasDownloadablePdf = hasEbookPdf || !!book.pdf_url;
 
   const watermarkMutation = trpc.generateWatermarkedEbook.useMutation({
     onSuccess: async (data) => {
@@ -74,7 +76,7 @@ export default function ViewBookPage({ book }: BookViewerProps) {
   };
 
   // CASE A: SECURE PDF DOWNLOAD FLOW
-  if (!hasReaderContent && book.pdf_url) {
+  if (!hasReaderContent && hasDownloadablePdf) {
     return (
       <div className="min-h-[80vh] flex items-center justify-center p-6 bg-[#FAF9F6]">
         <motion.div 
@@ -177,7 +179,19 @@ export default function ViewBookPage({ book }: BookViewerProps) {
       </header>
 
       {/* Main Reader Surface */}
-      <main className="max-w-4xl mx-auto py-12 px-6">
+       <main className="max-w-4xl mx-auto py-12 px-6">
+        {hasEbookPdf && (
+          <div className="mb-8 flex justify-center">
+            <Button
+              className="booka-button-primary"
+              onClick={handleDownload}
+              disabled={isGenerating}
+            >
+              {isGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileDown className="mr-2 h-4 w-4" />}
+              {isGenerating ? "Generating PDF..." : "Download Ebook PDF"}
+            </Button>
+          </div>
+        )}
         <motion.div
           key={currentChapter?.id ?? `${book.id}-reader`}
           initial={{ opacity: 0, y: 10 }}

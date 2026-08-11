@@ -257,6 +257,7 @@ model Book {
   e_copy            Boolean       @default(false)
   hard_cover        Boolean       @default(false)
   pdf_url           String?
+  ebook_pdf_url     String?
   text_url          String?
   publisher_id      String?
   featured          Boolean       @default(false) @map("featured_global") // Master switch for Landing Page

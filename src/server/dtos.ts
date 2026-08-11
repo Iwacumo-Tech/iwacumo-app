@@ -190,6 +190,7 @@ export const createBookSchema = z.object({
   hard_cover: z.boolean().optional().default(false),
   
   pdf_url: z.string().url("PDF URL must be valid").nullable().optional(), 
+  ebook_pdf_url: z.string().url("Ebook PDF URL must be valid").nullable().optional(),
   text_url: z.string().url("Text URL must be valid").nullable().optional(),
   docx_url: z.string().url("DOCX URL must be valid").nullable().optional(),
   reader_url: z.string().url("Reader URL must be valid").nullable().optional(),

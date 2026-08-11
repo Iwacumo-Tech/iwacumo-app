@@ -927,6 +927,12 @@ export const createBook = publicProcedure.input(createBookSchema).mutation(async
   }
 
   const docxSourceUrl = opts.input.text_url ?? opts.input.docx_url ?? null;
+  if (opts.input.e_copy && !opts.input.ebook_pdf_url && !docxSourceUrl) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Please upload an ebook PDF, a DOCX reader file, or both.",
+    });
+  }
   console.log(`[AI] createBook DOCX processing queued:`, docxSourceUrl ? "yes" : "no");
 
   const tagArray = opts.input.tags
@@ -978,6 +984,7 @@ export const createBook = publicProcedure.input(createBookSchema).mutation(async
         book_cover4: opts.input.book_cover4 ?? null,
         featured: opts.input.featured ?? false,
         pdf_url: opts.input.pdf_url ?? "",
+        ebook_pdf_url: opts.input.ebook_pdf_url ?? "",
         text_url: opts.input.docx_url ?? opts.input.text_url ?? "",
         // Relation connections
         categories: {
@@ -1136,6 +1143,12 @@ export const updateBook = publicProcedure.input(createBookSchema).mutation(async
     },
   });
   const docxSourceUrl = opts.input.text_url ?? opts.input.docx_url ?? null;
+  if (opts.input.e_copy && !opts.input.ebook_pdf_url && !docxSourceUrl) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Please upload an ebook PDF, a DOCX reader file, or both.",
+    });
+  }
   const documentChanged = Boolean(docxSourceUrl && docxSourceUrl !== existingBook?.text_url);
   const shouldQueueDocument = Boolean(
     docxSourceUrl && (
@@ -1186,6 +1199,7 @@ export const updateBook = publicProcedure.input(createBookSchema).mutation(async
         hard_cover: opts.input.hard_cover ?? undefined,
         published: opts.input.published ?? undefined,
         pdf_url: opts.input.pdf_url ?? undefined,
+        ebook_pdf_url: opts.input.ebook_pdf_url ?? undefined,
         text_url: opts.input.text_url ?? undefined,
         book_cover: opts.input.book_cover ?? undefined,
         book_cover2: opts.input.book_cover2 ?? undefined,
@@ -1924,7 +1938,8 @@ export const generateWatermarkedEbook = publicProcedure
         },
       });
 
-    if (!book || !book.pdf_url) {
+    const pdfUrl = book?.ebook_pdf_url || book?.pdf_url;
+    if (!book || !pdfUrl) {
       throw new TRPCError({
         code: "NOT_FOUND",
         message: "Book asset not found.",
@@ -1933,7 +1948,7 @@ export const generateWatermarkedEbook = publicProcedure
 
     try {
       // 1. Download original from Vercel Blob
-      const response = await axios.get(book.pdf_url, {
+      const response = await axios.get(pdfUrl, {
         responseType: "arraybuffer",
       });
 
