@@ -190,15 +190,13 @@ function HeaderContent() {
         {!session && (
           <Link
             href="/login"
-            className="absolute left-1/2 -translate-x-1/2 text-[11px] font-black uppercase tracking-widest underline lg:hidden"
+            className="absolute left-1/2 z-10 -translate-x-1/2 whitespace-nowrap bg-white/90 px-2 text-[11px] font-black uppercase tracking-widest underline lg:hidden"
           >
             Login
           </Link>
         )}
 
         <div className="flex shrink-0 items-center gap-1 sm:gap-2 lg:hidden">
-          <LanguageSwitcher compact className="shrink-0 [&>span:first-of-type]:hidden sm:[&>span:first-of-type]:inline-flex" />
-
           <div ref={mobileSearchButtonRef} className="relative md:hidden">
             <Button
               type="button"
