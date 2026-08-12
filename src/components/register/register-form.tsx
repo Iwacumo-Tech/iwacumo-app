@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDebounce } from "@/hooks/use-debounce";
+import { COUNTRIES } from "@/lib/countries";
  
 export function RegisterForm() {
   const [step, setStep] = useState(1);
@@ -304,7 +305,23 @@ export function RegisterForm() {
                 />
               </div>
             )}
- 
+
+            <div className="space-y-1">
+              <label className="text-[9px] font-black uppercase tracking-widest">
+                Nationality
+              </label>
+              <select
+                name="nationality"
+                className="booka-input-minimal h-14 w-full bg-white border-2 border-black px-3 text-sm"
+                defaultValue=""
+              >
+                <option value="" disabled>Select your country</option>
+                {COUNTRIES.map((country) => (
+                  <option key={country} value={country}>{country}</option>
+                ))}
+              </select>
+            </div>
+
             <div className="space-y-1">
               <label className="text-[9px] font-black uppercase tracking-widest">
                 Email Address

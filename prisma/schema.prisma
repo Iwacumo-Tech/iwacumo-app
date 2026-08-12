@@ -23,6 +23,7 @@ model User {
   phone_number  String?
   active        Boolean    @default(true)
   date_of_birth DateTime?
+  nationality    String?
   claims        Claim[]
   created_at    DateTime   @default(now())
   updated_at    DateTime   @updatedAt

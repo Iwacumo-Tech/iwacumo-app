@@ -25,6 +25,13 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   TAssignRoleSchema,
   TCreateUserSchema,
   assignRoleSchema,
@@ -37,6 +44,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { COUNTRIES } from "@/lib/countries";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface UserFormProps {
@@ -58,6 +66,7 @@ const UserForm = ({ user, action }: UserFormProps) => {
       username: user.username ?? "",
       email: user.email ?? "",
       phone_number: user.phone_number ?? "",
+      nationality: user.nationality ?? "",
       password: user.password ?? "",
       email_verified: false,
       date_of_birth: new Date(),
@@ -267,6 +276,32 @@ const UserForm = ({ user, action }: UserFormProps) => {
                                     className="border-gray-300 rounded-md"
                                   />
                                 </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <FormField
+                            control={form.control}
+                            name="nationality"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel className="text-gray-700">
+                                  Nationality
+                                </FormLabel>
+                                <Select onValueChange={field.onChange} value={field.value || ""}>
+                                  <FormControl>
+                                    <SelectTrigger className="border-gray-300 rounded-md">
+                                      <SelectValue placeholder="Select country" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    {COUNTRIES.map((country) => (
+                                      <SelectItem key={country} value={country}>{country}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
                                 <FormMessage />
                               </FormItem>
                             )}

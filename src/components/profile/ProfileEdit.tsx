@@ -10,10 +10,18 @@ import {
 } from "@/components/ui/form";
 import { Input }    from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Button }   from "@/components/ui/button";
 import { useDebounce } from "@/hooks/use-debounce";
 import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { COUNTRIES } from "@/lib/countries";
 
 const ProfileEdit = ({ user, setEditProfile }: any) => {
   const { toast } = useToast();
@@ -29,6 +37,7 @@ const ProfileEdit = ({ user, setEditProfile }: any) => {
       username:          user?.username          || "",
       bio:               user?.publisher?.bio || user?.author?.bio || "",
       phone_number:      user?.phone_number      || "",
+      nationality:       user?.nationality       || "",
       organization_name: user?.publisher?.tenant?.name || "",
     },
   });
@@ -200,6 +209,28 @@ const ProfileEdit = ({ user, setEditProfile }: any) => {
                     {...field}
                   />
                 </FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+
+            {/* ── Nationality — visible for all users ────────── */}
+            <FormField control={form.control} name="nationality" render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-[10px] font-black uppercase tracking-widest">
+                  Nationality
+                </FormLabel>
+                <Select onValueChange={field.onChange} value={field.value || ""}>
+                  <FormControl>
+                    <SelectTrigger className="booka-input-minimal">
+                      <SelectValue placeholder="Select your country" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {COUNTRIES.map((country) => (
+                      <SelectItem key={country} value={country}>{country}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <FormMessage />
               </FormItem>
             )} />

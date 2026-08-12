@@ -10,6 +10,7 @@ export const createUserSchema = z.object({
   last_name: z.string().optional(),
   roleName: z.string().optional(),
   date_of_birth: z.date().optional(),
+  nationality: z.string().optional(),
   username: z.string().optional(),
   password: z.string().optional(),
   author_id: z.string().optional(),
@@ -108,6 +109,7 @@ export const signUpAuthorSchema = z.object({
   publisher_id: z.string().optional(),
   last_name: z.string().optional(),
   phone_number: z.string().optional(),
+  nationality: z.string().optional(),
 });
 
 export const upgradeToAuthorSchema = z.object({});
@@ -319,6 +321,7 @@ export const editProfileSchema = z.object({
   bio: z.string().optional(),
   phone_number: z.string().optional(),
   organization_name: z.string().optional(), // For Publishers
+  nationality: z.string().optional(),
   profilePicture: z.string().optional(),
 });
 
@@ -641,6 +644,7 @@ export const signUpSchema = z.object({
   email: z.string().email("Invalid email address"),
   username: z.string().min(3, "Username must be at least 3 characters"),
   password: z.string().min(8, "Password must be at least 8 characters"),
+  nationality: z.string().optional(),
 });
 
 export type TSignUpSchema = z.infer<typeof signUpSchema>;
