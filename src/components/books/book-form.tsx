@@ -1604,6 +1604,8 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                 {(watched.paper_back || watched.hard_cover) && (
                   <div className="space-y-6 border-t-2 border-black pt-6 animate-in fade-in">
  
+                    <h4 className="text-sm font-black uppercase italic text-gray-700">For Print</h4>
+
                     {/* Optional cover images */}
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                       <UploadField label="Back Cover"        type="back"   uploads={uploads} onUpload={handleInstantUpload} accept="image/*" />
@@ -1706,10 +1708,12 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                 )}
  
                  {/* Ebook uploads — PDF and DOCX may be used together */}
-                {watched.e_copy && (
-                  <div className="space-y-4 border-t-2 border-black pt-6 animate-in fade-in">
- 
-                    {/* PDF option */}
+                 {watched.e_copy && (
+                   <div className="space-y-4 border-t-2 border-black pt-6 animate-in fade-in">
+
+                     <h4 className="text-sm font-black uppercase italic text-gray-700">For Ebooks</h4>
+
+                     {/* PDF option */}
                     <div className="space-y-1">
                       <div className="flex items-center justify-between">
                          <label className="text-[9px] font-black uppercase text-gray-500">Ebook PDF</label>
