@@ -192,7 +192,7 @@ function HeaderContent() {
             href="/login"
             className="absolute left-1/2 z-10 -translate-x-1/2 whitespace-nowrap bg-white/90 px-2 text-[11px] font-black uppercase tracking-widest underline lg:hidden"
           >
-            Login
+            Sign up/Login
           </Link>
         )}
 
