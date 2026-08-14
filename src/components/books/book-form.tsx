@@ -613,9 +613,10 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
   const handleInstantUpload = async (file: File, type: string) => {
     setUploads((prev) => ({ ...prev, [type]: { ...prev[type], loading: true, progress: 0 } }));
     try {
+      const isDocument = type === "pdf" || type === "ebook_pdf" || type === "docx";
       const blob = await uploadFileToBlob(file, {
-        category: type === "pdf" || type === "docx" ? "document" : "image",
-        purpose: type === "pdf" || type === "docx" ? "book-files" : "book-assets",
+        category: isDocument ? "document" : "image",
+        purpose: isDocument ? "book-files" : "book-assets",
         onUploadProgress: ({ percentage }) => {
           setUploads((prev) => ({
             ...prev,
