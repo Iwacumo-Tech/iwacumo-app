@@ -1714,6 +1714,10 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
 
                      <h4 className="text-sm font-black uppercase italic text-gray-700">For Ebooks</h4>
 
+                     <p className="text-[9px] leading-relaxed text-gray-500">
+                       You can upload both Ebook PDF for downloadable PDF Option and/or DOCX for E-reader in app Option.
+                     </p>
+
                      {/* PDF option */}
                     <div className="space-y-1">
                       <div className="flex items-center justify-between">
@@ -1780,7 +1784,7 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                     {/* Divider */}
                     <div className="flex items-center gap-3 py-1">
                       <div className="flex-1 h-px bg-black/10" />
-                      <span className="text-[9px] font-black uppercase opacity-30">or</span>
+                      <span className="text-[9px] font-black uppercase opacity-30">and/or</span>
                       <div className="flex-1 h-px bg-black/10" />
                     </div>
  
@@ -1815,12 +1819,6 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                         </p>
                       </div>
 
-                      <div className="border border-amber-300 bg-amber-50 p-3 text-[9px] leading-relaxed text-amber-900">
-                        Embedded images in DOCX files are skipped during web-reader processing.
-                        Text, headings, and formatting are preserved. You can remove all image placeholders
-                        from the generated sections with one action after processing.
-                      </div>
- 
                       <div
                         className={cn(
                            "border-2 border-dashed border-black h-16 flex flex-col items-center justify-center cursor-pointer bg-secondary/10 hover:bg-white transition-colors",
