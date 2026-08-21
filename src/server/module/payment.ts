@@ -24,10 +24,24 @@ import { mergeOrderNotes, parseOrderNotes } from "@/lib/order-notes";
 import { finalizeCapturedPayment, finalizeFailedPayment } from "@/lib/payment-ops";
 import {
   buildPaystackSettlementPlan,
+  buildFlutterwaveSettlementPlan,
   resolveOrderPayoutRoutingSnapshot,
 } from "@/lib/payout-routing";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+
+function withQueryTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timeoutId: NodeJS.Timeout;
+  const timeout = new Promise<T>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: `${label} timed out after ${ms}ms. Please try again.`,
+      }));
+    }, ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timeoutId));
+}
 
 function getSavedCheckoutQuote(notes: string | null | undefined) {
   return parseOrderNotes(notes)?.checkout_quote ?? null;
@@ -73,7 +87,11 @@ export const initializePayment = publicProcedure
       payment_gateway,
     } = opts.input;
 
-    const order = await prisma.order.findUnique({
+    try {
+
+    const start = Date.now();
+    const order = await withQueryTimeout(
+      prisma.order.findUnique({
       where: { id: order_id },
       include: {
         customer: { include: { user: true } },
@@ -109,14 +127,20 @@ export const initializePayment = publicProcedure
           },
         },
       },
-    });
+      }),
+      10000,
+      "Order lookup"
+    );
+    console.log(`[initializePayment] Order query: ${Date.now() - start}ms`);
 
     if (!order) throw new Error("Order not found");
     if (!["pending", "failed"].includes(order.payment_status)) {
       throw new Error(`Order payment status is ${order.payment_status}, cannot initialize payment`);
     }
 
+    const settingsStart = Date.now();
     const { currencySettings, paymentGatewaySettings, paymentGatewayHealth } = await getPaymentSettings();
+    console.log(`[initializePayment] Settings query: ${Date.now() - settingsStart}ms`);
     const savedQuote = getSavedCheckoutQuote(order.notes);
 
     const resolvedGateway = (payment_gateway
@@ -183,6 +207,7 @@ export const initializePayment = publicProcedure
     );
 
     let paystackSettlementPlan = null;
+    let flutterwaveSettlementPlan = null;
     if (resolvedGateway === PAYMENT_GATEWAYS.PAYSTACK) {
       if ((order.currency || "").toUpperCase() !== "NGN") {
         throw new TRPCError({
@@ -220,6 +245,43 @@ export const initializePayment = publicProcedure
             : "The payout settlement split for this order could not be prepared.",
         });
       }
+    } else if (resolvedGateway === PAYMENT_GATEWAYS.FLUTTERWAVE) {
+      if ((order.currency || "").toUpperCase() !== "NGN") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Flutterwave direct settlement splitting is currently available only when the order base currency is NGN.",
+        });
+      }
+
+      try {
+        flutterwaveSettlementPlan = buildFlutterwaveSettlementPlan({
+          orderNumber: order.order_number,
+          currency: resolvedCurrency,
+          subtotalAmount: order.subtotal_amount,
+          totalAmount: order.total_amount,
+          shippingAmount: order.shipping_amount,
+          taxAmount: order.tax_amount,
+          discountAmount: order.discount_amount,
+          publisher: order.publisher
+            ? {
+                id: order.publisher.id,
+                display_name: order.publisher.tenant?.name
+                  || `${order.publisher.user?.first_name ?? ""} ${order.publisher.user?.last_name ?? ""}`.trim()
+                  || "Publisher",
+                flw_subaccount_id: order.publisher.user?.payment_account?.flutterwave_subaccount_id ?? null,
+              }
+            : null,
+          payoutRouting: resolvedPayoutRouting,
+          lineItems: order.line_items,
+        });
+      } catch (error) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: error instanceof Error
+            ? error.message
+            : "The Flutterwave settlement split for this order could not be prepared.",
+        });
+      }
     }
 
     let session;
@@ -243,7 +305,13 @@ export const initializePayment = publicProcedure
                 split: paystackSettlementPlan.split,
               },
             }
-          : undefined,
+          : flutterwaveSettlementPlan
+            ? {
+                flutterwave: {
+                  subaccounts: flutterwaveSettlementPlan.subaccounts,
+                },
+              }
+            : undefined,
       });
     } catch (error: any) {
       if (axios.isAxiosError(error)) {
@@ -312,6 +380,14 @@ export const initializePayment = publicProcedure
       reference: session.reference,
       provider: resolvedGateway,
     };
+    } catch (error: any) {
+      console.error("[initializePayment] Unhandled error:", error.message, error.stack);
+      if (error instanceof TRPCError) throw error;
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: `Payment initialization failed. ${error.message || "Please try again."}`,
+      });
+    }
   });
 
 // ---------------------------------------------------------------------------

@@ -41,9 +41,16 @@ function StatusBadge({ published, status }: { published: boolean; status: string
       </span>
     );
   }
+  if (status === "pending_review") {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-100 border border-blue-400 text-blue-800 text-[10px] font-black uppercase tracking-widest">
+        <Clock size={10} /> Under Review
+      </span>
+    );
+  }
   return (
-    <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-100 border border-amber-400 text-amber-800 text-[10px] font-black uppercase tracking-widest">
-      <Clock size={10} /> {status ?? "Draft"} — Pending Approval
+    <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-gray-100 border border-gray-400 text-gray-800 text-[10px] font-black uppercase tracking-widest">
+      <Clock size={10} /> Draft
     </span>
   );
 }
@@ -104,7 +111,9 @@ function CoverImage({ src, label }: { src?: string | null; label: string }) {
 // which one to use.
 
 function ContentLinksCard({ book }: { book: any }) {
-  const hasPdf    = !!book.pdf_url;
+  const ebookPdf  = book.ebook_pdf_url || (book.e_copy ? book.pdf_url : null);
+  const printPdf  = book.pdf_url && (book.paper_back || book.hard_cover) ? book.pdf_url : null;
+  const hasPdf    = !!ebookPdf || !!printPdf;
   const hasReader = !!book.text_url;
   const isPhysical = book.paper_back || book.hard_cover;
   const isEbook    = book.e_copy;
@@ -117,17 +126,29 @@ function ContentLinksCard({ book }: { book: any }) {
       <SectionHeader icon={ExternalLink} title="Content Access" />
 
       {/* PDF download — shown when pdf_url exists */}
-      {hasPdf && (
+      {ebookPdf && (
         <a
-          href={book.pdf_url}
+          href={ebookPdf}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center justify-between w-full px-4 py-3 border-2 border-black font-black uppercase italic text-xs hover:bg-accent transition-colors"
         >
           <span className="flex items-center gap-2">
             <FileText size={14} />
-            {isEbook ? "Download E-Book PDF" : "Download PDF (Physical companion)"}
+            Download E-Book PDF
           </span>
+          <Download size={14} />
+        </a>
+      )}
+
+      {printPdf && (
+        <a
+          href={printPdf}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center justify-between w-full px-4 py-3 border-2 border-black/30 font-black uppercase italic text-xs hover:bg-accent transition-colors"
+        >
+          <span className="flex items-center gap-2"><FileText size={14} /> Print-Ready PDF</span>
           <Download size={14} />
         </a>
       )}
@@ -148,7 +169,7 @@ function ContentLinksCard({ book }: { book: any }) {
       )}
 
       {/* Edge case: has both pdf_url AND text_url — show both clearly labelled */}
-      {hasReader && hasPdf && (
+      {hasReader && (
         <Link
           href={`/book/${book.id}`}
           target="_blank"

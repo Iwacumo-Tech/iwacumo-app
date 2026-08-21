@@ -14,7 +14,13 @@ export const chapterColumns: ColumnDef<Chapter>[] = [
       <DataTableColumnHeader column={column} title="Chapter Number" />
     ),
     cell: ({ row }) => (
-      <div className="max-w-xs truncate">Chapter {row.getValue("chapter_number")}</div>
+      <div className="max-w-xs truncate">
+        {row.original.section_type === "front_matter"
+          ? "Front Matter"
+          : row.original.section_type === "back_matter"
+            ? "Back Matter"
+            : `Chapter ${row.getValue("chapter_number")}`}
+      </div>
     ),
   },
   {

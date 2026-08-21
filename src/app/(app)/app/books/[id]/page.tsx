@@ -5,14 +5,16 @@ import { useState } from "react";
 import { useParams } from "next/navigation";
 import { trpc } from "@/app/_providers/trpc-provider";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import ChapterForm from "@/components/chapters/chapter-form";
-import { Edit, Plus, ChevronLeft, BookOpen } from "lucide-react";
+import { Edit, Plus, ChevronLeft, BookOpen, RefreshCw } from "lucide-react";
 import Link from "next/link";
 
 export default function BookDetailsPage() {
   const params = useParams();
   const bookId = params?.id as string;
+  const { toast } = useToast();
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedChapter, setSelectedChapter] = useState<any>(null);
@@ -25,6 +27,33 @@ export default function BookDetailsPage() {
     { book_id: bookId },
     { enabled: !!bookId && !!book?.text_url }
   );
+  const { data: processingJob } = trpc.getDocumentProcessingStatus.useQuery(
+    { book_id: bookId },
+    { enabled: !!bookId, refetchInterval: 3000 },
+  );
+  const utils = trpc.useUtils();
+  const retryProcessing = trpc.retryDocumentProcessing.useMutation({
+    onSuccess: async () => {
+      await utils.getDocumentProcessingStatus.invalidate({ book_id: bookId });
+    },
+  });
+  const removePlaceholders = trpc.removeChapterImagePlaceholders.useMutation({
+    onSuccess: async (result) => {
+      await utils.getAllChapterByBookId.invalidate({ book_id: bookId });
+      await utils.getDocumentProcessingStatus.invalidate({ book_id: bookId });
+      toast({
+        title: result.removed_placeholders > 0 ? "Image placeholders removed" : "No image placeholders found",
+        description: result.removed_placeholders > 0
+          ? `Removed ${result.removed_placeholders} placeholder${result.removed_placeholders === 1 ? "" : "s"} from ${result.updated_sections} section${result.updated_sections === 1 ? "" : "s"}.`
+          : "These sections may have been generated before placeholder markers were added.",
+      });
+    },
+    onError: (error) => toast({
+      variant: "destructive",
+      title: "Could not remove placeholders",
+      description: error.message,
+    }),
+  });
 
   const handleEdit = (chapter: any) => {
     setSelectedChapter(chapter);
@@ -72,6 +101,46 @@ export default function BookDetailsPage() {
         </Button>
       </div>
 
+      {processingJob && (processingJob.status !== "completed" || processingJob.images_skipped > 0) && (
+        <div className="flex flex-col gap-3 border-2 border-black bg-yellow-100 p-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-widest">
+              Document processing: {processingJob.status}
+            </p>
+            <p className="mt-1 text-sm">
+              {processingJob.status === "failed"
+                ? processingJob.error_message || "The document could not be processed."
+                : processingJob.status === "completed" && processingJob.images_skipped > 0
+                  ? `${processingJob.images_skipped} embedded image${processingJob.images_skipped === 1 ? " was" : "s were"} skipped. Text and formatting were preserved.`
+                  : "Your DOCX is being analyzed. Chapters will appear when processing finishes."}
+            </p>
+          </div>
+          {processingJob.status === "failed" && (
+            <Button
+              onClick={() => retryProcessing.mutate({ book_id: bookId })}
+              disabled={retryProcessing.isPending}
+              className="rounded-none border-2 border-black bg-black text-white"
+            >
+              <RefreshCw className="mr-2 h-4 w-4" /> Retry Processing
+            </Button>
+          )}
+          {processingJob.status === "completed" && processingJob.images_skipped > 0 && (
+            <Button
+              onClick={() => {
+                if (window.confirm("Remove all skipped-image placeholders from this book?")) {
+                  removePlaceholders.mutate({ book_id: bookId });
+                }
+              }}
+              disabled={removePlaceholders.isPending}
+              variant="outline"
+              className="rounded-none border-2 border-black"
+            >
+              Remove Image Placeholders
+            </Button>
+          )}
+        </div>
+      )}
+
       <div className="space-y-4">
         {isLoading ? (
           <p>Loading chapters...</p>
@@ -79,7 +148,13 @@ export default function BookDetailsPage() {
           chapters.map((chapter) => (
             <div key={chapter.id} className="flex items-center justify-between gap-4 border-2 border-black bg-white p-4 gumroad-shadow">
               <div>
-                <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Chapter {chapter.chapter_number}</p>
+                <p className="text-[10px] font-black uppercase tracking-widest opacity-40">
+                  {chapter.section_type === "front_matter"
+                    ? "Front Matter"
+                    : chapter.section_type === "back_matter"
+                      ? "Back Matter"
+                      : `Chapter ${chapter.chapter_number}`}
+                </p>
                 <h3 className="text-lg font-semibold">{chapter.title}</h3>
               </div>
               <div className="flex gap-2">

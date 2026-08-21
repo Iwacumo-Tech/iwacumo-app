@@ -10,9 +10,17 @@ import {
  
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || "";
 const PAYSTACK_BASE_URL   = "https://api.paystack.co";
- 
+
+const FLUTTERWAVE_SECRET_KEY = process.env.FLUTTERWAVE_SECRET_KEY || "";
+const FLUTTERWAVE_BASE_URL   = "https://api.flutterwave.com";
+
 const paystackHeaders = {
   Authorization:  `Bearer ${PAYSTACK_SECRET_KEY}`,
+  "Content-Type": "application/json",
+};
+
+const flutterwaveHeaders = {
+  Authorization:  `Bearer ${FLUTTERWAVE_SECRET_KEY}`,
   "Content-Type": "application/json",
 };
  
@@ -300,43 +308,60 @@ export async function resolveBookCreationPayoutStatus(params: {
 // Cached in the DB as SystemSettings["paystack_banks"] for 24 hours
 // to avoid hammering the Paystack API on every page load.
  
-export const listBanks = publicProcedure.query(async () => {
+export const listBanks = publicProcedure
+  .input(z.object({ gateway: z.string().optional() }).optional())
+  .query(async ({ input }) => {
+  const gateway = input?.gateway || "paystack";
+  const cacheKey = gateway === "flutterwave" ? "flutterwave_banks" : "paystack_banks";
+
   // Try cache first
   const cached = await prisma.systemSettings.findUnique({
-    where: { key: "paystack_banks" },
+    where: { key: cacheKey },
   });
- 
+
   if (cached) {
     const { banks, cached_at } = cached.value as { banks: any[]; cached_at: string };
     const ageMs = Date.now() - new Date(cached_at).getTime();
-    const ttlMs = 24 * 60 * 60 * 1000; // 24 hours
+    const ttlMs = 24 * 60 * 60 * 1000;
     if (ageMs < ttlMs) return banks;
   }
- 
-  // Fetch from Paystack
+
+  // Fetch from gateway
   try {
-    const response = await axios.get(
-      `${PAYSTACK_BASE_URL}/bank?country=nigeria&per_page=100&use_cursor=false`,
-      { headers: paystackHeaders }
-    );
- 
-    const banks: Array<{ id: number; name: string; code: string }> =
-      response.data.data.map((b: any) => ({
+    let banks: Array<{ id: number; name: string; code: string }> = [];
+
+    if (gateway === "flutterwave") {
+      const response = await axios.get(
+        `${FLUTTERWAVE_BASE_URL}/v3/banks?country=NG`,
+        { headers: flutterwaveHeaders }
+      );
+      banks = (response.data.data || []).map((b: any) => ({
         id:   b.id,
         name: b.name,
         code: b.code,
       }));
- 
+    } else {
+      const response = await axios.get(
+        `${PAYSTACK_BASE_URL}/bank?country=nigeria&per_page=100&use_cursor=false`,
+        { headers: paystackHeaders }
+      );
+      banks = response.data.data.map((b: any) => ({
+        id:   b.id,
+        name: b.name,
+        code: b.code,
+      }));
+    }
+
     // Upsert cache
     await prisma.systemSettings.upsert({
-      where:  { key: "paystack_banks" },
-      create: { key: "paystack_banks", value: { banks, cached_at: new Date().toISOString() } },
+      where:  { key: cacheKey },
+      create: { key: cacheKey, value: { banks, cached_at: new Date().toISOString() } },
       update: { value: { banks, cached_at: new Date().toISOString() } },
     });
- 
+
     return banks;
   } catch (error: any) {
-    console.error("[listBanks] Paystack error:", error.response?.data || error.message);
+    console.error(`[listBanks] ${gateway} error:`, error.response?.data || error.message);
     throw new TRPCError({
       code:    "INTERNAL_SERVER_ERROR",
       message: "Could not fetch bank list. Please try again.",
@@ -349,20 +374,41 @@ export const listBanks = publicProcedure.query(async () => {
 // the account holder's name for the user to confirm before saving.
  
 export const verifyBankAccount = publicProcedure
-  .input(verifyBankAccountSchema)
+  .input(verifyBankAccountSchema.extend({ gateway: z.string().optional() }))
   .mutation(async ({ ctx, input }) => {
     if (!ctx.session?.user?.id) {
       throw new TRPCError({ code: "UNAUTHORIZED", message: "Not authenticated." });
     }
- 
+
+    const gateway = input.gateway || "paystack";
+
     try {
-      const response = await axios.get(
-        `${PAYSTACK_BASE_URL}/bank/resolve?account_number=${input.account_number}&bank_code=${input.bank_code}`,
-        { headers: paystackHeaders }
-      );
- 
-      const { account_name, account_number } = response.data.data;
- 
+      let account_name: string;
+      let account_number: string;
+
+      if (gateway === "flutterwave") {
+        const response = await axios.post(
+          `${FLUTTERWAVE_BASE_URL}/v3/accounts/resolve`,
+          {
+            currency: "NGN",
+            account: {
+              code: input.bank_code,
+              number: input.account_number,
+            },
+          },
+          { headers: flutterwaveHeaders }
+        );
+        account_name = response.data.data.account_name;
+        account_number = response.data.data.account_number;
+      } else {
+        const response = await axios.get(
+          `${PAYSTACK_BASE_URL}/bank/resolve?account_number=${input.account_number}&bank_code=${input.bank_code}`,
+          { headers: paystackHeaders }
+        );
+        account_name = response.data.data.account_name;
+        account_number = response.data.data.account_number;
+      }
+
       return {
         account_name,
         account_number,
@@ -370,7 +416,6 @@ export const verifyBankAccount = publicProcedure
       };
     } catch (error: any) {
       const msg = error.response?.data?.message || "Could not verify account.";
-      // Paystack returns 422 for unresolvable accounts
       throw new TRPCError({
         code:    "BAD_REQUEST",
         message: msg,
@@ -429,7 +474,6 @@ export const saveBankAccount = publicProcedure
     }
  
     // ── 2. Create Paystack transfer recipient ─────────────────────────────
-    // Recipients are used for the Paystack Transfer API (manual payouts).
     try {
       const recRes = await axios.post(
         `${PAYSTACK_BASE_URL}/transferrecipient`,
@@ -446,8 +490,51 @@ export const saveBankAccount = publicProcedure
     } catch (error: any) {
       console.error("[saveBankAccount] Recipient creation failed:", error.response?.data || error.message);
     }
- 
-    // ── 3. Upsert PaymentAccount record ───────────────────────────────────
+
+    // ── 3. Create Flutterwave collection subaccount ─────────────────────────
+    // Flutterwave v3 collection subaccounts are used for inline split at payout.
+    let flutterwaveSubaccountId: string | null = null;
+    let flutterwaveBeneficiaryId: string | null = null;
+
+    try {
+      const flwSubRes = await axios.post(
+        `${FLUTTERWAVE_BASE_URL}/v3/subaccounts`,
+        {
+          account_bank: input.bank_code,
+          account_number: input.account_number,
+          business_name: businessName,
+          business_email: email,
+          business_contact: businessName,
+          business_mobile: "09000000000",
+          country: "NG",
+          split_type: "percentage",
+          split_value: 0,
+        },
+        { headers: flutterwaveHeaders }
+      );
+      flutterwaveSubaccountId = String(flwSubRes.data.data?.id || flwSubRes.data.data?.subaccount_id || "");
+    } catch (error: any) {
+      console.error("[saveBankAccount] Flutterwave subaccount creation failed:", error.response?.data || error.message);
+    }
+
+    // ── 4. Create Flutterwave transfer beneficiary ──────────────────────────
+    try {
+      const flwBenRes = await axios.post(
+        `${FLUTTERWAVE_BASE_URL}/v3/beneficiaries`,
+        {
+          account_bank: input.bank_code,
+          account_number: input.account_number,
+          beneficiary_name: businessName,
+          currency: "NGN",
+        },
+        { headers: flutterwaveHeaders }
+      );
+      flutterwaveBeneficiaryId = String(flwBenRes.data.data?.id || "");
+    } catch (error: any) {
+      console.error("[saveBankAccount] Flutterwave beneficiary creation failed:", error.response?.data || error.message);
+    }
+
+    // ── 5. Upsert PaymentAccount record ───────────────────────────────────
     const account = await prisma.paymentAccount.upsert({
       where:  { user_id: userId },
       create: {
@@ -458,6 +545,8 @@ export const saveBankAccount = publicProcedure
         account_name:             input.account_name,
         paystack_subaccount_code: paystackSubaccountCode,
         paystack_recipient_code:  paystackRecipientCode,
+        flutterwave_subaccount_id: flutterwaveSubaccountId,
+        flutterwave_beneficiary_id: flutterwaveBeneficiaryId,
         is_verified:              true,
       },
       update: {
@@ -467,6 +556,8 @@ export const saveBankAccount = publicProcedure
         account_name:             input.account_name,
         paystack_subaccount_code: paystackSubaccountCode ?? undefined,
         paystack_recipient_code:  paystackRecipientCode  ?? undefined,
+        flutterwave_subaccount_id: flutterwaveSubaccountId ?? undefined,
+        flutterwave_beneficiary_id: flutterwaveBeneficiaryId ?? undefined,
         is_verified:              true,
       },
     });
@@ -494,6 +585,8 @@ export const saveBankAccount = publicProcedure
       account_number_masked:    `****${account.account_number.slice(-4)}`,
       subaccount_ready:         !!account.paystack_subaccount_code,
       recipient_ready:          !!account.paystack_recipient_code,
+      flw_subaccount_ready:     !!account.flutterwave_subaccount_id,
+      flw_beneficiary_ready:    !!account.flutterwave_beneficiary_id,
     };
   });
  
@@ -512,11 +605,12 @@ export const getMyPaymentAccount = publicProcedure.query(async ({ ctx }) => {
       bank_name:                true,
       bank_code:                true,
       account_name:             true,
-      // Mask the account number — never expose full number to client
       account_number:           true,
       is_verified:              true,
       paystack_subaccount_code: true,
       paystack_recipient_code:  true,
+      flutterwave_subaccount_id:  true,
+      flutterwave_beneficiary_id: true,
       created_at:               true,
       updated_at:               true,
     },
@@ -525,19 +619,21 @@ export const getMyPaymentAccount = publicProcedure.query(async ({ ctx }) => {
   if (!account) return null;
 
   const readiness = buildPaymentAccountReadiness(account);
- 
+
   return {
     ...account,
     account_number_masked: `****${account.account_number.slice(-4)}`,
-    // Expose only whether codes exist, not the codes themselves
     subaccount_ready: readiness.subaccount_ready,
     recipient_ready:  readiness.recipient_ready,
+    flw_subaccount_ready: readiness.flw_subaccount_ready,
+    flw_beneficiary_ready: readiness.flw_beneficiary_ready,
     payout_ready: readiness.payout_ready,
     blocking_reasons: readiness.blocking_reasons,
     blocking_reason_labels: readiness.blocking_reason_labels,
-    // Strip the actual codes from the response
     paystack_subaccount_code: undefined,
     paystack_recipient_code:  undefined,
+    flutterwave_subaccount_id: undefined,
+    flutterwave_beneficiary_id: undefined,
   };
 });
 

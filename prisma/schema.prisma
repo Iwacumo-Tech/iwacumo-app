@@ -23,6 +23,7 @@ model User {
   phone_number  String?
   active        Boolean    @default(true)
   date_of_birth DateTime?
+  nationality    String?
   claims        Claim[]
   created_at    DateTime   @default(now())
   updated_at    DateTime   @updatedAt
@@ -257,6 +258,7 @@ model Book {
   e_copy            Boolean       @default(false)
   hard_cover        Boolean       @default(false)
   pdf_url           String?
+  ebook_pdf_url     String?
   text_url          String?
   publisher_id      String?
   featured          Boolean       @default(false) @map("featured_global") // Master switch for Landing Page
@@ -269,6 +271,7 @@ model Book {
   special_addon_fee  Float        @default(0)
   special_addon_description String?
   chapters          Chapter[]
+  document_processing_job DocumentProcessingJob?
   variants          BookVariant[]
   publisher         Publisher?    @relation(fields: [publisher_id], references: [id])
   author_id         String?
@@ -378,6 +381,10 @@ model PaymentAccount {
   paystack_subaccount_code String?   @unique  // e.g. "ACCT_xxxxxxxxxx" — for split payments
   paystack_recipient_code  String?   @unique  // e.g. "RCP_xxxxxxxxxx"  — for manual transfers
 
+  // Flutterwave v3 identifiers — set after successful subaccount/beneficiary creation
+  flutterwave_subaccount_id  String?   @unique  // e.g. "RS_xxxxxxxxxx" — for split payments
+  flutterwave_beneficiary_id String?   @unique  // e.g. "BEN_xxxxxxxxxx" — for manual transfers
+
   is_verified              Boolean   @default(false)
   created_at               DateTime  @default(now())
   updated_at               DateTime  @updatedAt
@@ -425,6 +432,8 @@ model Chapter {
   content        String
   summary        String?
   chapter_number Int
+  section_type   String         @default("chapter")
+  sort_order     Int            @default(0)
   word_count     Int            @default(0)
   chapter_images ChapterImage[]
   book_id        String?
@@ -434,6 +443,25 @@ model Chapter {
   deleted_at     DateTime?
 
   @@map("chapters")
+}
+
+model DocumentProcessingJob {
+  id               String   @id @default(uuid())
+  book_id          String   @unique
+  book             Book     @relation(fields: [book_id], references: [id], onDelete: Cascade)
+  status           String   @default("queued")
+  progress         Int      @default(0)
+  total_steps      Int      @default(1)
+  completed_steps  Int      @default(0)
+  images_skipped   Int      @default(0)
+  error_message    String?
+  attempt_count    Int      @default(0)
+  started_at       DateTime?
+  completed_at     DateTime?
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  @@map("document_processing_jobs")
 }
 
 model ChapterImage {

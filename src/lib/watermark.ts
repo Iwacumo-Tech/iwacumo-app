@@ -1,5 +1,5 @@
 // revelation/src/lib/watermark.ts
-import { PDFDocument, rgb, StandardFonts, degrees } from 'pdf-lib'; // 1. Add degrees to your imports
+import { PDFDocument, rgb, StandardFonts, degrees } from '@cantoo/pdf-lib';
 
 export async function watermarkPdf(
   pdfBuffer: Buffer,
@@ -44,5 +44,32 @@ export async function watermarkPdf(
     });
   });
 
-  return await pdfDoc.save();
+  // 🔒 Encrypt with restrictions — no password to open, but print/copy blocked
+  pdfDoc.encrypt({
+    userPassword: "",
+    ownerPassword: `iwacumo-${userEmail}-${Date.now()}`,
+    permissions: {
+      printing: false,
+      modifying: false,
+      copying: false,
+      annotating: false,
+      fillingForms: false,
+      documentAssembly: false,
+      contentAccessibility: true,
+    },
+  });
+
+  return await pdfDoc.save({ useObjectStreams: false });
+}
+
+// Combined helper: watermark + encrypt in one call (alias kept for clarity)
+export async function watermarkAndProtectPdf(
+  pdfBuffer: Buffer,
+  userEmail: string,
+  options?: {
+    storeLabel?: string | null;
+    storeUrl?: string | null;
+  }
+) {
+  return watermarkPdf(pdfBuffer, userEmail, options);
 }

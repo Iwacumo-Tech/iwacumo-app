@@ -72,7 +72,7 @@ export const resetPassword = publicProcedure
  
     await prisma.user.update({
       where: { id: userId },
-      data: { password: hashedPassword },
+      data: { password: hashedPassword, email_verified_at: new Date(), active: true },
     });
  
     await consumeVerificationToken(input.token);

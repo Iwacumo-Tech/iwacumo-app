@@ -242,6 +242,7 @@ export const signUpAuthor = publicProcedure.input(signUpAuthorSchema).mutation(a
       phone_number: opts.input.phone_number ?? "",
       first_name: opts.input.first_name ?? "",
       last_name: opts.input.last_name ?? "",
+      nationality: opts.input.nationality ?? null,
       active: true,
       email_verified_at: new Date(),
     }

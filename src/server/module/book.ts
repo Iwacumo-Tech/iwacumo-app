@@ -14,8 +14,10 @@ import { TRPCError } from "@trpc/server";
 import mammoth from "mammoth"; 
 import axios from "axios"
 import { watermarkPdf } from "@/lib/watermark";
-import { applyRestrictedPdfProtection } from "@/lib/pdf-protection";
 import { put } from "@vercel/blob";
+import { send } from "@vercel/queue";
+import { generateObject } from "ai";
+import { getAIChapterProvider, getAIModel } from "@/lib/ai";
 
 import { sendBookApprovedEmail, sendBookDeniedEmail, sendBookIssueReportEmail } from "@/lib/email";
 import { resolveBookCreationPayoutStatus } from "@/server/module/payment-accounts";
@@ -132,6 +134,7 @@ async function getBookSettings() {
     book_flap_costs: normalizeBookFlapCosts(settingsMap.book_flap_costs),
     book_live_pricing_enabled: normalizeBookLivePricingEnabled(settingsMap.book_live_pricing_enabled),
     book_custom_fields: settingsMap.book_custom_fields ?? [],
+    ai_chapter_extraction: settingsMap.ai_chapter_extraction ?? { enabled: false },
   };
 }
 
@@ -182,40 +185,530 @@ function resolveVariantDimensions(input: {
   };
 }
 
-async function extractChaptersFromDocx(docxUrl?: string | null) {
+const MAMMOTH_STYLE_MAP = [
+  "p[style-name='Heading 1'] => h1:fresh",
+  "p[style-name='Heading 2'] => h2:fresh",
+  "p[style-name='Heading 3'] => h3:fresh",
+  "p[style-name='Heading 4'] => h4:fresh",
+  "p[style-name='Heading 5'] => h5:fresh",
+  "p[style-name='Heading 6'] => h6:fresh",
+];
+
+export const DOCX_IMAGE_PLACEHOLDER =
+  '<span data-docx-image-placeholder="true">[Image omitted]</span>';
+
+async function convertDocxToHtml(buffer: Buffer) {
+  let imageCount = 0;
+  const result = await mammoth.convertToHtml(
+    { buffer },
+    {
+      styleMap: MAMMOTH_STYLE_MAP,
+      convertImage: mammoth.images.imgElement(async (image) => {
+        imageCount += 1;
+        return { src: "about:blank" };
+      }),
+    },
+  );
+
+  const html = result.value.replace(
+    /<img\b[^>]*src=["']about:blank["'][^>]*>/gi,
+    DOCX_IMAGE_PLACEHOLDER,
+  );
+
+  console.log(`[DOCX] Converted HTML and skipped ${imageCount} embedded images`);
+  return { ...result, value: html, imageCount };
+}
+
+const CHAPTER_NUMBER_PATTERN = /^chapter\s+[\divxlcdm\d]+[.:]?\s*$/i;
+
+function isChapterNumberText(text: string): boolean {
+  return CHAPTER_NUMBER_PATTERN.test(text.trim());
+}
+
+function extractTextFromHtml(html: string): string {
+  return html.replace(/<[^>]+>/g, "").trim();
+}
+
+function splitOnHeadings(html: string): string[] {
+  return html.split(/(?=<h[1-6][^>]*>)/i).filter(Boolean);
+}
+
+function splitOnChapterParagraphs(html: string): string[] {
+  const pattern = /(?=<p[^>]*>\s*(?:<(?:strong|b)[^>]*>\s*)?chapter\s+[\divxlcdm\d]+[.:]?\s*(?:\s*<\/(?:strong|b)>)?\s*<\/p>)/gi;
+  return html.split(pattern).filter(Boolean);
+}
+
+function extractTitle(section: string, fallbackIndex: number): string {
+  const text = extractTextFromHtml(section);
+
+  if (isChapterNumberText(text)) {
+    return `Chapter ${fallbackIndex + 1}`;
+  }
+
+  const headingPattern = /<h[1-6][^>]*>(.*?)<\/h[1-6]>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = headingPattern.exec(section)) !== null) {
+    const headingText = match[1].replace(/<[^>]+>/g, "").trim();
+    if (!isChapterNumberText(headingText)) {
+      return headingText;
+    }
+  }
+
+  const boldPattern = /<(?:strong|b)[^>]*>(.*?)<\/(?:strong|b)>/gi;
+  while ((match = boldPattern.exec(section)) !== null) {
+    const boldText = match[1].replace(/<[^>]+>/g, "").trim();
+    if (boldText.length > 0 && !isChapterNumberText(boldText)) {
+      return boldText;
+    }
+  }
+
+  const chapterMatch = text.match(/chapter\s+([\divxlcdm\d]+)[.:]?/i);
+  if (chapterMatch) {
+    return `Chapter ${chapterMatch[1].toUpperCase()}`;
+  }
+
+  const firstLine = text.split("\n")[0]?.trim();
+  if (firstLine && firstLine.length <= 100) {
+    return firstLine;
+  }
+
+  return `Chapter ${fallbackIndex + 1}`;
+}
+
+function romanToArabic(roman: string): number {
+  const map: Record<string, number> = { I: 1, V: 5, X: 10, L: 50, C: 100, D: 500, M: 1000 };
+  let result = 0;
+  for (let i = 0; i < roman.length; i++) {
+    const current = map[roman[i].toUpperCase()] || 0;
+    const next = map[roman[i + 1]?.toUpperCase() ?? ""] || 0;
+    if (next > current) {
+      result += next - current;
+      i++;
+    } else {
+      result += current;
+    }
+  }
+  return result;
+}
+
+function extractChapterNumber(section: string, fallbackIndex: number): number {
+  const text = extractTextFromHtml(section);
+  const match = text.match(/chapter\s+([\divxlcdm\d]+)[.:]?/i);
+  if (match) {
+    const num = match[1];
+    if (/^[ivxlcdm]+$/i.test(num)) {
+      return romanToArabic(num.toUpperCase());
+    }
+    return parseInt(num, 10) || fallbackIndex;
+  }
+  return fallbackIndex;
+}
+
+function mergeChapterWithNextTitle(sections: string[]): string[] {
+  const merged: string[] = [];
+  let i = 0;
+
+  while (i < sections.length) {
+    const currentSection = sections[i];
+    const currentText = extractTextFromHtml(currentSection);
+
+    if (isChapterNumberText(currentText) && i + 1 < sections.length) {
+      const nextSection = sections[i + 1];
+      const nextText = extractTextFromHtml(nextSection);
+
+      if (!isChapterNumberText(nextText)) {
+        merged.push(currentSection + nextSection);
+        i += 2;
+        continue;
+      }
+    }
+
+    merged.push(currentSection);
+    i++;
+  }
+
+  return merged;
+}
+
+const aiDocumentSchema = z.object({
+  sections: z.array(z.object({
+    type: z.enum(["front_matter", "chapter", "back_matter"]),
+    title: z.string(),
+    chapter_number: z.number(),
+    start_marker: z.string(),
+  })),
+});
+
+export type ExtractedChapter = {
+  title: string;
+  content: string;
+  chapter_number: number;
+  section_type: "front_matter" | "chapter" | "back_matter";
+  sort_order: number;
+  word_count: number;
+};
+
+const AI_TIMEOUT_MS = 45000;
+const AI_CHUNK_SIZE = 40000;
+const AI_CHUNK_OVERLAP = 2000;
+
+function buildHtmlPositionMap(html: string): { plainText: string; textToHtml: number[] } {
+  let plainText = "";
+  const textToHtml: number[] = [];
+  let inTag = false;
+
+  for (let i = 0; i < html.length; i++) {
+    const ch = html[i];
+    if (ch === "<") { inTag = true; continue; }
+    if (ch === ">") { inTag = false; continue; }
+    if (inTag) continue;
+
+    textToHtml[plainText.length] = i;
+    plainText += ch;
+  }
+
+  return { plainText, textToHtml };
+}
+
+function textPosToHtmlPos(textToHtml: number[], textPos: number): number {
+  if (textPos >= textToHtml.length) return textToHtml[textToHtml.length - 1] || 0;
+  return textToHtml[textPos] || 0;
+}
+
+async function callAI(
+  plainText: string,
+  provider: ReturnType<typeof getAIChapterProvider>,
+  modelName: string,
+  timeoutMs: number,
+): Promise<z.infer<typeof aiDocumentSchema>["sections"]> {
+  const result = await Promise.race([
+    generateObject({
+      model: provider.chat(modelName),
+      schema: aiDocumentSchema,
+      temperature: 0,
+      system: `You are a precise book document parser. Identify ALL sections of a book — front matter, chapters, and back matter.`,
+      prompt: `Analyze this book text and identify ALL sections in their EXACT order.
+
+For EACH section return:
+- "type": "front_matter" | "chapter" | "back_matter"
+- "title": The section's title (e.g., "Dedication", "MOUNT MUBI", "Acknowledgments")
+- "chapter_number": Actual chapter number from the text, or 0 for non-chapters
+- "start_marker": Copy VERBATIM the EXACT heading text that marks the START of this section. Must be an exact, unique substring from the original text.
+
+Rules:
+1. Include EVERYTHING — title pages, dedications, forewords, ALL chapters, epilogues, afterwords
+2. Front matter = everything before Chapter 1. Back matter = everything after last chapter.
+3. start_marker is the heading/separator that marks section start. For chapters use "Chapter 1" or the actual heading text like "Chapter 1 MOUNT MUBI" — whatever distinct text signals a new chapter. For front matter, the first section does NOT need a marker (it starts at position 0).
+4. Use ACTUAL chapter numbers from the text
+5. Return ONLY JSON — no explanations
+
+Text to parse:
+${plainText}`,
+    }),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("AI_TIMEOUT")), timeoutMs)
+    ),
+  ]);
+
+  return result.object.sections;
+}
+
+async function callAIChunked(
+  plainText: string,
+  provider: ReturnType<typeof getAIChapterProvider>,
+  modelName: string,
+): Promise<z.infer<typeof aiDocumentSchema>["sections"]> {
+  const chunks: { text: string; offset: number }[] = [];
+  let pos = 0;
+  while (pos < plainText.length) {
+    const end = Math.min(pos + AI_CHUNK_SIZE, plainText.length);
+    chunks.push({ text: plainText.substring(pos, end), offset: pos });
+    pos = end - AI_CHUNK_OVERLAP;
+  }
+
+  console.log(`[AI Chunked] Split ${plainText.length} chars into ${chunks.length} chunks`);
+
+  const CONCURRENCY = 3;
+  const allResults: (z.infer<typeof aiDocumentSchema>["sections"][number] & { _offset: number })[] = [];
+
+  for (let i = 0; i < chunks.length; i += CONCURRENCY) {
+    const batch = chunks.slice(i, i + CONCURRENCY);
+    const results = await Promise.all(
+      batch.map(async (chunk, batchIdx) => {
+        const chunkNum = i + batchIdx + 1;
+        console.log(`[AI Chunked] Processing chunk ${chunkNum}/${chunks.length} (${chunk.text.length} chars)`);
+        const sections = await callAI(chunk.text, provider, modelName, 30000);
+        console.log(`[AI Chunked] Chunk ${chunkNum} returned ${sections.length} sections`);
+        return sections.map(s => ({ ...s, _offset: chunk.offset }));
+      })
+    );
+    allResults.push(...results.flat());
+  }
+
+  const seen = new Set<string>();
+  const deduped: typeof allResults = [];
+  for (const s of allResults) {
+    const key = `${s.type}|${s.title}|${s.chapter_number}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      deduped.push(s);
+    }
+  }
+
+  console.log(`[AI Chunked] Total ${deduped.length} unique sections across all chunks`);
+  return deduped;
+}
+
+export async function extractChaptersWithAI(docxUrl: string, config: { provider: string; model: string }): Promise<ExtractedChapter[]> {
+  console.log(`[extractChaptersWithAI] Starting — provider: ${config.provider}, model: ${config.model}`);
+
+  const response = await axios.get(docxUrl, { responseType: "arraybuffer" });
+  const docxBuffer = Buffer.isBuffer(response.data) ? response.data : Buffer.from(response.data);
+  console.log(`[DOCX] Downloaded ${docxBuffer.byteLength} bytes for AI extraction`);
+  const result = await convertDocxToHtml(docxBuffer);
+  const fullHtml = result.value;
+  console.log(`[extractChaptersWithAI] DOCX converted to ${fullHtml.length} chars of HTML`);
+
+  if (result.messages.length > 0) {
+    console.log("[extractChaptersWithAI] Mammoth messages:", result.messages);
+  }
+
+  const { plainText, textToHtml } = buildHtmlPositionMap(fullHtml);
+  console.log(`[extractChaptersWithAI] Plain text: ${plainText.length} chars`);
+
+  const provider = getAIChapterProvider({ provider: config.provider });
+  const modelName = getAIModel({ model: config.model });
+
+  let sections: z.infer<typeof aiDocumentSchema>["sections"];
+
+  try {
+    console.log(`[extractChaptersWithAI] Phase 1: single call with ${AI_TIMEOUT_MS / 1000}s timeout`);
+    sections = await callAI(plainText, provider, modelName, AI_TIMEOUT_MS);
+    console.log(`[extractChaptersWithAI] Phase 1 SUCCESS: ${sections.length} sections`);
+  } catch (error: any) {
+    if (error.message === "AI_TIMEOUT") {
+      console.log(`[extractChaptersWithAI] Phase 1 timed out, starting Phase 2: chunked processing`);
+      const chunked = await callAIChunked(plainText, provider, modelName);
+      sections = chunked.map(s => ({ type: s.type, title: s.title, chapter_number: s.chapter_number, start_marker: s.start_marker }));
+      console.log(`[extractChaptersWithAI] Phase 2 SUCCESS: ${sections.length} sections`);
+    } else {
+      console.error(`[extractChaptersWithAI] Phase 1 error:`, error);
+      throw error;
+    }
+  }
+
+  // Find text positions of each section heading
+  const boundaries: { textPos: number; section: typeof sections[number] }[] = [];
+  let lastTextPos = 0;
+
+  // First section starts at 0 if it's front matter, otherwise from first marker
+  if (sections.length > 0 && sections[0].type === "front_matter") {
+    boundaries.push({ textPos: 0, section: sections[0] });
+  }
+
+  for (let i = (boundaries.length > 0 ? 1 : 0); i < sections.length; i++) {
+    const s = sections[i];
+    let pos = plainText.indexOf(s.start_marker, lastTextPos + 1);
+    if (pos === -1) {
+      pos = plainText.indexOf(s.start_marker.substring(0, 30), lastTextPos + 1);
+    }
+    if (pos === -1) {
+      console.warn(`[extractChaptersWithAI] Marker not found for "${s.title}", placing sequentially`);
+      pos = lastTextPos + 1;
+    }
+
+    boundaries.push({ textPos: pos, section: s });
+    lastTextPos = pos;
+  }
+
+  // Map text positions to HTML positions and split
+  const htmlBoundaries = boundaries.map(b => textPosToHtmlPos(textToHtml, b.textPos));
+
+  const chapterResults: ExtractedChapter[] = [];
+
+  for (let i = 0; i < htmlBoundaries.length; i++) {
+    const startHtmlPos = htmlBoundaries[i];
+    const endHtmlPos = i + 1 < htmlBoundaries.length ? htmlBoundaries[i + 1] : fullHtml.length;
+    const content = fullHtml.substring(startHtmlPos, endHtmlPos).trim();
+    const wordCount = extractTextFromHtml(content).split(/\s+/).filter(Boolean).length;
+
+    const s = boundaries[i].section;
+
+    let chapterNumber: number;
+    if (s.type === "chapter") {
+      chapterNumber = s.chapter_number;
+    } else if (s.type === "front_matter") {
+      chapterNumber = 0;
+    } else {
+      chapterNumber = 0;
+    }
+
+    console.log(`[extractChaptersWithAI] ${s.type} #${chapterNumber}: "${s.title}" (${wordCount} words)`);
+
+    chapterResults.push({
+      title: s.title,
+      content,
+      chapter_number: chapterNumber,
+      section_type: s.type,
+      sort_order: i,
+      word_count: wordCount,
+    });
+  }
+
+  return chapterResults;
+}
+
+export async function extractChaptersFromDocx(docxUrl?: string | null): Promise<ExtractedChapter[]> {
   if (!docxUrl) return [];
 
   try {
     const response = await axios.get(docxUrl, { responseType: "arraybuffer" });
-    const result = await mammoth.convertToHtml({ buffer: Buffer.from(response.data) });
+    const docxBuffer = Buffer.isBuffer(response.data) ? response.data : Buffer.from(response.data);
+    console.log(`[DOCX] Downloaded ${docxBuffer.byteLength} bytes for standard extraction`);
+    const result = await convertDocxToHtml(docxBuffer);
     const fullHtml = result.value;
-    const sections = fullHtml.split(/(?=<h[1-2][^>]*>)/i).filter(Boolean);
 
-    if (sections.length > 0) {
-      return sections.map((section, index) => {
-        const titleMatch = section.match(/<h[1-2][^>]*>(.*?)<\/h[1-2]>/i);
-        const title = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, "").trim() : `Chapter ${index + 1}`;
+    console.log("[extractChaptersFromDocx] HTML length:", fullHtml.length);
+    console.log("[extractChaptersFromDocx] First 500 chars:", fullHtml.substring(0, 500));
 
-        return {
-          title,
-          content: section,
-          chapter_number: index + 1,
-          word_count: section.replace(/<[^>]+>/g, "").split(/\s+/).length,
-        };
-      });
+    if (result.messages.length > 0) {
+      console.log("[extractChaptersFromDocx] Mammoth messages:", result.messages);
     }
 
-    return [{
-      title: "Full Content",
-      content: fullHtml,
-      chapter_number: 1,
-      word_count: fullHtml.replace(/<[^>]+>/g, "").split(/\s+/).length,
-    }];
+    let sections = splitOnHeadings(fullHtml);
+    console.log("[extractChaptersFromDocx] After heading split:", sections.length, "sections");
+
+    if (sections.length <= 1) {
+      sections = splitOnChapterParagraphs(fullHtml);
+      console.log("[extractChaptersFromDocx] After chapter paragraph split:", sections.length, "sections");
+    }
+
+    const mergedSections = mergeChapterWithNextTitle(sections);
+    console.log("[extractChaptersFromDocx] After merge:", mergedSections.length, "sections");
+
+    if (mergedSections.length === 0) {
+      console.log("[extractChaptersFromDocx] No sections found, returning empty");
+      return [];
+    }
+
+    return mergedSections.map((section, index) => {
+      const title = extractTitle(section, index);
+      const chapterNumber = extractChapterNumber(section, index + 1);
+      const wordCount = extractTextFromHtml(section).split(/\s+/).filter(Boolean).length;
+
+      console.log(`[extractChaptersFromDocx] Chapter ${chapterNumber}: "${title}" (${wordCount} words)`);
+
+      return {
+        title,
+        content: section,
+        chapter_number: chapterNumber,
+        section_type: "chapter",
+        sort_order: index,
+        word_count: wordCount,
+      };
+    });
   } catch (error) {
     console.error("Failed to parse DOCX for chapter extraction:", error);
     return [];
   }
 }
+
+export async function enqueueBookDocumentProcessing(bookId: string) {
+  const job = await prisma.documentProcessingJob.upsert({
+    where: { book_id: bookId },
+    update: {
+      status: "queued",
+      progress: 0,
+      completed_steps: 0,
+      images_skipped: 0,
+      error_message: null,
+      started_at: null,
+      completed_at: null,
+    },
+    create: { book_id: bookId },
+  });
+
+  await send("book-document-processing", { bookId, jobId: job.id }, {
+    retentionSeconds: 7 * 24 * 60 * 60,
+    idempotencyKey: `book-document-processing:${job.id}:${job.updated_at.getTime()}`,
+  });
+
+  return job;
+}
+
+export async function processBookDocument(jobId: string, bookId: string) {
+  const job = await prisma.documentProcessingJob.update({
+    where: { id: jobId },
+    data: {
+      status: "processing",
+      attempt_count: { increment: 1 },
+      started_at: new Date(),
+      error_message: null,
+    },
+  });
+
+  try {
+    const book = await prisma.book.findUnique({
+      where: { id: bookId },
+      select: { id: true, text_url: true },
+    });
+    if (!book?.text_url) {
+      throw new Error("This book has no DOCX document to process.");
+    }
+
+    const settings = await getBookSettings();
+    const aiConfig = settings.ai_chapter_extraction as { enabled?: boolean; provider?: string; model?: string } | undefined;
+    const extracted = aiConfig?.enabled
+      ? await extractChaptersWithAI(book.text_url, {
+          provider: aiConfig.provider || "openrouter",
+          model: aiConfig.model || "~anthropic/claude-sonnet-latest",
+        })
+      : await extractChaptersFromDocx(book.text_url);
+    const imagesSkipped = extracted.reduce(
+      (count, chapter) => count + chapter.content.split(DOCX_IMAGE_PLACEHOLDER).length - 1,
+      0,
+    );
+
+    await prisma.$transaction(async (tx) => {
+      await tx.chapter.deleteMany({ where: { book_id: book.id } });
+      if (extracted.length > 0) {
+        await tx.chapter.createMany({
+          data: extracted.map((chapter) => ({ ...chapter, book_id: book.id })),
+        });
+      }
+      await tx.documentProcessingJob.update({
+        where: { id: job.id },
+        data: {
+          status: "completed",
+          progress: 100,
+          completed_steps: 1,
+          total_steps: 1,
+          images_skipped: imagesSkipped,
+          completed_at: new Date(),
+        },
+      });
+    });
+
+    return { book_id: book.id, sections: extracted.length };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Document processing failed.";
+    await prisma.documentProcessingJob.update({
+      where: { id: job.id },
+      data: { status: "failed", error_message: message },
+    });
+    throw error;
+  }
+}
+
+export const getDocumentProcessingStatus = publicProcedure
+  .input(z.object({ book_id: z.string() }))
+  .query(async ({ input }) => {
+    return prisma.documentProcessingJob.findUnique({ where: { book_id: input.book_id } });
+  });
+
+export const retryDocumentProcessing = publicProcedure
+  .input(z.object({ book_id: z.string() }))
+  .mutation(async ({ input }) => enqueueBookDocumentProcessing(input.book_id));
 
 function computePhysicalPrice(params: {
   format: "paperback" | "hardcover";
@@ -307,6 +800,9 @@ function decorateBookForResponse(book: any, settings: Awaited<ReturnType<typeof 
 }
 
 export const createBook = publicProcedure.input(createBookSchema).mutation(async (opts) => {
+  console.log("[createBook] VERSION: memory-safe-docx-images");
+  console.log("[createBook] AI env — OPENAI_API_KEY:", process.env.OPENAI_API_KEY ? `present (${process.env.OPENAI_API_KEY.length} chars)` : "missing");
+  console.log("[createBook] AI env — OPENROUTER_API_KEY:", process.env.OPENROUTER_API_KEY ? `present (${process.env.OPENROUTER_API_KEY.length} chars)` : "missing");
   const session = await auth();
 
   if (!session) {
@@ -431,7 +927,13 @@ export const createBook = publicProcedure.input(createBookSchema).mutation(async
   }
 
   const docxSourceUrl = opts.input.text_url ?? opts.input.docx_url ?? null;
-  const autoChapters = await extractChaptersFromDocx(docxSourceUrl);
+  if (opts.input.e_copy && !opts.input.ebook_pdf_url && !docxSourceUrl) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Please upload an ebook PDF, a DOCX reader file, or both.",
+    });
+  }
+  console.log(`[AI] createBook DOCX processing queued:`, docxSourceUrl ? "yes" : "no");
 
   const tagArray = opts.input.tags
     ? opts.input.tags.split("*").map(tag => tag.trim())
@@ -442,7 +944,7 @@ export const createBook = publicProcedure.input(createBookSchema).mutation(async
   };
 
   // --- DATABASE TRANSACTION ---
-  return await prisma.$transaction(async (tx) => {
+  const createdBook = await prisma.$transaction(async (tx) => {
     // 1. Create the book using 'connect' for all relations
     const createdBook = await tx.book.create({
       data: {
@@ -482,6 +984,7 @@ export const createBook = publicProcedure.input(createBookSchema).mutation(async
         book_cover4: opts.input.book_cover4 ?? null,
         featured: opts.input.featured ?? false,
         pdf_url: opts.input.pdf_url ?? "",
+        ebook_pdf_url: opts.input.ebook_pdf_url ?? "",
         text_url: opts.input.docx_url ?? opts.input.text_url ?? "",
         // Relation connections
         categories: {
@@ -499,15 +1002,6 @@ export const createBook = publicProcedure.input(createBookSchema).mutation(async
         },
       },
     });
-
-    if (autoChapters.length > 0) {
-      await tx.chapter.createMany({
-        data: autoChapters.map(ch => ({
-          ...ch,
-          book_id: createdBook.id,
-        })),
-      });
-    }
 
     // 2. Handle Variants: Priority to 'variants' array, fallback to legacy flags
     if (hasVariants) {
@@ -592,6 +1086,16 @@ export const createBook = publicProcedure.input(createBookSchema).mutation(async
       // Optional: Explicitly increase timeout to 20 seconds as a safety measure
       timeout: 20000 
     });
+
+  if (docxSourceUrl) {
+    try {
+      await enqueueBookDocumentProcessing(createdBook.id);
+    } catch (error) {
+      console.error("[DOCX] Failed to enqueue document processing:", error);
+    }
+  }
+
+  return createdBook;
   });
 
 export const updateBook = publicProcedure.input(createBookSchema).mutation(async (opts) => {
@@ -632,13 +1136,27 @@ export const updateBook = publicProcedure.input(createBookSchema).mutation(async
   }
   const existingBook = await prisma.book.findUnique({
     where: { id: opts.input.id },
-    select: { metadata: true, _count: { select: { chapters: true } } },
+    select: {
+      metadata: true,
+      text_url: true,
+      _count: { select: { chapters: true } },
+    },
   });
   const docxSourceUrl = opts.input.text_url ?? opts.input.docx_url ?? null;
-  const autoChapters =
-    docxSourceUrl && (existingBook?._count?.chapters ?? 0) === 0
-      ? await extractChaptersFromDocx(docxSourceUrl)
-      : [];
+  if (opts.input.e_copy && !opts.input.ebook_pdf_url && !docxSourceUrl) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Please upload an ebook PDF, a DOCX reader file, or both.",
+    });
+  }
+  const documentChanged = Boolean(docxSourceUrl && docxSourceUrl !== existingBook?.text_url);
+  const shouldQueueDocument = Boolean(
+    docxSourceUrl && (
+      (existingBook?._count?.chapters ?? 0) === 0 ||
+      documentChanged
+    ),
+  );
+  console.log(`[AI] updateBook DOCX processing queued:`, shouldQueueDocument ? "yes" : "no");
   const metadata = {
     ...((existingBook?.metadata as Record<string, any> | null) ?? {}),
     custom_fields: opts.input.custom_fields ?? getCustomFieldValueMap(existingBook?.metadata),
@@ -647,7 +1165,7 @@ export const updateBook = publicProcedure.input(createBookSchema).mutation(async
       ((existingBook?.metadata as Record<string, any> | null)?.private_creator_notes ?? null),
   };
 
-  return await prisma.$transaction(async (tx) => {
+  const updatedBook = await prisma.$transaction(async (tx) => {
     const updatedBook = await tx.book.update({
       where: { id: opts.input.id },
       data: {
@@ -681,6 +1199,7 @@ export const updateBook = publicProcedure.input(createBookSchema).mutation(async
         hard_cover: opts.input.hard_cover ?? undefined,
         published: opts.input.published ?? undefined,
         pdf_url: opts.input.pdf_url ?? undefined,
+        ebook_pdf_url: opts.input.ebook_pdf_url ?? undefined,
         text_url: opts.input.text_url ?? undefined,
         book_cover: opts.input.book_cover ?? undefined,
         book_cover2: opts.input.book_cover2 ?? undefined,
@@ -826,17 +1345,18 @@ export const updateBook = publicProcedure.input(createBookSchema).mutation(async
       }
     }
 
-    if (autoChapters.length > 0) {
-      await tx.chapter.createMany({
-        data: autoChapters.map((chapter) => ({
-          ...chapter,
-          book_id: updatedBook.id,
-        })),
-      });
-    }
-
     return updatedBook;
   });
+
+  if (shouldQueueDocument) {
+    try {
+      await enqueueBookDocumentProcessing(updatedBook.id);
+    } catch (error) {
+      console.error("[DOCX] Failed to enqueue document processing on update:", error);
+    }
+  }
+
+  return updatedBook;
 });
 
 export const deleteBook = publicProcedure.input(deleteBookSchema).mutation(async (opts) => {
@@ -872,7 +1392,9 @@ export const getAllBooks = publicProcedure.query(async ({ ctx }) => {
       ...(isSuperAdmin ? {} : { published: true }) 
     },
     include: {
-      chapters: true,
+      chapters: {
+        orderBy: [{ sort_order: "asc" }, { chapter_number: "asc" }, { created_at: "asc" }],
+      },
       author: {
         include: {
           user: {
@@ -961,7 +1483,9 @@ export const getBookById = publicProcedure
             },
           },
         },
-        chapters: true,
+        chapters: {
+          orderBy: [{ sort_order: "asc" }, { chapter_number: "asc" }, { created_at: "asc" }],
+        },
         variants: true,
         publisher: true,
         categories: true,
@@ -981,6 +1505,13 @@ export const getBookById = publicProcedure
 export const approveBook = publicProcedure
   .input(z.object({ id: z.string() }))
   .mutation(async ({ input }) => {
+    const session = await auth();
+    const roleNames = session?.roles?.map(r => r.name.toLowerCase()) ?? [];
+    const canApprove = roleNames.some(r => r === "super-admin" || r.startsWith("staff-"));
+    if (!canApprove) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "Only admins can approve books." });
+    }
+
     // 1. Fetch the book with enough context to send the email
     const book = await prisma.book.findUnique({
       where: { id: input.id, deleted_at: null },
@@ -994,18 +1525,18 @@ export const approveBook = publicProcedure
         },
       },
     });
- 
+
     if (!book) {
       throw new TRPCError({ code: "NOT_FOUND", message: "Book not found" });
     }
- 
+
     if (book.published) {
       throw new TRPCError({
         code: "BAD_REQUEST",
         message: "Book is already published",
       });
     }
- 
+
     // 2. Approve — flip both flags atomically
     const approved = await prisma.book.update({
       where: { id: input.id },
@@ -1041,6 +1572,13 @@ export const denyBook = publicProcedure
     reviewerNotes: z.string().optional(),
   }))
   .mutation(async ({ input }) => {
+    const session = await auth();
+    const roleNames = session?.roles?.map(r => r.name.toLowerCase()) ?? [];
+    const canDeny = roleNames.some(r => r === "super-admin" || r.startsWith("staff-"));
+    if (!canDeny) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "Only admins can deny books." });
+    }
+
     const book = await prisma.book.findUnique({
       where: { id: input.id, deleted_at: null },
       include: {
@@ -1188,7 +1726,9 @@ export const getBookByAuthor = publicProcedure.input(findBookByIdSchema).query(a
   });
 
   const baseInclude = { 
-    chapters: true, 
+    chapters: {
+      orderBy: { sort_order: "asc" as const },
+    },
     author: true, 
     categories: true,
     variants: {
@@ -1236,7 +1776,13 @@ export const toggleBookFeatured = publicProcedure.input(toggleFeaturedSchema).mu
 export const getAllFeaturedBooks = publicProcedure.query(async () => {
   return await prisma.book.findMany({
     where: { featured: true, deleted_at: null, published: true, status: { not: "archived" } },
-    include: { chapters: true, author: true, variants: true },
+     include: {
+       chapters: {
+         orderBy: [{ sort_order: "asc" }, { chapter_number: "asc" }, { created_at: "asc" }],
+       },
+       author: true,
+       variants: true,
+     },
   });
 });
 
@@ -1244,7 +1790,13 @@ export const getNewArrivalBooks = publicProcedure.query(async () => {
   return await prisma.book.findMany({
     where: { deleted_at: null, published: true, status: { not: "archived" } },
     orderBy: { created_at: "desc" },
-    include: { chapters: true, author: true, variants: true },
+     include: {
+       chapters: {
+         orderBy: [{ sort_order: "asc" }, { chapter_number: "asc" }, { created_at: "asc" }],
+       },
+       author: true,
+       variants: true,
+     },
     take: 12,
   });
 });
@@ -1274,7 +1826,14 @@ export const getPurchasedBooksByCustomer = publicProcedure
             book_variant: {
               include: {
                 book: {
-                  include: { author: true, chapters: true, variants: true, issue_reports: true },
+                  include: {
+                    author: true,
+                    chapters: {
+                      orderBy: [{ sort_order: "asc" }, { chapter_number: "asc" }, { created_at: "asc" }],
+                    },
+                    variants: true,
+                    issue_reports: true,
+                  },
                 },
               },
             },
@@ -1379,7 +1938,8 @@ export const generateWatermarkedEbook = publicProcedure
         },
       });
 
-    if (!book || !book.pdf_url) {
+    const pdfUrl = book?.ebook_pdf_url || book?.pdf_url;
+    if (!book || !pdfUrl) {
       throw new TRPCError({
         code: "NOT_FOUND",
         message: "Book asset not found.",
@@ -1388,24 +1948,15 @@ export const generateWatermarkedEbook = publicProcedure
 
     try {
       // 1. Download original from Vercel Blob
-      const response = await axios.get(book.pdf_url, {
+      const response = await axios.get(pdfUrl, {
         responseType: "arraybuffer",
       });
 
-      // 2. Process with pdf-lib (Watermarking)
+      // 2. Process with pdf-lib (Watermarking + Encryption)
       const securedPdf = await watermarkPdf(
         Buffer.from(response.data),
         session.user.email,
         resolveBookStoreContext(book)
-      );
-
-      const protectedPdf = await applyRestrictedPdfProtection(
-        securedPdf,
-        {
-          bookId: book.id,
-          userEmail: session.user.email,
-          sourceUrl: book.pdf_url,
-        }
       );
 
       // 3. Upload temporary secure copy
@@ -1419,7 +1970,7 @@ export const generateWatermarkedEbook = publicProcedure
         .filter(Boolean)
         .join("-");
       const tempName = `temp/${filenameBase || "book-download"}-${Date.now()}.pdf`;
-      const { url } = await put(tempName, Buffer.from(protectedPdf), { 
+      const { url } = await put(tempName, Buffer.from(securedPdf), { 
         access: "public",
         contentType: "application/pdf",
       });

@@ -10,6 +10,7 @@ export const createUserSchema = z.object({
   last_name: z.string().optional(),
   roleName: z.string().optional(),
   date_of_birth: z.date().optional(),
+  nationality: z.string().optional(),
   username: z.string().optional(),
   password: z.string().optional(),
   author_id: z.string().optional(),
@@ -19,6 +20,7 @@ export const createUserSchema = z.object({
   website: z.string().optional(),
   author_name: z.string().optional(),
   tenant_slug: z.string().optional(),
+  email_verified: z.boolean().optional(),
 });
 
 export const createRoleSchema = z.object({
@@ -107,6 +109,7 @@ export const signUpAuthorSchema = z.object({
   publisher_id: z.string().optional(),
   last_name: z.string().optional(),
   phone_number: z.string().optional(),
+  nationality: z.string().optional(),
 });
 
 export const upgradeToAuthorSchema = z.object({});
@@ -189,6 +192,7 @@ export const createBookSchema = z.object({
   hard_cover: z.boolean().optional().default(false),
   
   pdf_url: z.string().url("PDF URL must be valid").nullable().optional(), 
+  ebook_pdf_url: z.string().url("Ebook PDF URL must be valid").nullable().optional(),
   text_url: z.string().url("Text URL must be valid").nullable().optional(),
   docx_url: z.string().url("DOCX URL must be valid").nullable().optional(),
   reader_url: z.string().url("Reader URL must be valid").nullable().optional(),
@@ -297,6 +301,8 @@ export const createChapterSchema = z.object({
   title: z.string(),
   content: z.string(),
   chapter_number: z.number().optional(),
+  section_type: z.enum(["front_matter", "chapter", "back_matter"]).optional(),
+  sort_order: z.number().optional(),
   summary: z.string().optional(),
   word_count: z.coerce.number().optional(),
   book_id: z.string().optional(),
@@ -315,6 +321,7 @@ export const editProfileSchema = z.object({
   bio: z.string().optional(),
   phone_number: z.string().optional(),
   organization_name: z.string().optional(), // For Publishers
+  nationality: z.string().optional(),
   profilePicture: z.string().optional(),
 });
 
@@ -637,6 +644,7 @@ export const signUpSchema = z.object({
   email: z.string().email("Invalid email address"),
   username: z.string().min(3, "Username must be at least 3 characters"),
   password: z.string().min(8, "Password must be at least 8 characters"),
+  nationality: z.string().optional(),
 });
 
 export type TSignUpSchema = z.infer<typeof signUpSchema>;

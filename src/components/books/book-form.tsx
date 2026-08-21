@@ -208,6 +208,7 @@ function createInitialUploads(book?: Book): Record<string, UploadState> {
     spine:  { progress: 0, url: book?.book_cover3 || "", loading: false },
     spread: { progress: 0, url: book?.book_cover4 || "", loading: false },
     pdf:    { progress: 0, url: book?.pdf_url     || "", loading: false },
+    ebook_pdf: { progress: 0, url: (book as Book & { ebook_pdf_url?: string })?.ebook_pdf_url || "", loading: false },
     docx:   { progress: 0, url: book?.text_url    || "", loading: false },
   };
 }
@@ -490,12 +491,6 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
       { enabled: !!session.data?.user.id && shouldCheckPayoutGate }
     );
 
-  // Tracks which ebook file type was uploaded so the other is disabled
-  const [ebookUploadedType, setEbookUploadedType] = useState<"pdf" | "docx" | null>(
-    // Pre-fill in edit mode
-    book?.pdf_url ? "pdf" : book?.text_url ? "docx" : null
-  );
- 
   // Tracks whether page count was auto-detected from PDF
   const [pageCountAutoDetected, setPageCountAutoDetected] = useState(false);
 
@@ -618,9 +613,10 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
   const handleInstantUpload = async (file: File, type: string) => {
     setUploads((prev) => ({ ...prev, [type]: { ...prev[type], loading: true, progress: 0 } }));
     try {
+      const isDocument = type === "pdf" || type === "ebook_pdf" || type === "docx";
       const blob = await uploadFileToBlob(file, {
-        category: type === "pdf" || type === "docx" ? "document" : "image",
-        purpose: type === "pdf" || type === "docx" ? "book-files" : "book-assets",
+        category: isDocument ? "document" : "image",
+        purpose: isDocument ? "book-files" : "book-assets",
         onUploadProgress: ({ percentage }) => {
           setUploads((prev) => ({
             ...prev,
@@ -693,7 +689,7 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
     if (!hasBaseInfo || !hasFormat || isAnyLoading || !frontUploaded) return false;
 
     if (watched.e_copy) {
-      const docUploaded = !!(uploads.pdf.url || uploads.docx.url);
+      const docUploaded = !!(uploads.ebook_pdf.url || uploads.docx.url);
       if (!docUploaded || watched.ebook_price === undefined || watched.ebook_price === null || watched.ebook_price < 0) return false;
     }
     if (watched.paper_back || watched.hard_cover) {
@@ -720,7 +716,6 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
             if (action === "Add") {
               form.reset(defaultFormValues);
               setUploads(initialUploads);
-              setEbookUploadedType(null);
               setPageCountAutoDetected(false);
               setPayoutPromptOpen(false);
             }
@@ -738,7 +733,7 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
       toast({ variant: "destructive", title: "Missing Cover", description: "Front cover is required." });
       return;
     }
-    if (values.e_copy && !uploads.pdf.url && !uploads.docx.url) {
+    if (values.e_copy && !uploads.ebook_pdf.url && !uploads.docx.url) {
       toast({ variant: "destructive", title: "Missing e-book file", description: "Upload a PDF or DOCX for the e-book." });
       return;
     }
@@ -779,6 +774,7 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
       paperback_price: values.paper_back  ? values.paperback_price  : undefined,
       hardcover_price: values.hard_cover  ? values.hardcover_price  : undefined,
       pdf_url: uploads.pdf.url || null,
+      ebook_pdf_url: values.e_copy ? (uploads.ebook_pdf.url || null) : null,
       text_url:    values.e_copy ? (uploads.docx.url || null) : null,
       ebook_price: values.e_copy ? values.ebook_price           : undefined,
       paper_back:  !!values.paper_back,
@@ -822,12 +818,14 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
           list_price: values.hardcover_price!,
           status:     "active"   as const,
         }] : []),
-        ...(values.e_copy ? [{
-          format:     "ebook"  as const,
-          list_price: values.ebook_price!,
+         ...(values.e_copy ? [{
+           format:     "ebook"  as const,
+           digital_asset_url: uploads.ebook_pdf.url || undefined,
+           list_price: values.ebook_price!,
           status:     "active" as const,
         }] : []),
       ],
+      status: (activeProfile === "publisher" || activeProfile === "author") ? "pending_review" : undefined,
     };
 
       submitBook(payload as any);
@@ -1607,6 +1605,8 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                 {(watched.paper_back || watched.hard_cover) && (
                   <div className="space-y-6 border-t-2 border-black pt-6 animate-in fade-in">
  
+                    <h4 className="text-sm font-black uppercase italic text-gray-700">For Print</h4>
+
                     {/* Optional cover images */}
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                       <UploadField label="Back Cover"        type="back"   uploads={uploads} onUpload={handleInstantUpload} accept="image/*" />
@@ -1708,28 +1708,26 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                   </div>
                 )}
  
-                {/* Ebook uploads — mutually exclusive PDF / DOCX */}
-                {watched.e_copy && (
-                  <div className="space-y-4 border-t-2 border-black pt-6 animate-in fade-in">
- 
-                    {/* PDF option */}
+                 {/* Ebook uploads — PDF and DOCX may be used together */}
+                 {watched.e_copy && (
+                   <div className="space-y-4 border-t-2 border-black pt-6 animate-in fade-in">
+
+                     <h4 className="text-sm font-black uppercase italic text-gray-700">For Ebooks</h4>
+
+                     <p className="text-[9px] leading-relaxed text-gray-500">
+                       You can upload both Ebook PDF for downloadable PDF Option and/or DOCX for E-reader in app Option.
+                     </p>
+
+                     {/* PDF option */}
                     <div className="space-y-1">
                       <div className="flex items-center justify-between">
-                        <label className="text-[9px] font-black uppercase text-gray-500">
-                          PDF File
-                          {ebookUploadedType === "docx" && (
-                            <span className="ml-2 text-amber-600 normal-case not-italic font-bold">
-                              — disabled (DOCX already uploaded)
-                            </span>
-                          )}
-                        </label>
-                        {ebookUploadedType === "pdf" && (
+                         <label className="text-[9px] font-black uppercase text-gray-500">Ebook PDF</label>
+                         {uploads.ebook_pdf?.url && (
                           <button
                             type="button"
                             className="text-[9px] font-black uppercase underline opacity-40 hover:opacity-100 hover:text-red-600"
                             onClick={() => {
-                              setUploads(prev => ({ ...prev, pdf: { progress: 0, url: "", loading: false } }));
-                              setEbookUploadedType(null);
+                               setUploads(prev => ({ ...prev, ebook_pdf: { progress: 0, url: "", loading: false } }));
                             }}
                           >
                             Remove
@@ -1739,53 +1737,44 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
  
                       <div
                         className={cn(
-                          "border-2 border-dashed border-black h-16 flex flex-col items-center justify-center transition-colors",
-                          ebookUploadedType === "docx"
-                            ? "opacity-40 cursor-not-allowed bg-gray-50"
-                            : "cursor-pointer bg-secondary/10 hover:bg-white",
-                          uploads.pdf?.url && "border-green-600 bg-green-50"
-                        )}
-                        onClick={() => {
-                          if (ebookUploadedType !== "docx") {
-                            document.getElementById("upload-pdf")?.click();
-                          }
-                        }}
+                           "border-2 border-dashed border-black h-16 flex flex-col items-center justify-center cursor-pointer bg-secondary/10 hover:bg-white transition-colors",
+                           uploads.ebook_pdf?.url && "border-green-600 bg-green-50"
+                         )}
+                         onClick={() => document.getElementById("upload-ebook-pdf")?.click()}
                       >
                         <input
-                          id="upload-pdf"
+                           id="upload-ebook-pdf"
                           type="file"
                           accept=".pdf"
                           className="hidden"
-                          disabled={ebookUploadedType === "docx"}
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (!file || ebookUploadedType === "docx") return;
-                            handleInstantUpload(file, "pdf");
-                            setEbookUploadedType("pdf");
+                           onChange={(e) => {
+                             const file = e.target.files?.[0];
+                             if (!file) return;
+                             handleInstantUpload(file, "ebook_pdf");
                           }}
                         />
                         <div className="text-[10px] font-black uppercase italic text-center px-2">
-                          {uploads.pdf?.loading ? (
+                           {uploads.ebook_pdf?.loading ? (
                             <div className="w-full space-y-2">
                               <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest">
                                 <span>Uploading PDF...</span>
-                                <span>{Math.max(1, uploads.pdf.progress)}%</span>
+                                 <span>{Math.max(1, uploads.ebook_pdf.progress)}%</span>
                               </div>
                               <div className="h-1 bg-gray-200 w-full rounded-full overflow-hidden">
                                 <div
                                   className="h-full bg-black transition-all duration-300"
-                                  style={{ width: `${uploads.pdf.progress}%` }}
+                                   style={{ width: `${uploads.ebook_pdf.progress}%` }}
                                 />
                               </div>
                             </div>
-                          ) : uploads.pdf?.url ? (
+                           ) : uploads.ebook_pdf?.url ? (
                             <span className="text-green-700 flex items-center gap-1">
                               <CheckCircle2 size={12} /> PDF Uploaded
                             </span>
                           ) : (
                             <span className="flex items-center gap-1 opacity-50">
                               <UploadCloud size={12} />
-                              {ebookUploadedType === "docx" ? "Disabled — DOCX in use" : "Upload PDF"}
+                               Upload Ebook PDF
                             </span>
                           )}
                         </div>
@@ -1795,7 +1784,7 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                     {/* Divider */}
                     <div className="flex items-center gap-3 py-1">
                       <div className="flex-1 h-px bg-black/10" />
-                      <span className="text-[9px] font-black uppercase opacity-30">or</span>
+                      <span className="text-[9px] font-black uppercase opacity-30">and/or</span>
                       <div className="flex-1 h-px bg-black/10" />
                     </div>
  
@@ -1803,20 +1792,15 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                     <div className="space-y-1">
                       <div className="flex items-center justify-between">
                         <label className="text-[9px] font-black uppercase text-gray-500">
-                          DOCX File — Web Reader
-                          {ebookUploadedType === "pdf" && (
-                            <span className="ml-2 text-amber-600 normal-case not-italic font-bold">
-                              — disabled (PDF already uploaded)
-                            </span>
-                          )}
-                        </label>
-                        {ebookUploadedType === "docx" && (
+                           DOCX File — Web Reader
+                         </label>
+                         {uploads.docx?.url && (
                           <button
                             type="button"
                             className="text-[9px] font-black uppercase underline opacity-40 hover:opacity-100 hover:text-red-600"
                             onClick={() => {
                               setUploads(prev => ({ ...prev, docx: { progress: 0, url: "", loading: false } }));
-                              setEbookUploadedType(null);
+                               setUploads(prev => ({ ...prev, docx: { progress: 0, url: "", loading: false } }));
                             }}
                           >
                             Remove
@@ -1834,30 +1818,22 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                           Export from Word, Google Docs (<em>File → Download → .docx</em>), or Pages.
                         </p>
                       </div>
- 
+
                       <div
                         className={cn(
-                          "border-2 border-dashed border-black h-16 flex flex-col items-center justify-center transition-colors",
-                          ebookUploadedType === "pdf"
-                            ? "opacity-40 cursor-not-allowed bg-gray-50"
-                            : "cursor-pointer bg-secondary/10 hover:bg-white",
-                          uploads.docx?.url && "border-green-600 bg-green-50"
-                        )}
-                        onClick={() => {
-                          if (ebookUploadedType !== "pdf") {
-                            document.getElementById("upload-docx")?.click();
-                          }
-                        }}
+                           "border-2 border-dashed border-black h-16 flex flex-col items-center justify-center cursor-pointer bg-secondary/10 hover:bg-white transition-colors",
+                           uploads.docx?.url && "border-green-600 bg-green-50"
+                         )}
+                         onClick={() => document.getElementById("upload-docx")?.click()}
                       >
                         <input
                           id="upload-docx"
                           type="file"
                           accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                           className="hidden"
-                          disabled={ebookUploadedType === "pdf"}
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (!file || ebookUploadedType === "pdf") return;
+                           onChange={(e) => {
+                             const file = e.target.files?.[0];
+                             if (!file) return;
  
                             // Enforce .docx — reject anything else even if browser allowed it
                             const isDOCX =
@@ -1874,7 +1850,6 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                             }
  
                             handleInstantUpload(file, "docx");
-                            setEbookUploadedType("docx");
                           }}
                         />
                         <div className="text-[10px] font-black uppercase italic text-center px-2">
@@ -1898,7 +1873,7 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                           ) : (
                             <span className="flex items-center gap-1 opacity-50">
                               <UploadCloud size={12} />
-                              {ebookUploadedType === "pdf" ? "Disabled — PDF in use" : "Upload .docx File"}
+                               Upload .docx File
                             </span>
                           )}
                         </div>
@@ -1943,7 +1918,7 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
               disabled={isPending || Object.values(uploads).some((u) => u.loading) || isSubmitBlockedByPayout || isPayoutGateBusy}
               className="w-full h-16 bg-[#82d236] text-black font-black uppercase text-xl rounded-none border-2 border-black gumroad-shadow hover:translate-x-[3px] transition-all disabled:opacity-50 disabled:bg-gray-200 disabled:cursor-not-allowed"
             >
-              {isPending ? <Loader2 className="animate-spin" /> : `${action} Product`}
+              {isPending ? <Loader2 className="animate-spin" /> : (activeProfile === "publisher" || activeProfile === "author") ? "Submit for Review" : `${action} Product`}
             </Button>
           </form>
         </Form>

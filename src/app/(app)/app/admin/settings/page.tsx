@@ -161,6 +161,11 @@ type SettingsFormValues = {
   };
   book_live_pricing_enabled: boolean;
   book_custom_fields: BookCustomFieldDefinition[];
+  ai_chapter_extraction: {
+    enabled: boolean;
+    provider: string;
+    model: string;
+  };
 };
 
 // ---------------------------------------------------------------------------
@@ -216,6 +221,7 @@ const DEFAULTS: SettingsFormValues = {
   book_flap_costs: DEFAULT_BOOK_FLAP_COSTS,
   book_live_pricing_enabled: DEFAULT_BOOK_LIVE_PRICING_ENABLED,
   book_custom_fields: [],
+  ai_chapter_extraction: { enabled: false, provider: "openai", model: "gpt-4o" },
 };
 
 const CHECKOUT_CURRENCIES = ["NGN", "USD", "GBP", "EUR"] as const;
@@ -224,6 +230,12 @@ const PAYMENT_METHOD_OPTIONS = [
   { value: PAYMENT_METHODS.BANK_TRANSFER, label: "Bank Transfer" },
   { value: PAYMENT_METHODS.PAYPAL, label: "PayPal" },
   { value: PAYMENT_METHODS.MOBILE_MONEY, label: "Mobile Money" },
+] as const;
+
+const STATIC_AI_MODEL_OPTIONS = [
+  { id: "gpt-4o", label: "gpt-4o (OpenAI)", context_length: 128000, supports_structured_outputs: true },
+  { id: "gpt-4.1", label: "gpt-4.1 (OpenAI)", context_length: 1000000, supports_structured_outputs: true },
+  { id: "~anthropic/claude-sonnet-latest", label: "Claude Sonnet Latest (OR)", context_length: 200000, supports_structured_outputs: true },
 ] as const;
 
 const SETTINGS_TABS = [
@@ -372,6 +384,7 @@ export default function SystemSettingsPage() {
   const { toast } = useToast();
 
   const { data: settings, isLoading } = trpc.getSystemSettings.useQuery();
+  const { data: aiModels, isLoading: isAIModelsLoading } = trpc.getAIModelOptions.useQuery();
 
   const { mutate: updateSettings, isPending } =
     trpc.updateSystemSettings.useMutation({
@@ -419,6 +432,10 @@ export default function SystemSettingsPage() {
       book_flap_costs: (settings as any).book_flap_costs ?? DEFAULTS.book_flap_costs,
       book_live_pricing_enabled: normalizeBookLivePricingEnabled((settings as any).book_live_pricing_enabled),
       book_custom_fields: (settings as any).book_custom_fields ?? DEFAULTS.book_custom_fields,
+      ai_chapter_extraction: {
+        ...DEFAULTS.ai_chapter_extraction,
+        ...((settings as any).ai_chapter_extraction || {}),
+      },
     });
   }, [settings, form]);
 
@@ -458,6 +475,7 @@ export default function SystemSettingsPage() {
     updateSettings({ key: "book_flap_costs", value: data.book_flap_costs });
     updateSettings({ key: "book_live_pricing_enabled", value: data.book_live_pricing_enabled });
     updateSettings({ key: "book_custom_fields", value: data.book_custom_fields });
+    updateSettings({ key: "ai_chapter_extraction", value: data.ai_chapter_extraction });
   };
 
   return (
@@ -506,7 +524,7 @@ export default function SystemSettingsPage() {
               <h2 className="text-2xl font-black uppercase italic">Fez Shipping Rates</h2>
               <p className="text-xs opacity-50 font-medium -mt-4">
                 Fez uses group-based rates. Up to the kg cut-off, the customer pays a fixed amount.
-                Above the cut-off, cost = Group Constant + (Group Variable Ã— (Rounded Weight kg âˆ’ Cut-off)).
+                Above the cut-off, cost = Group Constant + (Group Variable \u00D7 (Rounded Weight kg \u2212 Cut-off)).
               </p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -519,7 +537,7 @@ export default function SystemSettingsPage() {
               </div>
 
               <div className="space-y-6">
-                <h3 className="text-lg font-black uppercase italic border-b-2 border-black pb-2">Group Rates (â‚¦)</h3>
+                <h3 className="text-lg font-black uppercase italic border-b-2 border-black pb-2">Group Rates (\u20A6)</h3>
                 {(["G1","G2","G3","G4","G5","G6"] as const).map((group) => (
                   <div key={group} className="grid grid-cols-2 gap-4">
                     <NumberField control={form.control} name={`fez_shipping_rates.${group}.constant`} label={`${group} Constant`} placeholder="e.g. 1500" />
@@ -1005,7 +1023,7 @@ export default function SystemSettingsPage() {
               <h2 className="text-2xl font-black uppercase italic">Fez Shipping Rates</h2>
               <p className="text-xs opacity-50 font-medium -mt-4">
                 Fez uses group-based rates. Up to the kg cut-off, the customer pays a fixed amount.
-                Above the cut-off, cost = Group Constant + (Group Variable Ã— (Rounded Weight kg âˆ’ Cut-off)).
+                Above the cut-off, cost = Group Constant + (Group Variable \u00D7 (Rounded Weight kg \u2212 Cut-off)).
               </p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1018,7 +1036,7 @@ export default function SystemSettingsPage() {
               </div>
 
               <div className="space-y-6">
-                <h3 className="text-lg font-black uppercase italic border-b-2 border-black pb-2">Group Rates (â‚¦)</h3>
+                <h3 className="text-lg font-black uppercase italic border-b-2 border-black pb-2">Group Rates (\u20A6)</h3>
                 {(["G1","G2","G3","G4","G5","G6"] as const).map((group) => (
                   <div key={group} className="grid grid-cols-2 gap-4">
                     <NumberField control={form.control} name={`fez_shipping_rates.${group}.constant`} label={`${group} Constant`} placeholder="e.g. 1500" />
@@ -1292,10 +1310,104 @@ export default function SystemSettingsPage() {
                   </FormItem>
                 )}
               />
+
+              <FormField
+                control={form.control}
+                name="ai_chapter_extraction.enabled"
+                render={({ field }) => (
+                  <FormItem className="flex items-start gap-4 space-y-0 border-2 border-black p-4">
+                    <FormControl>
+                      <Checkbox
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        className="mt-0.5 border-2 border-black data-[state=checked]:bg-black data-[state=checked]:text-accent"
+                      />
+                    </FormControl>
+                    <div className="space-y-1">
+                      <FormLabel className="font-black uppercase text-[11px] tracking-widest cursor-pointer">
+                        AI Chapter Extraction
+                      </FormLabel>
+                      <p className="text-xs opacity-60">
+                        Uses AI to intelligently parse uploaded DOCX files into chapters with accurate titles and numbering.
+                      </p>
+                    </div>
+                  </FormItem>
+                )}
+              />
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="ai_chapter_extraction.provider"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="font-black uppercase text-[11px] tracking-widest">
+                        Provider
+                      </FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger className="rounded-none border-2 border-black">
+                            <SelectValue placeholder="Select provider" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="openai">OpenAI</SelectItem>
+                          <SelectItem value="openrouter">OpenRouter</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="ai_chapter_extraction.model"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="font-black uppercase text-[11px] tracking-widest">
+                        Model
+                      </FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger className="rounded-none border-2 border-black">
+                            <SelectValue placeholder="Select model" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {STATIC_AI_MODEL_OPTIONS.map((model) => (
+                            <SelectItem key={model.id} value={model.id}>
+                              {model.label} · {Math.round(model.context_length / 1000)}K context
+                            </SelectItem>
+                          ))}
+                          {aiModels?.map((model) => (
+                            <SelectItem
+                              key={model.id}
+                              value={model.id}
+                              disabled={!model.supports_structured_outputs}
+                            >
+                              {model.name} · {Math.round(model.context_length / 1000)}K context
+                              {!model.supports_structured_outputs ? " · JSON unsupported" : ""}
+                            </SelectItem>
+                          ))}
+                          {isAIModelsLoading && (
+                            <SelectItem value="models-loading" disabled>
+                              Loading OpenRouter models...
+                            </SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )}
+                />
+              </div>
             </section>
 
             <section className="bg-white border-4 border-black gumroad-shadow p-6 space-y-8">
+
+
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+
+
                 <div>
                   <h2 className="text-2xl font-black uppercase italic">Book Custom Fields</h2>
                   <p className="text-xs opacity-50 font-medium mt-1">

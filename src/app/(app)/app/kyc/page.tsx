@@ -91,7 +91,7 @@ export default function KycPage() {
     : "Complete KYC to activate your publisher account";
   const whyText = isAuthorVerification
     ? "Verification protects readers, publishers, and the platform. Your documents are reviewed manually by our team before your author tools are fully activated."
-    : "KYC verification protects the platform and your customers. Your documents are reviewed manually by our team and stored securely. Once approved, you&apos;ll have full access to publish, sell, and receive payouts.";
+    : "KYC verification protects the platform and your customers. Your documents are reviewed manually by our team and stored securely. Once approved, you'll have full access to publish, sell, and receive payouts.";
 
   return (
     <div className="max-w-2xl mx-auto space-y-10">

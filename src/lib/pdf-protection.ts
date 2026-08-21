@@ -1,4 +1,5 @@
 import { createHmac } from "node:crypto";
+import { createCipheriv, randomBytes } from "node:crypto";
 import {
   PDFArray,
   PDFDict,
@@ -143,12 +144,14 @@ function encryptObject(
   keyInput[encryptionKey.length + 3] = generationNum & 0xff;
   keyInput[encryptionKey.length + 4] = (generationNum >> 8) & 0xff;
 
-  const objectKey = md5(keyInput);
-  const rc4 = new RC4(
-    objectKey.slice(0, Math.min(encryptionKey.length + 5, 16))
-  );
-
-  return new Uint8Array(rc4.process(data));
+  const objectKey = md5(keyInput).slice(0, 16);
+  const iv = randomBytes(16);
+  const cipher = createCipheriv("aes-128-cbc", Buffer.from(objectKey), iv);
+  const ciphertext = Buffer.concat([
+    cipher.update(Buffer.from(data)),
+    cipher.final(),
+  ]);
+  return new Uint8Array(Buffer.concat([iv, ciphertext]));
 }
 
 function encryptStringsInObject(
@@ -314,12 +317,21 @@ export async function applyRestrictedPdfProtection(
 
   const encryptDict = contextRef.obj({
     Filter: PDFName.of("Standard"),
-    V: PDFNumber.of(2),
-    R: PDFNumber.of(3),
+    V: PDFNumber.of(4),
+    R: PDFNumber.of(4),
     Length: PDFNumber.of(128),
     P: PDFNumber.of(permissions),
     O: PDFHexString.of(bytesToHex(ownerKey)),
     U: PDFHexString.of(bytesToHex(userKey)),
+    StmF: PDFName.of("StdCF"),
+    StrF: PDFName.of("StdCF"),
+    CF: contextRef.obj({
+      StdCF: contextRef.obj({
+        CFM: PDFName.of("AESV2"),
+        AuthEvent: PDFName.of("DocOpen"),
+        Length: PDFNumber.of(16),
+      }),
+    }),
   });
 
   const encryptRef = contextRef.register(encryptDict);

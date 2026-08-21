@@ -43,6 +43,8 @@ export const createUser = publicProcedure
       name,
       publisher_id,
       tenant_slug,
+      email_verified,
+      nationality,
     } = opts.input;
  
     const user = await prisma.$transaction(async (tx) => {
@@ -67,7 +69,8 @@ export const createUser = publicProcedure
           password: bcrypt.hashSync(password as string, 10),
           first_name: first_name as string,
           last_name: last_name as string,
-          // email_verified_at intentionally null
+          nationality: nationality || null,
+          email_verified_at: email_verified ? new Date() : null,
         },
       });
  
@@ -286,6 +289,7 @@ export const updateUser = publicProcedure.input(createUserSchema).mutation(async
       email: opts.input.email,
       phone_number: opts.input.phone_number,
       username: opts.input.username,
+      nationality: opts.input.nationality,
       active: true,
       password: bcrypt.hashSync(opts.input.password as string, 10) ?? ""
     },
@@ -471,7 +475,7 @@ export const getUserById = publicProcedure.input(deleteUserSchema).query(async (
 export const updateUserProfile = publicProcedure
   .input(editProfileSchema)
   .mutation(async ({ input }) => {
-    const { id, first_name, last_name, username, bio, organization_name, phone_number, profilePicture } = input;
+    const { id, first_name, last_name, username, bio, organization_name, phone_number, nationality, profilePicture } = input;
     
     // Identity Casing preserved for Username
     const rawUsername = username.trim();
@@ -487,7 +491,7 @@ export const updateUserProfile = publicProcedure
       // 1. Update Core User (Preserve Casing)
       const updatedUser = await tx.user.update({
         where: { id },
-        data: { first_name, last_name, username: rawUsername, phone_number }
+        data: { first_name, last_name, username: rawUsername, phone_number, nationality }
       });
 
       // 2. Update Publisher & Tenant (Use cleanSlug for URLs)
@@ -587,6 +591,7 @@ export const signUpCustomer = publicProcedure
           password: hashedPassword,
           first_name: input.first_name,
           last_name: input.last_name,
+          nationality: input.nationality ?? null,
           active: true,
           // email_verified_at intentionally left null — pending verification
         },
