@@ -96,7 +96,7 @@ export const createUser = publicProcedure
         });
       } else if (roleName === "Author") {
         const defaultPublisher = await tx.publisher.findUnique({
-          where: { slug: "booka" },
+          where: { slug: "iwacumo" },
         });
  
         await tx.author.create({

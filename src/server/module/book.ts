@@ -835,7 +835,7 @@ export const createBook = publicProcedure.input(createBookSchema).mutation(async
 
   if (!publisherId) {
     const platformPublisher = await prisma.publisher.findUnique({
-      where: { slug: "booka" }
+      where: { slug: "iwacumo" }
     });
     publisherId = platformPublisher?.id;
   }
