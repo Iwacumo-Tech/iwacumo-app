@@ -133,11 +133,18 @@ export async function resolveBookCreationPayoutStatus(params: {
         },
       },
       author: {
-        include: {
+        select: {
+          id: true,
+          pen_name: true,
+          name: true,
+          publisher_id: true,
+          onboarding_status: true,
+          invite_email: true,
           publisher: {
             select: {
               id: true,
               white_label: true,
+              slug: true,
             },
           },
         },
@@ -156,14 +163,25 @@ export async function resolveBookCreationPayoutStatus(params: {
     params.authorId
       ? await prisma.author.findUnique({
           where: { id: params.authorId },
-          include: {
+          select: {
+            id: true,
+            pen_name: true,
+            name: true,
+            onboarding_status: true,
+            invite_email: true,
             user: {
-              include: {
+              select: {
+                active: true,
                 payment_account: true,
+                first_name: true,
+                last_name: true,
               },
             },
             publisher: {
-              include: {
+              select: {
+                id: true,
+                slug: true,
+                white_label: true,
                 tenant: {
                   select: {
                     name: true,
@@ -193,7 +211,10 @@ export async function resolveBookCreationPayoutStatus(params: {
     resolvedPublisherId
       ? await prisma.publisher.findUnique({
           where: { id: resolvedPublisherId },
-          include: {
+          select: {
+            id: true,
+            slug: true,
+            white_label: true,
             tenant: {
               select: {
                 name: true,
@@ -210,6 +231,16 @@ export async function resolveBookCreationPayoutStatus(params: {
         })
       : null;
 
+  // Direct-signup authors under iwacumo: skip payout gating entirely.
+  // They only pay platform fee; no publisher payout account is needed.
+  const isDirectSignupUnderIwacumo =
+    resolvedPublisher?.slug === "iwacumo" &&
+    creator.author?.invite_email == null;
+
+  const isDirectSignupAuthorUnderIwacumo =
+    selectedAuthor?.publisher?.slug === "iwacumo" &&
+    selectedAuthor?.invite_email == null;
+
   const normalizedProfile = params.activeProfile ?? null;
   const publisherStatus = resolvedPublisher
     ? buildGateEntityStatus({
@@ -220,6 +251,9 @@ export async function resolveBookCreationPayoutStatus(params: {
         account: resolvedPublisher.user?.payment_account,
       })
     : null;
+
+  // For direct-signup authors under iwacumo, the publisher is not a gating entity.
+  const publisherStatusForGate = isDirectSignupUnderIwacumo ? null : publisherStatus;
 
   const actingAuthorStatus = creator.author
     ? buildGateEntityStatus({
@@ -264,9 +298,9 @@ export async function resolveBookCreationPayoutStatus(params: {
   const submitBlockingEntities: GateEntityStatus[] = [];
 
   if (isAuthorProfile && actingAuthorStatus?.payout_required_for_book_creation) {
-    if (publisherStatus && !publisherStatus.payout_ready) {
-      openBlockingEntities.push(publisherStatus);
-      submitBlockingEntities.push(publisherStatus);
+    if (publisherStatusForGate && !publisherStatusForGate.payout_ready) {
+      openBlockingEntities.push(publisherStatusForGate);
+      submitBlockingEntities.push(publisherStatusForGate);
     }
     if (!actingAuthorStatus.payout_ready) {
       openBlockingEntities.push(actingAuthorStatus);
@@ -274,9 +308,9 @@ export async function resolveBookCreationPayoutStatus(params: {
     }
   }
 
-  if (isPublisherProfile && publisherStatus && !publisherStatus.payout_ready) {
-    openBlockingEntities.push(publisherStatus);
-    submitBlockingEntities.push(publisherStatus);
+  if (isPublisherProfile && publisherStatusForGate && !publisherStatusForGate.payout_ready) {
+    openBlockingEntities.push(publisherStatusForGate);
+    submitBlockingEntities.push(publisherStatusForGate);
   }
 
   if (
@@ -284,6 +318,7 @@ export async function resolveBookCreationPayoutStatus(params: {
     && selectedAuthorStatus
     && selectedAuthorStatus.payout_required_for_book_creation
     && !selectedAuthorStatus.payout_ready
+    && !isDirectSignupAuthorUnderIwacumo
   ) {
     submitBlockingEntities.push(selectedAuthorStatus);
   }
@@ -295,7 +330,7 @@ export async function resolveBookCreationPayoutStatus(params: {
     active_profile: normalizedProfile,
     can_open_add_book: canOpenAddBook,
     can_submit_with_selected_author: canSubmitWithSelectedAuthor,
-    publisher: publisherStatus,
+    publisher: publisherStatusForGate,
     acting_author: actingAuthorStatus,
     selected_author: selectedAuthorStatus,
     blocking_entities_for_open: openBlockingEntities,
