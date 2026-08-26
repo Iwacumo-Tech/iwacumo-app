@@ -27,6 +27,7 @@ import {
 } from "@/lib/book-config";
 import { getFriendlyErrorMessage } from "@/lib/error-message";
 import { formatPublicNairaPrice } from "@/lib/public-price";
+import CountdownTimer from "@/components/shared/CountdownTimer";
 
 // ─── Format metadata (module level — hard rule #4) ────────────────────────────
 
@@ -175,6 +176,9 @@ export default function ProductDetails() {
     );
   }, [book, systemSettings?.buyer_format_visibility]);
 
+  const releaseDate = book?.publication_date ? new Date(book.publication_date) : null;
+  const isPreorder = book?.preorder_enabled && !!releaseDate && releaseDate > new Date();
+
   // ── State ──────────────────────────────────────────────────────────────────
   const [currentImage,   setCurrentImage]   = useState(0);
   const [selectedFormat, setSelectedFormat] = useState<string>("");
@@ -248,6 +252,7 @@ export default function ProductDetails() {
           price:      currentPrice,
           quantity,
           total:      totalPrice,
+          is_preorder: isPreorder,
         });
         utils.getCartsByUser.invalidate();
       } else {
@@ -262,6 +267,7 @@ export default function ProductDetails() {
           price:      currentPrice,
           quantity,
           total:      totalPrice,
+          is_preorder: isPreorder,
         });
 
         setGuestCartItems(cartItems);
@@ -428,10 +434,13 @@ export default function ProductDetails() {
                   <p className="text-sm font-bold flex items-center gap-2"><Globe size={14} /> {getBookLanguageLabel(book?.default_language) || "—"}</p>
             </div>
             <div className="space-y-1">
-              <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Publication Date</p>
+              <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Availability</p>
               <p className="text-sm font-bold flex items-center gap-2">
                 <CalendarDays size={14} />
-                {book?.publication_date ? new Date(book.publication_date).toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                {isPreorder
+                  ? <span className="text-accent">Available: {releaseDate!.toLocaleDateString("en-NG", { day: "numeric", month: "long", year: "numeric" })}</span>
+                  : <span>Available: Now</span>
+                }
               </p>
             </div>
             <div className="space-y-1">
@@ -494,6 +503,12 @@ export default function ProductDetails() {
             </button>
           </div>
 
+          {isPreorder && releaseDate && (
+            <div className="py-4 border-b border-black/10">
+              <CountdownTimer targetDate={releaseDate} />
+            </div>
+          )}
+
           {/* ── Format selector ─────────────────────────────────────── */}
           <div className="space-y-3">
             <h3 className="text-[10px] font-black uppercase tracking-[0.25em] text-gray-400">
@@ -542,7 +557,7 @@ export default function ProductDetails() {
                   disabled={addBookToCart.isPending || !selectedFormat}
                   className="flex-1 booka-button-primary h-16 text-base font-black uppercase italic tracking-widest group flex items-center justify-center gap-3"
                 >
-                  {addBookToCart.isPending ? "Adding…" : "Add to Bag"}
+                  {addBookToCart.isPending ? "Adding…" : isPreorder ? "Pre-Order" : "Add to Bag"}
                   <ShoppingCart size={20} className="group-hover:rotate-12 transition-transform" />
                 </Button>
               </div>

@@ -185,6 +185,7 @@ export const createBookSchema = z.object({
   ebook_price: z.number().optional().nullable(),
 
   published: z.boolean().optional().default(false),
+  preorder_enabled: z.boolean().optional().default(false),
   category_ids: z.array(z.string()).optional().default([]),
   tags: z.string().optional(), 
   paper_back: z.boolean().optional().default(false),
@@ -351,6 +352,7 @@ export const CartSchema = z.object({
   price: z.number().min(0, "Price cannot be negative"),
   quantity: z.number().int().positive().optional(), 
   total: z.number().min(0, "Total cannot be negative"), 
+  is_preorder: z.boolean().optional().default(false),
   userId: z.string().optional(), 
 });
 

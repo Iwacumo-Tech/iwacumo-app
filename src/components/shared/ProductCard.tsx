@@ -32,6 +32,12 @@ export default function ProductCard({ book, variant = "default" }: ProductCardPr
         </span>
       )}
 
+      {book.preorder_enabled && book.publication_date && new Date(book.publication_date) > new Date() && (
+        <span className="absolute top-2 right-2 z-10 bg-accent text-white px-2 py-0.5 text-[7px] font-black uppercase italic rounded-full">
+          Pre-Order
+        </span>
+      )}
+
       <div
         className={cn(
           "aspect-[4/5] border-b-[1.5px] border-black overflow-hidden bg-[#F4F4F4] relative",

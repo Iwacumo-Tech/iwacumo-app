@@ -1946,6 +1946,13 @@ export const generateWatermarkedEbook = publicProcedure
       });
     }
 
+    if (book.preorder_enabled && book.publication_date && new Date(book.publication_date) > new Date()) {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: `This book is not yet available. Release date: ${new Date(book.publication_date).toLocaleDateString("en-NG", { day: "numeric", month: "long", year: "numeric" })}.`,
+      });
+    }
+
     try {
       // 1. Download original from Vercel Blob
       const response = await axios.get(pdfUrl, {

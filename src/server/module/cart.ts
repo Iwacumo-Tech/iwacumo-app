@@ -11,6 +11,7 @@ const guestCartTransferItemSchema = z.object({
   price: z.number().min(0),
   quantity: z.number().int().positive().optional(),
   total: z.number().min(0),
+  is_preorder: z.boolean().optional().default(false),
 });
 
 function isEbookCartType(bookType: string) {
@@ -23,7 +24,7 @@ function isEbookCartType(bookType: string) {
 export const createCart = publicProcedure
   .input(CartSchema)
   .mutation(async (opts) => {
-    const { book_image, book_title, book_type, price, quantity, total, userId } = opts.input;
+    const { book_image, book_title, book_type, price, quantity, total, userId, is_preorder } = opts.input;
 
     return await prisma.cart.create({
       data: {
@@ -33,6 +34,7 @@ export const createCart = publicProcedure
         price,
         quantity,
         total,
+        is_preorder,
         user: userId
           ? {
               connect: {
@@ -140,6 +142,7 @@ export const transferGuestCartToUser = publicProcedure
             price: guestItem.price,
             quantity: normalizedQuantity,
             total: guestItem.price * normalizedQuantity,
+            is_preorder: guestItem.is_preorder ?? false,
             userId,
           },
         });

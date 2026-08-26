@@ -249,6 +249,7 @@ model Book {
   price             Float
   book_cover        String?
   published         Boolean       @default(false)
+  preorder_enabled  Boolean       @default(false)
   book_cover2       String?
   book_cover3       String?
   book_cover4       String?
@@ -401,6 +402,7 @@ model Cart {
   price      Float
   quantity   Int?
   total      Float
+  is_preorder Boolean @default(false)
   user       User?     @relation(fields: [userId], references: [id])
   userId     String?
   deleted_at DateTime?
@@ -556,6 +558,7 @@ model OrderLineItem {
   author_earnings     Float              @default(0)
 
   fulfillment_status  String            @default("unfulfilled") // unfulfilled, in_progress, shipped, delivered, cancelled
+  is_preorder         Boolean           @default(false)
   metadata            Json?
   deliveries          DeliveryTracking[]
   created_at          DateTime          @default(now())
