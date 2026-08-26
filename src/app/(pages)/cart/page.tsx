@@ -59,6 +59,7 @@ type CartItem = {
   price: number;
   quantity?: number | null;
   total?: number;
+  is_preorder?: boolean;
 };
 
 type GuestCheckoutAuthMode = "register" | "login";
@@ -477,6 +478,7 @@ export default function CartPage() {
         price: item.price,
         quantity: item.quantity ?? 1,
         total: (item.quantity ?? 1) * item.price,
+        is_preorder: item.is_preorder ?? false,
       })),
     });
   };
@@ -516,6 +518,7 @@ export default function CartPage() {
           price: item.price,
           quantity: item.quantity ?? 1,
           total: (item.quantity ?? 1) * item.price,
+          is_preorder: item.is_preorder ?? false,
         })),
       });
 
@@ -638,6 +641,7 @@ export default function CartPage() {
                       : <Download size={12} className="text-accent" />
                     }
                     <p className="text-[10px] font-black uppercase tracking-widest opacity-50">{item.book_type}</p>
+                    {item.is_preorder && <span className="text-[9px] font-black uppercase text-accent">· Pre-Order</span>}
                   </div>
                 </div>
                 <div className="flex items-center border-2 border-black bg-gray-50">

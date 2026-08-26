@@ -242,6 +242,7 @@ export const createOrderFromCart = publicProcedure
       unit_price: number; total_price: number;
       platform_fee: number; publisher_earnings: number;
       author_earnings: number; weight_grams: number;
+      is_preorder: boolean;
     };
 
     const orderLineItemsData: LineItemData[] = [];
@@ -322,11 +323,14 @@ export const createOrderFromCart = publicProcedure
         ? (variant.weight_grams ?? 400) * quantity : 0;
       totalWeightGrams += itemWeightGrams;
 
+      const isPreorder = !!(book.preorder_enabled && book.publication_date && new Date(book.publication_date) > new Date());
+
       orderLineItemsData.push({
         book_variant_id: variant.id, quantity,
         unit_price: unitPrice, total_price: totalPrice,
         platform_fee: platformFee, publisher_earnings: publisherEarnings,
         author_earnings: authorEarnings, weight_grams: itemWeightGrams,
+        is_preorder: isPreorder,
       });
       subtotal += totalPrice;
     }
@@ -523,7 +527,8 @@ export const createOrderFromCart = publicProcedure
             platform_fee: itemData.platform_fee,
             publisher_earnings: itemData.publisher_earnings,
             author_earnings: itemData.author_earnings,
-            fulfillment_status: "unfulfilled",
+            is_preorder: itemData.is_preorder ?? false,
+            fulfillment_status: (itemData.is_preorder ?? false) ? "preordered" : "unfulfilled",
           },
         });
       }

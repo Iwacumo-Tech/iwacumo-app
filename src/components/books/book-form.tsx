@@ -236,6 +236,7 @@ function createBookFormDefaults({
     author_id:         book?.author_id         ?? sessionAuthorId ?? "",
     publisher_id:      book?.publisher_id      ?? sessionPublisherId ?? "",
     category_ids:      (book as any)?.categories?.map((c: any) => c.id) ?? [],
+    preorder_enabled:  (book as any)?.preorder_enabled ?? false,
     paper_back:        book?.paper_back ?? false,
     e_copy:            book?.e_copy     ?? true,
     hard_cover:        book?.hard_cover ?? false,
@@ -780,6 +781,7 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
       paper_back:  !!values.paper_back,
       hard_cover:  !!values.hard_cover,
       e_copy:      !!values.e_copy,
+      preorder_enabled: !!values.preorder_enabled,
       admin_private_notes: values.admin_private_notes || undefined,
       size_bucket: matchedSizeBucket ?? undefined,
       display_width_in: values.display_width_in ?? undefined,
@@ -1042,6 +1044,24 @@ const BookForm = ({ book, action, trigger }: BookFormProps) => {
                               onChange={(e) => field.onChange(e.target.value ? new Date(e.target.value) : undefined)}
                             />
                           </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  )}
+
+                  {bookFeatureToggles?.publication_date && (
+                    <FormField
+                      control={form.control}
+                      name="preorder_enabled"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                          <FormControl>
+                            <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                          </FormControl>
+                          <div className="space-y-1 leading-none">
+                            <FormLabel className="font-bold text-xs uppercase">Enable Preorder</FormLabel>
+                            <p className="text-[9px] text-gray-400">Customers can pre-order before the publication date.</p>
+                          </div>
                         </FormItem>
                       )}
                     />

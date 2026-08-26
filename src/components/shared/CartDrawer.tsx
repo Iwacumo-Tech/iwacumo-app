@@ -100,6 +100,10 @@ function CartItemRow({ item, isAuthenticated, onDelete, onQtyChange, isDeleting 
           {formatLabel(item.book_type)}
         </div>
 
+        {item.is_preorder && (
+          <span className="text-[9px] font-black uppercase text-accent">· Pre-Order</span>
+        )}
+
         {/* Unit price */}
         <p className="text-[10px] font-bold text-gray-400">
           {`${formatPublicNairaPrice(item.price)} each`}
