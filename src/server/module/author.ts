@@ -248,7 +248,7 @@ export const signUpAuthor = publicProcedure.input(signUpAuthorSchema).mutation(a
     }
   });
 
-  const tenant = await prisma.tenant.findFirst({ where: { slug: "booka" }, include: { publishers: true } });
+  const tenant = await prisma.tenant.findFirst({ where: { slug: "iwacumo" }, include: { publishers: true } });
   if(!tenant) throw new TRPCError({ code: "NOT_FOUND", message: "Default tenant not found" });
 
   const publisher = await prisma.author.create({
