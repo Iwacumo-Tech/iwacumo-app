@@ -215,10 +215,14 @@ export function buildOrderPayoutRoutingSnapshot(
 export function resolveOrderPayoutRoutingSnapshot(
   snapshot: Partial<OrderPayoutRoutingSnapshot> | null | undefined,
   fallbackPublisherWhiteLabel = false,
+  publisherSlug?: string | null,
 ): OrderPayoutRoutingSnapshot {
+  const isPlatformPublisher = publisherSlug === "iwacumo";
+
   if (!snapshot) {
     return buildOrderPayoutRoutingSnapshot({
       publisherWhiteLabel: fallbackPublisherWhiteLabel,
+      publisherSlug,
     });
   }
 
@@ -227,7 +231,7 @@ export function resolveOrderPayoutRoutingSnapshot(
       ? snapshot.publisher_white_label
       : fallbackPublisherWhiteLabel;
 
-  return {
+  const result: OrderPayoutRoutingSnapshot = {
     publisher_white_label: publisherWhiteLabel,
     publisher_share_payout_owner:
       snapshot.publisher_share_payout_owner === "publisher"
@@ -246,6 +250,14 @@ export function resolveOrderPayoutRoutingSnapshot(
           ? "white_label_split"
           : "publisher_holds_author_share",
   };
+
+  // Override for iwacumo platform publisher: always send author earnings directly to author
+  if (isPlatformPublisher) {
+    result.author_share_payout_owner = "author";
+    result.routing_policy = "white_label_split";
+  }
+
+  return result;
 }
 
 export function buildPaystackSettlementPlan(params: {
@@ -263,7 +275,7 @@ export function buildPaystackSettlementPlan(params: {
   } | null;
   payoutRouting: OrderPayoutRoutingSnapshot;
   lineItems: SettlementLineItem[];
-}): PaystackSettlementPlan {
+}): PaystackSettlementPlan | null {
   if ((params.currency || "").toUpperCase() !== "NGN") {
     throw new Error("Paystack payout splitting is currently available only for NGN orders.");
   }
@@ -368,7 +380,8 @@ export function buildPaystackSettlementPlan(params: {
   const deltaMinorUnit = expectedRecipientMinorUnit - allocatedRecipientMinorUnit;
 
   if (!recipients.length) {
-    throw new Error("No payout recipient is available for this transaction settlement.");
+    // No valid recipients — return null to skip settlement split
+    return null;
   }
 
   if (deltaMinorUnit !== 0) {

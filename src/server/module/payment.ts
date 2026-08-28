@@ -204,6 +204,7 @@ export const initializePayment = publicProcedure
     const resolvedPayoutRouting = resolveOrderPayoutRoutingSnapshot(
       getSavedPayoutRouting(order.notes),
       !!order.publisher?.white_label,
+      order.publisher?.slug ?? null,
     );
 
     let paystackSettlementPlan = null;
