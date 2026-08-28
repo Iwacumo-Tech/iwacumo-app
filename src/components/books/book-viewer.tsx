@@ -13,7 +13,8 @@ import {
   Loader2, 
   ChevronLeft, 
   ChevronRight, 
-  Lock
+  Lock,
+  AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -142,6 +143,65 @@ export default function ViewBookPage({ book }: BookViewerProps) {
 
           <p className="mt-6 text-[9px] font-bold uppercase opacity-30 tracking-tighter">
             Generation usually takes less than 10 seconds.
+          </p>
+        </motion.div>
+        <ToastContainer position="bottom-center" />
+      </div>
+    );
+  }
+
+  // CASE B: IN-BROWSER READER (DOCX/Chapters)
+  if (!hasReaderContent && !hasDownloadablePdf) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#FAF9F6] p-6 text-center">
+        <div className="w-16 h-16 bg-red-50 border-[1.5px] border-red-200 rounded-full flex items-center justify-center mb-6">
+          <AlertCircle size={28} className="text-red-500" />
+        </div>
+        <h2 className="text-2xl font-black uppercase italic mb-2">No reader content</h2>
+        <p className="text-sm text-gray-500 max-w-xs">
+          This book doesn't have any reader content available.
+        </p>
+      </div>
+    );
+  }
+
+  // Preorder wall for in-browser reader
+  if (isPreorderActive) {
+    return (
+      <div className="min-h-[80vh] flex items-center justify-center p-6 bg-[#FAF9F6]">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="max-w-md w-full bg-white border-[1.5px] border-black rounded-[var(--radius)] p-10 text-center gumroad-shadow"
+        >
+          <div className="relative w-24 h-24 mx-auto mb-8">
+            <div className="absolute inset-0 bg-accent rounded-full animate-pulse opacity-20" />
+            <div className="relative bg-white border-[1.5px] border-black rounded-full w-full h-full flex items-center justify-center">
+              <Lock className="w-10 h-10 text-black" />
+            </div>
+            <ShieldCheck className="absolute -bottom-1 -right-1 w-8 h-8 text-green-500 bg-white rounded-full p-1 border-[1.5px] border-black" />
+          </div>
+
+          <h2 className="text-3xl font-black uppercase italic tracking-tighter mb-4">
+            Pre-Order<span className="text-accent">.</span>
+          </h2>
+          
+          <div className="space-y-4 mb-10">
+            <p className="text-[11px] font-black uppercase tracking-widest text-gray-400">
+              {book.title}
+            </p>
+            <div className="p-4 border-2 border-amber-300 bg-amber-50 rounded-lg">
+              <p className="text-[10px] font-black uppercase tracking-widest text-amber-700 mb-1">
+                Available {releaseDate}
+              </p>
+              <p className="text-xs text-amber-900">
+                This book is not yet available for reading. You'll be able to access the content once the release date arrives.
+              </p>
+            </div>
+          </div>
+
+          <p className="mt-6 text-[9px] font-bold uppercase opacity-30 tracking-tighter">
+            Thank you for your pre-order.
           </p>
         </motion.div>
         <ToastContainer position="bottom-center" />

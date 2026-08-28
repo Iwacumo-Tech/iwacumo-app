@@ -46,6 +46,15 @@ export const getChapterContent = publicProcedure
         });
       }
 
+      // Preorder check: Block access if book is still in preorder
+      const book = chapter.book;
+      if (book && book.preorder_enabled && book.publication_date && new Date(book.publication_date) > new Date()) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: `This book is not yet available. Release date: ${new Date(book.publication_date).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}.`,
+        });
+      }
+
       // Return the content and metadata needed by the Reader component
       return {
         id: chapter.id,
