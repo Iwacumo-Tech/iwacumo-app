@@ -28,6 +28,10 @@ export default function ViewBookPage({ book }: BookViewerProps) {
   const hasReaderContent = !!book.text_url;
   const hasEbookPdf = !!book.ebook_pdf_url || (!!book.e_copy && !!book.pdf_url);
   const hasDownloadablePdf = hasEbookPdf || !!book.pdf_url;
+  const isPreorderActive = (book as any).preorder_enabled && book.publication_date && new Date(book.publication_date) > new Date();
+  const releaseDate = isPreorderActive && book.publication_date
+    ? new Date(book.publication_date).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })
+    : null;
 
   const watermarkMutation = trpc.generateWatermarkedEbook.useMutation({
     onSuccess: async (data) => {
@@ -106,11 +110,22 @@ export default function ViewBookPage({ book }: BookViewerProps) {
             </p>
           </div>
 
+          {isPreorderActive && (
+            <div className="mb-6 p-4 border-2 border-amber-300 bg-amber-50 rounded-lg">
+              <p className="text-[10px] font-black uppercase tracking-widest text-amber-700 mb-1">
+                Pre-Order
+              </p>
+              <p className="text-xs text-amber-900">
+                This book will be available on {releaseDate}. You'll be able to generate your secure PDF once the release date arrives.
+              </p>
+            </div>
+          )}
+
           <Button 
             size="lg" 
             className="w-full h-16 booka-button-primary text-md"
             onClick={handleDownload}
-            disabled={isGenerating}
+            disabled={isGenerating || isPreorderActive}
           >
             {isGenerating ? (
               <>

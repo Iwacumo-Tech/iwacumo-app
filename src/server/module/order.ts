@@ -154,6 +154,13 @@ export const createOrderFromCart = publicProcedure
     });
     const targetPublisherId = firstBook?.publisher_id ?? null;
 
+    const targetPublisher = targetPublisherId
+      ? await prisma.publisher.findUnique({
+          where: { id: targetPublisherId },
+          select: { white_label: true, slug: true },
+        })
+      : null;
+
     let customer = user.customers.find(c => c.publisher_id === targetPublisherId);
     if (!customer && targetPublisherId) {
       customer = await prisma.customer.create({
@@ -312,7 +319,11 @@ export const createOrderFromCart = publicProcedure
         splitSource           = "platform_fallback";
       }
 
-      const publisherEarnings = (remainder * publisherSplitPercent) / 100;
+      // For iwacumo platform publisher, publisher takes no cut — only platform fee applies
+      const isPlatformPublisher = targetPublisher?.slug === "iwacumo";
+      const effectivePublisherSplitPercent = isPlatformPublisher ? 0 : publisherSplitPercent;
+
+      const publisherEarnings = (remainder * effectivePublisherSplitPercent) / 100;
       const authorEarnings    = remainder - publisherEarnings;
 
       if (process.env.NODE_ENV !== "production") {
@@ -342,13 +353,10 @@ export const createOrderFromCart = publicProcedure
         .filter(([, config]) => config?.enabled)
         .map(([provider]) => provider);
 
-      const targetPublisher = targetPublisherId
-        ? await prisma.publisher.findUnique({
-            where: { id: targetPublisherId },
-            select: { white_label: true },
-          })
-        : null;
-      const payoutRouting = buildOrderPayoutRoutingSnapshot(!!targetPublisher?.white_label);
+      const payoutRouting = buildOrderPayoutRoutingSnapshot({
+        publisherWhiteLabel: !!targetPublisher?.white_label,
+        publisherSlug: targetPublisher?.slug ?? null,
+      });
 
     const resolvedShippingProvider: ShippingProvider | undefined =
       shipping_provider
@@ -591,12 +599,21 @@ export const createOrderFromCart = publicProcedure
             firstName: createdOrder.customer.user.first_name,
             orderNumber: createdOrder.order_number,
             orderDate: createdOrder.created_at,
-            items: createdOrder.line_items.map((item) => ({
-              title: item.book_variant.book?.title ?? "Book",
-              type: item.book_variant.format,
-              quantity: item.quantity,
-              price: item.unit_price,
-            })),
+            items: createdOrder.line_items.map((item) => {
+              const book = item.book_variant.book;
+              const isPreorder = !!(book?.preorder_enabled && book.publication_date && new Date(book.publication_date) > new Date());
+              const releaseDate = isPreorder && book?.publication_date
+                ? new Date(book.publication_date).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })
+                : null;
+              return {
+                title: book?.title ?? "Book",
+                type: item.book_variant.format,
+                quantity: item.quantity,
+                price: item.unit_price,
+                isPreorder,
+                releaseDate,
+              };
+            }),
             subtotal: chargedSubtotal ?? createdOrder.subtotal_amount,
             shippingCost: chargedShipping ?? createdOrder.shipping_amount,
             total: chargedTotal ?? createdOrder.total_amount,

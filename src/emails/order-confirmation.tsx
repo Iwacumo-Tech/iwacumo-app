@@ -9,6 +9,8 @@ interface OrderItem {
   type: string;
   quantity: number;
   price: number;
+  isPreorder?: boolean;
+  releaseDate?: string | null;
 }
 
 interface OrderConfirmationTemplateProps {
@@ -104,6 +106,11 @@ export function OrderConfirmationTemplate({
                   <Text style={itemMeta}>
                     {item.type} · Qty {item.quantity}
                   </Text>
+                  {item.isPreorder && item.releaseDate && (
+                    <Text style={preorderBadge}>
+                      PRE-ORDER · Available {item.releaseDate}
+                    </Text>
+                  )}
                 </Column>
                 <Column style={{ width: "40%", textAlign: "right" }}>
                   <Text style={itemPrice}>{formatCurrency(item.price * item.quantity, currency)}</Text>
@@ -221,6 +228,12 @@ const itemTitle: React.CSSProperties = {
 const itemMeta: React.CSSProperties = {
   color: "#999", fontSize: "10px", fontWeight: "700",
   textTransform: "uppercase", letterSpacing: "1px", margin: "0",
+};
+const preorderBadge: React.CSSProperties = {
+  color: "#B45309", fontSize: "9px", fontWeight: "900",
+  textTransform: "uppercase", letterSpacing: "1px", margin: "4px 0 0",
+  backgroundColor: "#FEF3C7", padding: "4px 8px", borderRadius: "4px",
+  display: "inline-block",
 };
 const itemPrice: React.CSSProperties = {
   color: "#000", fontSize: "14px", fontWeight: "900", margin: "0",

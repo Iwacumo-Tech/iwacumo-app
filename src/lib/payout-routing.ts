@@ -194,13 +194,19 @@ export function buildPaymentAccountReadiness(
 }
 
 export function buildOrderPayoutRoutingSnapshot(
-  publisherWhiteLabel: boolean,
+  params: {
+    publisherWhiteLabel: boolean;
+    publisherSlug?: string | null;
+  },
 ): OrderPayoutRoutingSnapshot {
+  const isPlatformPublisher = params.publisherSlug === "iwacumo";
+  const authorDirectSettlement = params.publisherWhiteLabel || isPlatformPublisher;
+
   return {
-    publisher_white_label: publisherWhiteLabel,
+    publisher_white_label: params.publisherWhiteLabel,
     publisher_share_payout_owner: "publisher",
-    author_share_payout_owner: publisherWhiteLabel ? "author" : "publisher",
-    routing_policy: publisherWhiteLabel
+    author_share_payout_owner: authorDirectSettlement ? "author" : "publisher",
+    routing_policy: authorDirectSettlement
       ? "white_label_split"
       : "publisher_holds_author_share",
   };
@@ -209,9 +215,15 @@ export function buildOrderPayoutRoutingSnapshot(
 export function resolveOrderPayoutRoutingSnapshot(
   snapshot: Partial<OrderPayoutRoutingSnapshot> | null | undefined,
   fallbackPublisherWhiteLabel = false,
+  publisherSlug?: string | null,
 ): OrderPayoutRoutingSnapshot {
+  const isPlatformPublisher = publisherSlug === "iwacumo";
+
   if (!snapshot) {
-    return buildOrderPayoutRoutingSnapshot(fallbackPublisherWhiteLabel);
+    return buildOrderPayoutRoutingSnapshot({
+      publisherWhiteLabel: fallbackPublisherWhiteLabel,
+      publisherSlug,
+    });
   }
 
   const publisherWhiteLabel =
@@ -219,7 +231,7 @@ export function resolveOrderPayoutRoutingSnapshot(
       ? snapshot.publisher_white_label
       : fallbackPublisherWhiteLabel;
 
-  return {
+  const result: OrderPayoutRoutingSnapshot = {
     publisher_white_label: publisherWhiteLabel,
     publisher_share_payout_owner:
       snapshot.publisher_share_payout_owner === "publisher"
@@ -238,6 +250,14 @@ export function resolveOrderPayoutRoutingSnapshot(
           ? "white_label_split"
           : "publisher_holds_author_share",
   };
+
+  // Override for iwacumo platform publisher: always send author earnings directly to author
+  if (isPlatformPublisher) {
+    result.author_share_payout_owner = "author";
+    result.routing_policy = "white_label_split";
+  }
+
+  return result;
 }
 
 export function buildPaystackSettlementPlan(params: {
@@ -255,7 +275,7 @@ export function buildPaystackSettlementPlan(params: {
   } | null;
   payoutRouting: OrderPayoutRoutingSnapshot;
   lineItems: SettlementLineItem[];
-}): PaystackSettlementPlan {
+}): PaystackSettlementPlan | null {
   if ((params.currency || "").toUpperCase() !== "NGN") {
     throw new Error("Paystack payout splitting is currently available only for NGN orders.");
   }
@@ -263,9 +283,8 @@ export function buildPaystackSettlementPlan(params: {
   const publisher = params.publisher;
   const publisherSubaccountCode = publisher?.subaccount_code?.trim() || null;
 
-  if (!publisherSubaccountCode) {
-    throw new Error("The publisher payout account is not fully ready for direct settlement.");
-  }
+  // Allow null publisher subaccount for platform publisher (iwacumo).
+  // Publisher earnings should be 0 for platform publisher orders.
 
   let platformAmountBase = 0;
   let publisherAmountBase = 0;
@@ -322,13 +341,20 @@ export function buildPaystackSettlementPlan(params: {
   platformAmountBase += params.shippingAmount || 0;
   publisherAmountBase += (params.taxAmount || 0) - (params.discountAmount || 0);
 
+  // If publisher has no subaccount (platform publisher like iwacumo),
+  // add publisher earnings to platform amount instead of creating a recipient
+  if (!publisherSubaccountCode && publisherAmountBase > 0) {
+    platformAmountBase += publisherAmountBase;
+    publisherAmountBase = 0;
+  }
+
   const totalAmountMinorUnit = toMinorUnit(params.totalAmount);
   const platformAmountMinorUnit = toMinorUnit(platformAmountBase);
   let publisherAmountMinorUnit = toMinorUnit(publisherAmountBase);
 
   const recipients: PaystackSettlementRecipient[] = [];
 
-  if (publisherAmountMinorUnit > 0) {
+  if (publisherAmountMinorUnit > 0 && publisherSubaccountCode) {
     recipients.push({
       entity_type: "publisher",
       entity_id: publisher?.id ?? null,
@@ -354,7 +380,8 @@ export function buildPaystackSettlementPlan(params: {
   const deltaMinorUnit = expectedRecipientMinorUnit - allocatedRecipientMinorUnit;
 
   if (!recipients.length) {
-    throw new Error("No payout recipient is available for this transaction settlement.");
+    // No valid recipients — return null to skip settlement split
+    return null;
   }
 
   if (deltaMinorUnit !== 0) {
@@ -389,7 +416,7 @@ export function buildPaystackSettlementPlan(params: {
       publisher_amount_base: publisherAmountBase,
       publisher_amount_minor_unit: recipients[0]?.amount_minor_unit ?? 0,
       recipients,
-      subaccount: publisherSubaccountCode,
+      subaccount: publisherSubaccountCode ?? undefined,
       transaction_charge: platformAmountMinorUnit,
       bearer: "account",
     };
@@ -451,9 +478,8 @@ export function buildFlutterwaveSettlementPlan(params: {
   const publisher = params.publisher;
   const publisherSubaccountId = publisher?.flw_subaccount_id?.trim() || null;
 
-  if (!publisherSubaccountId) {
-    throw new Error("The Flutterwave publisher payout account is not fully ready.");
-  }
+  // Allow null publisher subaccount for platform publisher (iwacumo).
+  // Publisher earnings should be 0 for platform publisher orders.
 
   const totalAmount = params.totalAmount > 0 ? params.totalAmount : params.subtotalAmount;
   const subaccounts: Array<{ id: string; transaction_split_ratio: number }> = [];
@@ -462,7 +488,7 @@ export function buildFlutterwaveSettlementPlan(params: {
     const publisherEarnings = item.publisher_earnings || 0;
     const authorEarnings = item.author_earnings || 0;
 
-    if (publisherEarnings > 0 && totalAmount > 0) {
+    if (publisherEarnings > 0 && totalAmount > 0 && publisherSubaccountId) {
       subaccounts.push({
         id: publisherSubaccountId,
         transaction_split_ratio: publisherEarnings / totalAmount,
