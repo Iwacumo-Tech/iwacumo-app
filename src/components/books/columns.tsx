@@ -149,6 +149,10 @@ function DeliveryInfoDialog({ book, open, onClose }: { book: any; open: boolean;
 
 function ReaderBookAction({ book }: { book: any }) {
   const [dialogOpen, setDialogOpen] = React.useState(false);
+  const isPreorderActive = book.preorder_enabled && book.publication_date && new Date(book.publication_date) > new Date();
+  const releaseDate = isPreorderActive && book.publication_date
+    ? new Date(book.publication_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+    : null;
 
   if (book._isPhysical) {
     return (
@@ -161,6 +165,15 @@ function ReaderBookAction({ book }: { book: any }) {
         </Button>
         <DeliveryInfoDialog book={book} open={dialogOpen} onClose={() => setDialogOpen(false)} />
       </>
+    );
+  }
+
+  // ─ Preorder: show available date instead of Read Now button ──────────
+  if (isPreorderActive) {
+    return (
+      <div className="text-[10px] font-black uppercase tracking-widest text-amber-700 bg-amber-50 border border-amber-300 px-3 py-2 rounded">
+        Available {releaseDate}
+      </div>
     );
   }
 
@@ -498,27 +511,32 @@ export const readerBookColumns: ColumnDef<any>[] = [
           <div className="relative w-14 h-20 border-2 border-black bg-white shadow-[4px_4px_0px_rgba(0,0,0,1)] shrink-0">
             <Image src={book.book_cover || "/bookcover.png"} alt="Cover" fill className="object-cover" />
           </div>
-          <div className="space-y-1.5">
-            <p className="font-black uppercase italic text-base tracking-tighter leading-none">{book.title}</p>
-            <div className="flex items-center gap-1.5">
-              {isPhysical
-                ? <Truck size={10} className="text-accent" />
-                : <Download size={10} className="text-accent" />
-              }
-              <span className="text-[10px] font-black uppercase tracking-widest opacity-50">
-                {book._format === "hardcover"
-                  ? "Hardcover"
-                  : book._format === "paperback"
-                  ? "Paperback"
-                  : "E-Book"
+            <div className="space-y-1.5">
+              <p className="font-black uppercase italic text-base tracking-tighter leading-none">{book.title}</p>
+              <div className="flex items-center gap-1.5">
+                {isPhysical
+                  ? <Truck size={10} className="text-accent" />
+                  : <Download size={10} className="text-accent" />
                 }
-                {book._variantSize ? ` · ${book._variantSize}` : ""}
-                {/* Show qty if > 1 (e.g. "Qty 2") */}
-                {book._quantity > 1 ? ` · Qty ${book._quantity}` : ""}
-              </span>
+                <span className="text-[10px] font-black uppercase tracking-widest opacity-50">
+                  {book._format === "hardcover"
+                    ? "Hardcover"
+                    : book._format === "paperback"
+                    ? "Paperback"
+                    : "E-Book"
+                  }
+                  {book._variantSize ? ` · ${book._variantSize}` : ""}
+                  {/* Show qty if > 1 (e.g. "Qty 2") */}
+                  {book._quantity > 1 ? ` · Qty ${book._quantity}` : ""}
+                </span>
+              </div>
+              {book.preorder_enabled && book.publication_date && new Date(book.publication_date) > new Date() && book.publication_date && (
+                <span className="text-[9px] font-black uppercase tracking-widest text-amber-700 bg-amber-50 border border-amber-300 px-1.5 py-0.5 rounded">
+                  Available {new Date(book.publication_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                </span>
+              )}
+              {isPhysical && <FulfillmentBadge status={book._fulfillmentStatus} />}
             </div>
-            {isPhysical && <FulfillmentBadge status={book._fulfillmentStatus} />}
-          </div>
         </div>
       );
     },

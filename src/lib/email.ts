@@ -171,7 +171,7 @@ interface OrderConfirmationParams {
   firstName:    string;
   orderNumber:  string;
   orderDate:    Date;
-  items: Array<{ title: string; type: string; quantity: number; price: number }>;
+  items: Array<{ title: string; type: string; quantity: number; price: number; isPreorder?: boolean; releaseDate?: string | null }>;
   subtotal:      number;
   shippingCost:  number;
   total:         number;

@@ -599,12 +599,21 @@ export const createOrderFromCart = publicProcedure
             firstName: createdOrder.customer.user.first_name,
             orderNumber: createdOrder.order_number,
             orderDate: createdOrder.created_at,
-            items: createdOrder.line_items.map((item) => ({
-              title: item.book_variant.book?.title ?? "Book",
-              type: item.book_variant.format,
-              quantity: item.quantity,
-              price: item.unit_price,
-            })),
+            items: createdOrder.line_items.map((item) => {
+              const book = item.book_variant.book;
+              const isPreorder = !!(book?.preorder_enabled && book.publication_date && new Date(book.publication_date) > new Date());
+              const releaseDate = isPreorder && book?.publication_date
+                ? new Date(book.publication_date).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })
+                : null;
+              return {
+                title: book?.title ?? "Book",
+                type: item.book_variant.format,
+                quantity: item.quantity,
+                price: item.unit_price,
+                isPreorder,
+                releaseDate,
+              };
+            }),
             subtotal: chargedSubtotal ?? createdOrder.subtotal_amount,
             shippingCost: chargedShipping ?? createdOrder.shipping_amount,
             total: chargedTotal ?? createdOrder.total_amount,
