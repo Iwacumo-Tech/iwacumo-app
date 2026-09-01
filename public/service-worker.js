@@ -42,15 +42,15 @@ registerRoute(
   })
 );
 
-// Cache tRPC API calls - Network First
+// Cache tRPC API calls - Network First with longer cache for library data
 registerRoute(
   ({ url }) => url.pathname.startsWith('/api/trpc'),
   new NetworkFirst({
     cacheName: 'api-cache',
     plugins: [
       new ExpirationPlugin({
-        maxEntries: 50,
-        maxAgeSeconds: 24 * 60 * 60, // 1 day
+        maxEntries: 100,
+        maxAgeSeconds: 7 * 24 * 60 * 60, // 7 days for better offline support
       }),
     ],
   })
@@ -73,16 +73,16 @@ registerRoute(
   })
 );
 
-// Handle offline fallback for app routes
+// Handle offline fallback for app routes - Cache First for app shell
 registerRoute(
   ({ request, url }) =>
     request.mode === 'navigate' && url.pathname.startsWith('/app'),
-  new NetworkFirst({
-    cacheName: 'pages',
+  new CacheFirst({
+    cacheName: 'app-shell',
     plugins: [
       new ExpirationPlugin({
         maxEntries: 50,
-        maxAgeSeconds: 24 * 60 * 60, // 1 day
+        maxAgeSeconds: 30 * 24 * 60 * 60, // 30 days
       }),
     ],
   })

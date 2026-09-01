@@ -78,6 +78,9 @@ const Reader: React.FC<ReaderProps> = ({ bookId, initialChapterId }) => {
     checkOfflineAvailability();
   }, [bookId]);
 
+  // Show offline error if book not downloaded and user is offline
+  const showOfflineError = isOffline && !isBookAvailableOffline;
+
   // Listen for online/offline events
   useEffect(() => {
     const handleOnline = () => setIsOffline(false);
@@ -443,6 +446,21 @@ const Reader: React.FC<ReaderProps> = ({ bookId, initialChapterId }) => {
       <div className="p-8 text-center border rounded-lg bg-destructive/10">
         <p className="text-destructive font-medium">{error.message}</p>
         <Button className="mt-4" onClick={() => window.location.href = `/shop/${bookId}`}>View Book Details</Button>
+      </div>
+    );
+  }
+
+  if (showOfflineError) {
+    return (
+      <div className="p-8 text-center border rounded-lg bg-amber-50">
+        <WifiOff className="mx-auto h-12 w-12 text-amber-600 mb-4" />
+        <h3 className="text-lg font-bold mb-2">Book Not Available Offline</h3>
+        <p className="text-sm text-gray-600 mb-4">
+          This book hasn't been downloaded for offline reading. Connect to the internet or download the book first.
+        </p>
+        <Button onClick={() => window.location.href = `/app/books`}>
+          Back to Library
+        </Button>
       </div>
     );
   }

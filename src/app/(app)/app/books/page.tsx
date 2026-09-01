@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { staffBookColumns, readerBookColumns } from "@/components/books/columns";
 import { DataTable } from "@/components/table/data-table";
 import { useSession } from "next-auth/react";
-import { Plus, Users, X, ChevronDown, Loader2, RefreshCcw, Download, Cloud, CheckCircle2 } from "lucide-react";
+import { Plus, Users, X, ChevronDown, Loader2, RefreshCcw, Download, Cloud, CheckCircle2, WifiOff } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
 import {
   DropdownMenu,
@@ -55,7 +55,7 @@ export default function BooksPage() {
       return;
     }
 
-    const booksToDownload = (purchasedBooks ?? []).slice(0, 10 - downloadedBookCount);
+    const booksToDownload = (effectivePurchasedBooks ?? []).slice(0, 10 - downloadedBookCount);
     
     for (const book of booksToDownload) {
       try {
@@ -87,15 +87,42 @@ export default function BooksPage() {
     setDownloadedBookCount(newCount);
   };
 
+  // ── Offline state ─────────────────────────────────────────────
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [cachedLibraryData, setCachedLibraryData] = useState<any[] | null>(null);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    // Load cached library data on mount
+    const loadCachedData = async () => {
+      if (isCustomer && !isStaff && userId) {
+        const { getCachedLibraryData } = await import('@/lib/offline-manager');
+        const cached = await getCachedLibraryData(userId);
+        setCachedLibraryData(cached);
+      }
+    };
+    loadCachedData();
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [isCustomer, isStaff, userId]);
+
   // ── Data fetching ─────────────────────────────────────────────
   const { data: allBooks } = trpc.getAllBooks.useQuery(
     undefined,
-    { enabled: activeProfile === "staff" && isSuperAdmin }
+    { enabled: activeProfile === "staff" && isSuperAdmin && !isOffline }
   );
 
   const { data: authorBooks } = trpc.getBookByAuthor.useQuery(
     { id: userId },
-    { enabled: isAuthor || isPublisher }
+    { enabled: (isAuthor || isPublisher) && !isOffline }
   );
 
   const {
@@ -105,8 +132,23 @@ export default function BooksPage() {
     refetch: refetchPurchasedBooks,
   } = trpc.getPurchasedBooksByCustomer.useQuery(
     { id: userId },
-    { enabled: !!isCustomer && !isStaff, refetchOnMount: "always" }
+    {
+      enabled: !!isCustomer && !isStaff && !isOffline,
+      refetchOnMount: "always",
+    }
   );
+
+  // Cache library data when successfully fetched
+  useEffect(() => {
+    if (purchasedBooks && userId && !isOffline) {
+      import('@/lib/offline-manager').then(({ cacheLibraryData }) => {
+        cacheLibraryData(userId, purchasedBooks);
+      });
+    }
+  }, [purchasedBooks, userId, isOffline]);
+
+  // Use cached data when offline
+  const effectivePurchasedBooks = isOffline && !purchasedBooks ? cachedLibraryData : purchasedBooks;
 
   // Fetch authors for the filter dropdown (publisher/admin only)
   const { data: authorsForFilter } = trpc.getAuthorsByUser.useQuery(
@@ -119,7 +161,7 @@ export default function BooksPage() {
     ? (allBooks    ?? [])
     : (isAuthor || isPublisher)
     ? (authorBooks ?? [])
-    : (purchasedBooks ?? []);
+    : (effectivePurchasedBooks ?? []);
 
   // ── Apply author filter ───────────────────────────────────────
   // Filters by book.author_id when a specific author is selected.
@@ -147,8 +189,9 @@ export default function BooksPage() {
   // ── Column selection ──────────────────────────────────────────
   const columns = isStaff ? staffBookColumns : readerBookColumns;
   const isReaderLibrary = isCustomer && !isStaff;
-  const isLibraryLoading = isReaderLibrary && purchasedBooksLoading;
-  const isLibraryRefreshing = isReaderLibrary && purchasedBooksFetching && !purchasedBooksLoading;
+  const isLibraryLoading = isReaderLibrary && purchasedBooksLoading && !isOffline;
+  const isLibraryRefreshing = isReaderLibrary && purchasedBooksFetching && !purchasedBooksLoading && !isOffline;
+  const isOfflineWithNoData = isOffline && !effectivePurchasedBooks;
 
   // ── Staff total value ─────────────────────────────────────────
   const staffTotalValue = isStaff
@@ -321,11 +364,17 @@ export default function BooksPage() {
           <div className="flex items-center gap-3">
             {isLibraryLoading || isLibraryRefreshing ? (
               <Loader2 size={16} className="animate-spin" />
+            ) : isOffline ? (
+              <WifiOff size={16} className="text-amber-600" />
             ) : (
               <div className="h-2.5 w-2.5 bg-accent border border-black shrink-0" />
             )}
             <p className="text-[10px] font-black uppercase tracking-widest text-black/60">
-              {isLibraryLoading
+              {isOffline
+                ? isOfflineWithNoData
+                  ? "You're offline. No cached library data available."
+                  : "You're offline. Showing cached library data."
+                : isLibraryLoading
                 ? "Loading your purchased books..."
                 : isLibraryRefreshing
                 ? "Refreshing your library..."
@@ -333,7 +382,7 @@ export default function BooksPage() {
             </p>
           </div>
 
-          {!isLibraryLoading && displayData.length === 0 && (
+          {!isLibraryLoading && !isOffline && displayData.length === 0 && (
             <Button
               type="button"
               variant="outline"
@@ -360,6 +409,18 @@ export default function BooksPage() {
               <p className="text-sm font-black uppercase tracking-widest">Loading Library</p>
               <p className="mt-2 text-xs font-bold text-black/60">
                 Your books should appear here as soon as the purchase records finish loading.
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : isOfflineWithNoData ? (
+        <div className="bg-white border-4 border-black gumroad-shadow p-10 sm:p-14">
+          <div className="flex flex-col items-center justify-center gap-4 text-center">
+            <WifiOff size={28} className="text-amber-600" />
+            <div>
+              <p className="text-sm font-black uppercase tracking-widest">Offline & No Cached Data</p>
+              <p className="mt-2 text-xs font-bold text-black/60">
+                You're offline and no library data is cached. Connect to the internet to view your books.
               </p>
             </div>
           </div>

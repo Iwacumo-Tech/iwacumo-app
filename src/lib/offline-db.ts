@@ -61,6 +61,14 @@ export interface OfflineDB extends DBSchema {
       created_at: string;
     };
   };
+  library_cache: {
+    key: string;
+    value: {
+      user_id: string;
+      books: any[];
+      cached_at: string;
+    };
+  };
 }
 
 const DB_NAME = 'iwacumo-offline';
@@ -98,6 +106,11 @@ export async function getDB(): Promise<IDBPDatabase<OfflineDB>> {
       // Encryption keys store
       if (!db.objectStoreNames.contains('encryption_keys')) {
         db.createObjectStore('encryption_keys', { keyPath: 'device_id' });
+      }
+
+      // Library cache store
+      if (!db.objectStoreNames.contains('library_cache')) {
+        db.createObjectStore('library_cache', { keyPath: 'user_id' });
       }
     },
   });

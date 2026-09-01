@@ -247,4 +247,30 @@ export async function clearAllOfflineData(): Promise<void> {
   await db.clear('chapters');
   await db.clear('progress');
   await db.clear('sync_queue');
+  await db.clear('library_cache');
+}
+
+// Cache library data (purchased books list)
+export async function cacheLibraryData(userId: string, books: any[]): Promise<void> {
+  const db = await getDB();
+  await db.put('library_cache', {
+    user_id: userId,
+    books,
+    cached_at: new Date().toISOString(),
+  });
+}
+
+// Get cached library data
+export async function getCachedLibraryData(userId: string): Promise<any[] | null> {
+  const db = await getDB();
+  const cached = await db.get('library_cache', userId);
+  return cached?.books || null;
+}
+
+// Get cache age in milliseconds
+export async function getLibraryCacheAge(userId: string): Promise<number | null> {
+  const db = await getDB();
+  const cached = await db.get('library_cache', userId);
+  if (!cached) return null;
+  return Date.now() - new Date(cached.cached_at).getTime();
 }
