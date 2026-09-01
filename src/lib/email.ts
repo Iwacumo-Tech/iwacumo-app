@@ -10,6 +10,8 @@ import {
   BankAccountConnectedTemplate,
   KycApprovedTemplate,
   KycRejectedTemplate,
+  PreorderReminderTemplate,
+  PreorderAvailableTemplate,
 } from "@/emails";
 
 if (!process.env.RESEND_API_KEY) {
@@ -333,5 +335,66 @@ export async function sendAuthorKycRejectedEmail({
         <p>Please update and resubmit your documents.</p>
       </div>
     `,
+  });
+}
+
+// ─── Preorder reminder (day before release) ───────────────────────────────────
+
+export async function sendPreorderReminderEmail({
+  to,
+  firstName,
+  bookTitle,
+  bookCoverUrl,
+  releaseDate,
+  bookId,
+}: {
+  to: string;
+  firstName: string;
+  bookTitle: string;
+  bookCoverUrl: string | null;
+  releaseDate: Date;
+  bookId: string;
+}) {
+  const bookUrl = `${APP_URL}/book/${bookId}`;
+  return resend.emails.send({
+    from: FROM,
+    to,
+    subject: `Your pre-ordered book arrives tomorrow: ${bookTitle}`,
+    react: PreorderReminderTemplate({
+      firstName,
+      bookTitle,
+      bookCoverUrl,
+      releaseDate,
+      bookUrl,
+    }),
+  });
+}
+
+// ─── Preorder available (release day) ─────────────────────────────────────────
+
+export async function sendPreorderAvailableEmail({
+  to,
+  firstName,
+  bookTitle,
+  bookCoverUrl,
+  bookId,
+}: {
+  to: string;
+  firstName: string;
+  bookTitle: string;
+  bookCoverUrl: string | null;
+  bookId: string;
+}) {
+  const bookUrl = `${APP_URL}/book/${bookId}`;
+  return resend.emails.send({
+    from: FROM,
+    to,
+    subject: `Your pre-ordered book is now available: ${bookTitle}`,
+    react: PreorderAvailableTemplate({
+      firstName,
+      bookTitle,
+      bookCoverUrl,
+      bookUrl,
+    }),
   });
 }

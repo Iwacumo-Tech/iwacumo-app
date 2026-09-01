@@ -19,7 +19,7 @@ import { send } from "@vercel/queue";
 import { generateObject } from "ai";
 import { getAIChapterProvider, getAIModel } from "@/lib/ai";
 
-import { sendBookApprovedEmail, sendBookDeniedEmail, sendBookIssueReportEmail } from "@/lib/email";
+import { sendBookApprovedEmail, sendBookDeniedEmail, sendBookIssueReportEmail, sendPreorderReminderEmail, sendPreorderAvailableEmail } from "@/lib/email";
 import { resolveBookCreationPayoutStatus } from "@/server/module/payment-accounts";
 
 import { checkIsSuperAdmin, resolveUserContext } from "@/lib/is-super-admin";
@@ -2115,4 +2115,111 @@ export const updateBookIssueReportStatus = publicProcedure
         reviewer_notes: input.reviewer_notes ?? null,
       },
     });
+  });
+
+export const sendPreorderNotifications = publicProcedure
+  .input(z.object({
+    bookId: z.string().optional(),
+    type: z.enum(["reminder", "available"]),
+  }))
+  .mutation(async ({ input }) => {
+    const session = await auth();
+    const isSuperAdmin = session?.user?.id ? await checkIsSuperAdmin(session.user.id) : false;
+
+    if (!isSuperAdmin) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "Only super admins can trigger preorder notifications." });
+    }
+
+    const where: any = {
+      preorder_enabled: true,
+      published: true,
+      deleted_at: null,
+    };
+
+    if (input.bookId) {
+      where.id = input.bookId;
+    }
+
+    if (input.type === "reminder") {
+      where.preorder_reminder_sent = false;
+    } else {
+      where.preorder_available_sent = false;
+    }
+
+    const booksToNotify = await prisma.book.findMany({
+      where,
+      include: {
+        variants: {
+          include: {
+            order_lineitems: {
+              where: { is_preorder: true },
+              include: {
+                order: {
+                  include: {
+                    customer: {
+                      include: {
+                        user: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    let emailsSent = 0;
+
+    for (const book of booksToNotify) {
+      const customerMap = new Map<string, { email: string; firstName: string }>();
+
+      for (const variant of book.variants) {
+        for (const lineItem of variant.order_lineitems) {
+          const customer = lineItem.order?.customer;
+          if (customer?.user?.email && !customerMap.has(customer.user.email)) {
+            customerMap.set(customer.user.email, {
+              email: customer.user.email,
+              firstName: customer.user.first_name || customer.user.email.split("@")[0] || "Customer",
+            });
+          }
+        }
+      }
+
+      for (const [, customer] of customerMap) {
+        try {
+          if (input.type === "reminder") {
+            await sendPreorderReminderEmail({
+              to: customer.email,
+              firstName: customer.firstName,
+              bookTitle: book.title,
+              bookCoverUrl: book.book_cover,
+              releaseDate: book.publication_date!,
+              bookId: book.id,
+            });
+          } else {
+            await sendPreorderAvailableEmail({
+              to: customer.email,
+              firstName: customer.firstName,
+              bookTitle: book.title,
+              bookCoverUrl: book.book_cover,
+              bookId: book.id,
+            });
+          }
+          emailsSent++;
+        } catch (error) {
+          console.error(`Failed to send ${input.type} notification to ${customer.email}:`, error);
+        }
+      }
+
+      await prisma.book.update({
+        where: { id: book.id },
+        data: input.type === "reminder"
+          ? { preorder_reminder_sent: true }
+          : { preorder_available_sent: true },
+      });
+    }
+
+    return { booksNotified: booksToNotify.length, emailsSent };
   });

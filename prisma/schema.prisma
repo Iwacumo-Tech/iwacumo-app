@@ -250,6 +250,8 @@ model Book {
   book_cover        String?
   published         Boolean       @default(false)
   preorder_enabled  Boolean       @default(false)
+  preorder_reminder_sent      Boolean  @default(false)
+  preorder_available_sent     Boolean  @default(false)
   book_cover2       String?
   book_cover3       String?
   book_cover4       String?
