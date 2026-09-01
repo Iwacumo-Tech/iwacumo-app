@@ -7,6 +7,7 @@ import { SessionProvider } from "next-auth/react";
 import CartDrawer from "@/components/shared/CartDrawer";
 import { PublicTranslationProvider } from "@/components/shared/translation-provider";
 import { Analytics } from "@vercel/analytics/next";
+import BeforeInstallPrompt from "@/components/shared/BeforeInstallPrompt";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -50,6 +51,7 @@ export default function RootLayout ({ children }: Readonly<{
               {children}
               <Toaster />
               <CartDrawer />
+              <BeforeInstallPrompt />
             </TRPCProvider>
           </SessionProvider>
         </PublicTranslationProvider>

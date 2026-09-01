@@ -6,8 +6,8 @@ import { Button } from "@/components/ui/button";
 import { staffBookColumns, readerBookColumns } from "@/components/books/columns";
 import { DataTable } from "@/components/table/data-table";
 import { useSession } from "next-auth/react";
-import { Plus, Users, X, ChevronDown, Loader2, RefreshCcw } from "lucide-react";
-import { useState, useMemo } from "react";
+import { Plus, Users, X, ChevronDown, Loader2, RefreshCcw, Download, Cloud, CheckCircle2 } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,6 +16,8 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import { getDownloadedBookCount, getDownloadedBooks, downloadBook } from "@/lib/offline-manager";
+import StorageLimitModal from "@/components/shared/StorageLimitModal";
 
 export default function BooksPage() {
   const { data: session } = useSession();
@@ -33,6 +35,57 @@ export default function BooksPage() {
   // ── Author filter state (publisher + super-admin only) ────────
   const [selectedAuthorId, setSelectedAuthorId] = useState<string | null>(null);
   const canFilterByAuthor = isSuperAdmin || isPublisher;
+
+  // ── Offline storage state ─────────────────────────────────────
+  const [downloadedBookCount, setDownloadedBookCount] = useState(0);
+  const [showStorageLimitModal, setShowStorageLimitModal] = useState(false);
+  const [downloadingBookId, setDownloadingBookId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadDownloadCount = async () => {
+      const count = await getDownloadedBookCount();
+      setDownloadedBookCount(count);
+    };
+    loadDownloadCount();
+  }, []);
+
+  const handleDownloadAll = async () => {
+    if (downloadedBookCount >= 10) {
+      setShowStorageLimitModal(true);
+      return;
+    }
+
+    const booksToDownload = (purchasedBooks ?? []).slice(0, 10 - downloadedBookCount);
+    
+    for (const book of booksToDownload) {
+      try {
+        setDownloadingBookId(book.id);
+        
+        // Use the already-loaded book data from purchasedBooks
+        await downloadBook(
+          book.id,
+          async () => book,
+          async () => book.chapters || [],
+          async (bid, cid) => {
+            // Fetch each chapter content via fetch API
+            const chapterResult = await fetch(`/api/trpc/getChapterContent?input=${encodeURIComponent(JSON.stringify({ bookId: bid, chapterId: cid }))}`);
+            const data = await chapterResult.json();
+            return data.result?.data?.json || { content: '', title: '', chapter_number: 0, section_type: 'chapter' };
+          }
+        );
+      } catch (error: any) {
+        console.error(`Failed to download ${book.title}:`, error);
+        if (error.message?.includes('Storage limit')) {
+          setShowStorageLimitModal(true);
+          break;
+        }
+      }
+    }
+    
+    setDownloadingBookId(null);
+    const newCount = await getDownloadedBookCount();
+    setDownloadedBookCount(newCount);
+  };
 
   // ── Data fetching ─────────────────────────────────────────────
   const { data: allBooks } = trpc.getAllBooks.useQuery(
@@ -142,6 +195,28 @@ export default function BooksPage() {
               )}
               Refresh Library
             </Button>
+          )}
+          {isReaderLibrary && (
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleDownloadAll}
+                disabled={!!downloadingBookId}
+                className="h-12 px-5 border-[1.5px] rounded-none border-black bg-white text-black font-black uppercase italic text-xs tracking-widest"
+              >
+                {downloadingBookId ? (
+                  <Loader2 size={14} className="mr-2 animate-spin" />
+                ) : (
+                  <Download size={14} className="mr-2" />
+                )}
+                Download All
+              </Button>
+              <div className="flex items-center gap-1 text-xs font-bold">
+                <Cloud size={14} className="text-muted-foreground" />
+                <span>{downloadedBookCount}/10</span>
+              </div>
+            </div>
           )}
           {/* ── Author filter dropdown (publisher + super-admin) ── */}
           {canFilterByAuthor && authorOptions.length > 0 && (
@@ -319,6 +394,16 @@ export default function BooksPage() {
           </span>
         </div>
       )}
+
+      {/* ── Storage Limit Modal ─────────────────────────────── */}
+      <StorageLimitModal
+        open={showStorageLimitModal}
+        onClose={() => setShowStorageLimitModal(false)}
+        onSpaceFreed={async () => {
+          const newCount = await getDownloadedBookCount();
+          setDownloadedBookCount(newCount);
+        }}
+      />
     </div>
   );
 }
