@@ -53,7 +53,7 @@ export const { handlers, auth } = NextAuth({
               // Include author with publisher so we can check white_label
               author: {
                 include: {
-                  publisher: { select: { white_label: true } },
+                  publisher: { select: { white_label: true, slug: true } },
                 },
               },
             },
@@ -91,8 +91,9 @@ export const { handlers, auth } = NextAuth({
               // log in and manage their own dashboard.
               if (user.author && user.author.publisher_id) {
                 const isWhiteLabel = user.author.publisher?.white_label ?? false;
-                console.log(`[AUTH] Author check: publisher_id=${user.author.publisher_id}, white_label=${isWhiteLabel}`);
-                if (!isWhiteLabel) {
+                const isPlatformPublisher = user.author.publisher?.slug === "iwacumo";
+                console.log(`[AUTH] Author check: publisher_id=${user.author.publisher_id}, white_label=${isWhiteLabel}, slug=${user.author.publisher?.slug}`);
+                if (!isWhiteLabel && !isPlatformPublisher) {
                   throw new Error("AUTHOR_NOT_PERMITTED");
                 }
               }
@@ -184,7 +185,7 @@ export const { handlers, auth } = NextAuth({
         prisma.user.findUnique({
           where:   { id: token.sub },
           include: {
-            author: { include: { publisher: { select: { white_label: true } } } },
+            author: { include: { publisher: { select: { white_label: true, slug: true } } } },
             publisher: true,
             customers: true,
           },
