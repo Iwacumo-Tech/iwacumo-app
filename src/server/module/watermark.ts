@@ -107,11 +107,11 @@ export const generateWatermarkedEbook = publicProcedure
         page.drawText(watermarkText, {
           x: pWidth / 4,
           y: page.getSize().height / 2,
-          size: 40,
+          size: 20,
           font: helveticaFont,
           color: rgb(0.9, 0.9, 0.9),
           rotate: { type: 'degrees', angle: 45 } as any,
-          opacity: 0.3,
+          opacity: 0.1,
         });
       }
 

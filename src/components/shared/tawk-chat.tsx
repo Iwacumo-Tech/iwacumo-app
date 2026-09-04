@@ -13,6 +13,8 @@ declare global {
       showWidget?: () => void;
       shutdown?: () => void;
       onLoad?: () => void;
+      minimize?: () => void;
+      maximize?: () => void;
     };
     Tawk_LoadStart?: Date;
     __IWACUMO_TAWK_LOADED__?: boolean;
@@ -64,6 +66,10 @@ export function TawkChat() {
       onLoad={() => {
         if (typeof window === "undefined") return;
         window.__IWACUMO_TAWK_LOADED__ = true;
+        // Minimize widget to logo-only after a short delay to prevent greeting popup
+        setTimeout(() => {
+          window.Tawk_API?.minimize?.();
+        }, 500);
       }}
     />
   );

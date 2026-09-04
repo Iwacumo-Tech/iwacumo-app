@@ -5,7 +5,7 @@ import { trpc } from "@/app/_providers/trpc-provider";
 import { useBookStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ChevronLeft, ChevronRight, Save, Bookmark, BookmarkPlus, Type, Download, WifiOff, CheckCircle2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Save, Bookmark, BookmarkPlus, Type, Download, WifiOff, CheckCircle2, Lock } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { isBookDownloaded, getChapterContent, downloadBook, getDownloadProgress, type DownloadProgress } from "@/lib/offline-manager";
 import { syncEngine } from "@/lib/sync-engine";
@@ -19,6 +19,9 @@ import { syncEngine } from "@/lib/sync-engine";
 interface ReaderProps {
   bookId: string;
   initialChapterId?: string;
+  bookTitle?: string;
+  isPreorder?: boolean;
+  publicationDate?: string | null;
 }
 
 interface Comment {
@@ -34,7 +37,7 @@ interface ReaderBookmark {
   createdAt: string;
 }
 
-const Reader: React.FC<ReaderProps> = ({ bookId, initialChapterId }) => {
+const Reader: React.FC<ReaderProps> = ({ bookId, initialChapterId, bookTitle, isPreorder, publicationDate }) => {
   const { content, setContent } = useBookStore();
   const { data: session } = useSession();
   
@@ -109,6 +112,37 @@ const Reader: React.FC<ReaderProps> = ({ bookId, initialChapterId }) => {
       syncEngine.registerBackgroundSync();
     }
   }, [session?.user?.id]);
+
+  // Preorder firewall - block reading if book is preorder and release date hasn't passed
+  if (isPreorder && publicationDate) {
+    const releaseDate = new Date(publicationDate).toLocaleDateString("en-GB", {
+      day: "numeric", month: "long", year: "numeric"
+    });
+    return (
+      <div className="min-h-[80vh] flex items-center justify-center p-6 bg-[#FAF9F6]">
+        <div className="max-w-md w-full bg-white border-[1.5px] border-black rounded-[var(--radius)] p-10 text-center gumroad-shadow">
+          <div className="relative w-24 h-24 mx-auto mb-8">
+            <div className="absolute inset-0 bg-accent rounded-full animate-pulse opacity-20" />
+            <div className="relative bg-white border-[1.5px] border-black rounded-full w-full h-full flex items-center justify-center">
+              <Lock className="w-10 h-10 text-black" />
+            </div>
+            <CheckCircle2 className="absolute -bottom-1 -right-1 w-8 h-8 text-green-500 bg-white rounded-full p-1 border-[1.5px] border-black" />
+          </div>
+          <h2 className="text-3xl font-black uppercase italic tracking-tighter mb-4">
+            Pre-Order<span className="text-accent">.</span>
+          </h2>
+          <div className="space-y-4 mb-10">
+            <p className="text-[11px] font-black uppercase tracking-widest text-gray-400">{bookTitle || "Book"}</p>
+            <div className="p-4 border-2 border-amber-300 bg-amber-50 rounded-lg">
+              <p className="text-[10px] font-black uppercase tracking-widest text-amber-700 mb-1">Available {releaseDate}</p>
+              <p className="text-xs text-amber-900">This book is not yet available for reading. You'll be able to access the content once the release date arrives.</p>
+            </div>
+          </div>
+          <p className="mt-6 text-[9px] font-bold uppercase opacity-30 tracking-tighter">Thank you for your pre-order.</p>
+        </div>
+      </div>
+    );
+  }
 
   // 1. Fetch Chapter List for Navigation
   const { data: chapters } = trpc.getAllChapterByBookId.useQuery(

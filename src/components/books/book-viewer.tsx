@@ -273,7 +273,13 @@ export default function ViewBookPage({ book }: BookViewerProps) {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
         >
-          <BookReader bookId={book.id} initialChapterId={currentChapter?.id} />
+          <BookReader
+            bookId={book.id}
+            initialChapterId={currentChapter?.id}
+            bookTitle={book.title}
+            isPreorder={isPreorderActive}
+            publicationDate={book.publication_date?.toISOString() || null}
+          />
         </motion.div>
       </main>
 

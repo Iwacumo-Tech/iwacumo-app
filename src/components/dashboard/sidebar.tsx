@@ -49,6 +49,15 @@ export function Sidebar({ logout, links, storeSlug, setIsOpen }: {
             className="font-black uppercase italic text-xs tracking-widest h-12"
           />
         ))}
+
+        {/* Marketplace - bold black link */}
+        <SidebarItem
+          name="Marketplace"
+          href="/shop"
+          icon={<ExternalLink className="w-4 h-4" />}
+          onClick={handleItemClick}
+          className="text-accent font-black uppercase text-xs bg-black hover:bg-accent hover:text-black border-2 border-black h-12"
+        />
       </nav>
 
       {/* ── Footer ────────────────────────────────────────────────────── */}
@@ -77,14 +86,6 @@ export function Sidebar({ logout, links, storeSlug, setIsOpen }: {
             className="text-black font-bold uppercase text-[10px] bg-accent/10 hover:bg-accent hover:text-black border-[1.5px] border-accent/40 hover:border-accent"
           />
         )}
-
-        <SidebarItem
-          name="Marketplace"
-          href="/shop"
-          icon={<ExternalLink className="w-4 h-4" />}
-          onClick={handleItemClick}
-          className="text-black opacity-60 hover:opacity-100 font-bold uppercase text-[10px]"
-        />
 
         <div className="pt-1">
           <p className="mb-2 text-[9px] font-black uppercase tracking-widest opacity-35">Language</p>
