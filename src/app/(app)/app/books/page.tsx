@@ -44,13 +44,19 @@ export default function BooksPage() {
 
   useEffect(() => {
     const loadDownloadCount = async () => {
-      const count = await getDownloadedBookCount();
-      setDownloadedBookCount(count);
+      try {
+        const count = await getDownloadedBookCount();
+        setDownloadedBookCount(count);
+      } catch {
+        // IndexedDB unavailable — offline downloads simply stay hidden
+        setDownloadedBookCount(0);
+      }
     };
     loadDownloadCount();
   }, []);
 
   const handleDownloadAll = async () => {
+    if (isOffline) return;
     if (downloadedBookCount >= 10) {
       setShowStorageLimitModal(true);
       return;
@@ -241,8 +247,9 @@ export default function BooksPage() {
                 type="button"
                 variant="outline"
                 onClick={handleDownloadAll}
-                disabled={!!downloadingBookId}
-                className="h-12 px-5 border-[1.5px] rounded-none border-black bg-white text-black font-black uppercase italic text-xs tracking-widest"
+                disabled={!!downloadingBookId || isOffline}
+                title={isOffline ? "Connect to the internet to download books" : undefined}
+                className="h-12 px-5 border-[1.5px] rounded-none border-black bg-white text-black font-black uppercase italic text-xs tracking-widest disabled:opacity-40"
               >
                 {downloadingBookId ? (
                   <Loader2 size={14} className="mr-2 animate-spin" />

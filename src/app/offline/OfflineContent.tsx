@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import { BookOpen, RotateCw, WifiOff } from "lucide-react";
 
 export default function OfflineContent() {
@@ -31,12 +30,15 @@ export default function OfflineContent() {
         </p>
 
         <div className="mt-8 space-y-3">
-          <Link
+          {/* Plain anchor (not Next Link): guarantees a clean document
+              navigation handled by the service worker instead of an
+              RSC fetch that cannot succeed offline. */}
+          <a
             href="/app/books"
             className="flex h-14 items-center justify-center gap-2 rounded-none border-2 border-black bg-black px-8 text-sm font-black uppercase italic tracking-widest text-white hover:bg-accent hover:text-black transition-colors"
           >
             <BookOpen size={16} /> Go to Library
-          </Link>
+          </a>
           <button
             type="button"
             onClick={() => window.location.reload()}
