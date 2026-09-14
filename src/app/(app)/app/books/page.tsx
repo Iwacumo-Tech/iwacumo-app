@@ -21,6 +21,7 @@ import StorageLimitModal from "@/components/shared/StorageLimitModal";
 
 export default function BooksPage() {
   const { data: session } = useSession();
+  const utils = trpc.useUtils();
   const userId    = session?.user.id as string;
   const userRoles = session?.roles || [];
   const activeProfile = session?.activeProfile;
@@ -66,12 +67,7 @@ export default function BooksPage() {
           book.id,
           async () => book,
           async () => book.chapters || [],
-          async (bid, cid) => {
-            // Fetch each chapter content via fetch API
-            const chapterResult = await fetch(`/api/trpc/getChapterContent?input=${encodeURIComponent(JSON.stringify({ bookId: bid, chapterId: cid }))}`);
-            const data = await chapterResult.json();
-            return data.result?.data?.json || { content: '', title: '', chapter_number: 0, section_type: 'chapter' };
-          }
+          (bid, cid) => utils.getChapterContent.fetch({ bookId: bid, chapterId: cid })
         );
       } catch (error: any) {
         console.error(`Failed to download ${book.title}:`, error);

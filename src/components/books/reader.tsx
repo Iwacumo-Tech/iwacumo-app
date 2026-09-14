@@ -98,20 +98,7 @@ const Reader: React.FC<ReaderProps> = ({ bookId, initialChapterId, bookTitle, is
     };
   }, []);
 
-  // Initialize sync engine
-  useEffect(() => {
-    if (session?.user?.id) {
-      syncEngine.setSyncMutation(async (payload: any) => {
-        // Use fetch to call the tRPC endpoint directly
-        await fetch('/api/trpc/saveReaderProgress', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ json: payload }),
-        });
-      });
-      syncEngine.registerBackgroundSync();
-    }
-  }, [session?.user?.id]);
+  const utils = trpc.useUtils();
 
   // Preorder firewall - block reading if book is preorder and release date hasn't passed
   if (isPreorder && publicationDate) {
@@ -162,6 +149,20 @@ const Reader: React.FC<ReaderProps> = ({ bookId, initialChapterId, bookTitle, is
   );
   
   const saveReaderProgress = trpc.saveReaderProgress.useMutation();
+
+  // Initialize sync engine with the tRPC mutation client (handles batching + SuperJSON)
+  useEffect(() => {
+    if (session?.user?.id) {
+      syncEngine.setSyncMutation(async (payload: any) => {
+        await saveReaderProgress.mutateAsync({
+          ...payload,
+          pageCount: payload.pageCount ?? 1,
+          bookmarks: payload.bookmarks ?? [],
+        });
+      });
+      syncEngine.registerBackgroundSync();
+    }
+  }, [session?.user?.id, saveReaderProgress]);
 
   // Fetch chapter content with offline fallback
   useEffect(() => {
@@ -456,14 +457,9 @@ const Reader: React.FC<ReaderProps> = ({ bookId, initialChapterId, bookTitle, is
 
       await downloadBook(
         bookId,
-        async () => ({ title: 'Unknown', book_cover: null, author: { name: 'Unknown' } }),
+        (id) => utils.getBookById.fetch({ id }),
         async () => chapters,
-        async (bid, cid) => {
-          // Fetch each chapter content - we need to use the hook result
-          const chapterResult = await fetch(`/api/trpc/getChapterContent?input=${encodeURIComponent(JSON.stringify({ bookId: bid, chapterId: cid }))}`);
-          const data = await chapterResult.json();
-          return data.result?.data?.json || { content: '', title: '', chapter_number: 0, section_type: 'chapter' };
-        },
+        (bid, cid) => utils.getChapterContent.fetch({ bookId: bid, chapterId: cid }),
         (progress) => setDownloadProgress(progress)
       );
       setIsBookAvailableOffline(true);
