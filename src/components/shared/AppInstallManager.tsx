@@ -172,7 +172,7 @@ export default function AppInstallManager() {
       () => window.location.reload(),
       { once: true }
     );
-    waiting.postMessage("SKIP_WAITING");
+    waiting.postMessage({ type: "SKIP_WAITING" });
     // Safety net: release the spinner if the reload never comes
     setTimeout(() => setUpdating(false), 10000);
   };
