@@ -8,6 +8,7 @@ import CartDrawer from "@/components/shared/CartDrawer";
 import { PublicTranslationProvider } from "@/components/shared/translation-provider";
 import { Analytics } from "@vercel/analytics/next";
 import BeforeInstallPrompt from "@/components/shared/BeforeInstallPrompt";
+import AutoDownloadManager from "@/components/shared/AutoDownloadManager";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -52,6 +53,7 @@ export default function RootLayout ({ children }: Readonly<{
               <Toaster />
               <CartDrawer />
               <BeforeInstallPrompt />
+              <AutoDownloadManager />
             </TRPCProvider>
           </SessionProvider>
         </PublicTranslationProvider>

@@ -7,7 +7,7 @@ const RESERVED_PREFIXES = [
   "checkout", "settings", "admin", "auth", "store", "book", "shop",
   "author", "sign-up", "verify-email", "forgot-password", "author-setup", "orders",
   "reset-password", "staff-setup", "_next", "static", "payment",
-  "install",
+  "install", "offline",
 ];
  
 export function middleware(request: NextRequest) {

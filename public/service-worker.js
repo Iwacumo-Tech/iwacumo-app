@@ -3,13 +3,13 @@
 
 importScripts('https://storage.googleapis.com/workbox-cdn/releases/6.5.4/workbox-sw.js');
 
-const { registerRoute } = workbox.routing;
+const { registerRoute, setCatchHandler } = workbox.routing;
 const { CacheFirst, NetworkFirst, StaleWhileRevalidate } = workbox.strategies;
 const { ExpirationPlugin } = workbox.expiration;
-const { precacheAndRoute } = workbox.precaching;
+const { precacheAndRoute, matchPrecache } = workbox.precaching;
 
-// Precache static assets
-precacheAndRoute(self.__WB_MANIFEST || []);
+// Precache static assets + the branded offline fallback page
+precacheAndRoute([...(self.__WB_MANIFEST || []), { url: "/offline", revision: "1" }]);
 
 // Cache static assets (JS, CSS, fonts) - Cache First
 registerRoute(
@@ -87,6 +87,16 @@ registerRoute(
     ],
   })
 );
+
+// Branded fallback for any navigation that fails offline —
+// the browser's own "no internet" page is never shown.
+setCatchHandler(async ({ request }) => {
+  if (request.destination === "document") {
+    const fallback = await matchPrecache("/offline");
+    if (fallback) return fallback;
+  }
+  return Response.error();
+});
 
 // Background sync for reading progress
 self.addEventListener('sync', (event) => {
