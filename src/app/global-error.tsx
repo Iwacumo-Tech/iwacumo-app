@@ -22,6 +22,18 @@ export default function GlobalError({
     window.location.href = "/offline";
   };
 
+  // Chunk-load failures mean the cached document references JS from a
+  // different deployment. Re-rendering (reset) can never fix that — only
+  // a full reload, which re-fetches a consistent document + chunks.
+  const isChunkError =
+    /Loading chunk \d+ failed/i.test(error?.message ?? "") ||
+    /ChunkLoadError/i.test(error?.message ?? "") ||
+    /Failed to fetch dynamically imported module/i.test(error?.message ?? "");
+
+  const reloadApp = () => {
+    window.location.reload();
+  };
+
   return (
     <html lang="en">
       <body>
@@ -37,8 +49,9 @@ export default function GlobalError({
               </h1>
 
               <p className="text-sm font-medium text-gray-500">
-                The app hit an unexpected error. Your downloaded books and
-                reading progress are safe.
+                {isChunkError
+                  ? "The app was updated and some files are out of sync. Reloading fetches the latest version."
+                  : "The app hit an unexpected error. Your downloaded books and reading progress are safe."}
               </p>
 
               {error?.message && (
@@ -56,10 +69,10 @@ export default function GlobalError({
               <div className="mt-8 space-y-3">
                 <button
                   type="button"
-                  onClick={() => reset()}
+                  onClick={isChunkError ? reloadApp : () => reset()}
                   className="flex h-14 w-full items-center justify-center gap-2 rounded-none border-2 border-black bg-black px-8 text-sm font-black uppercase italic tracking-widest text-white hover:bg-accent hover:text-black transition-colors"
                 >
-                  <RotateCw size={16} /> Try Again
+                  <RotateCw size={16} /> {isChunkError ? "Reload App" : "Try Again"}
                 </button>
                 <button
                   type="button"
