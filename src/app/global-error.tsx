@@ -19,7 +19,7 @@ export default function GlobalError({
   };
 
   const goOffline = () => {
-    window.location.href = "/offline";
+    window.location.href = "/offline.html";
   };
 
   // Chunk-load failures mean the cached document references JS from a

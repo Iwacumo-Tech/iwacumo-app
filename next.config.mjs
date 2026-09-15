@@ -8,7 +8,7 @@ const withPWA = withPWAInit({
   sw: "service-worker.js",
   scope: "/",
   fallbacks: {
-    document: "/offline",
+    document: "/offline.html",
   },
 });
 
