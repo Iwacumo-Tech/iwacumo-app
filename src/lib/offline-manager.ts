@@ -274,3 +274,49 @@ export async function getLibraryCacheAge(userId: string): Promise<number | null>
   if (!cached) return null;
   return Date.now() - new Date(cached.cached_at).getTime();
 }
+
+// ── Offline reader helpers ────────────────────────────────────────────────
+// These let the reader function without any network or SW api-cache luck:
+// chapter lists and book metadata live in the download store.
+
+// Chapter stubs (no encrypted content) for a downloaded book, ordered
+// the same way the server orders them (sort_order, chapter_number, created_at).
+export async function getDownloadedChapterList(bookId: string): Promise<Array<{
+  id: string;
+  title: string;
+  chapter_number: number | null;
+  section_type: string;
+}>> {
+  const db = await getDB();
+  const chapters = await db.getAllFromIndex('chapters', 'by-book', bookId);
+
+  return chapters
+    .map((c) => ({
+      id: c.chapter_id,
+      title: c.title,
+      chapter_number: c.chapter_number ?? null,
+      section_type: c.section_type ?? "chapter",
+    }))
+    .sort((a, b) => {
+      const an = a.chapter_number ?? Number.MAX_SAFE_INTEGER;
+      const bn = b.chapter_number ?? Number.MAX_SAFE_INTEGER;
+      return an - bn;
+    });
+}
+
+// Stored book metadata for a downloaded book (title, cover, author, etc.)
+export async function getDownloadedBookMeta(bookId: string) {
+  const db = await getDB();
+  const book = await db.get('books', bookId);
+  if (!book) return null;
+
+  return {
+    id: book.id,
+    title: book.title,
+    book_cover: book.cover_url,
+    author: { name: book.author_name },
+    downloaded: true,
+    total_chapters: book.total_chapters,
+    downloaded_chapters: book.downloaded_chapters,
+  };
+}

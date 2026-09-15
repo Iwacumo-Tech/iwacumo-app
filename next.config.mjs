@@ -7,8 +7,30 @@ const withPWA = withPWAInit({
   disable: process.env.NODE_ENV === "development",
   sw: "service-worker.js",
   scope: "/",
+  // Keep all default runtime caches; only override the apis rule below.
+  extendDefaultRuntimeCaching: true,
   fallbacks: {
     document: "/offline.html",
+  },
+  workboxOptions: {
+    runtimeCaching: [
+      {
+        // Same-origin API (tRPC) responses. Overrides the plugin default
+        // rule (same cacheName) which evicted at just 16 entries — far
+        // too small for a browsing session, causing intermittent
+        // offline failures when evicted responses were needed.
+        urlPattern: /\/api\//,
+        handler: "NetworkFirst",
+        options: {
+          cacheName: "apis",
+          networkTimeoutSeconds: 10,
+          expiration: {
+            maxEntries: 64,
+            maxAgeSeconds: 86400,
+          },
+        },
+      },
+    ],
   },
 });
 

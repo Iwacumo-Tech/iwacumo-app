@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChevronLeft, ChevronRight, Save, Bookmark, BookmarkPlus, Type, Download, WifiOff, CheckCircle2, Lock } from "lucide-react";
 import { useSession } from "next-auth/react";
-import { isBookDownloaded, getChapterContent, downloadBook, getDownloadProgress, type DownloadProgress } from "@/lib/offline-manager";
+import { isBookDownloaded, getChapterContent, downloadBook, getDownloadProgress, getDownloadedChapterList, type DownloadProgress } from "@/lib/offline-manager";
 import { syncEngine } from "@/lib/sync-engine";
 
 /**
@@ -69,20 +69,27 @@ const Reader: React.FC<ReaderProps> = ({ bookId, initialChapterId, bookTitle, is
   const progressStorageKey = `reader_progress_local:${bookId}`;
 
   // Check if book is available offline
+  const [availabilityChecked, setAvailabilityChecked] = useState(false);
   useEffect(() => {
     const checkOfflineAvailability = async () => {
-      const available = await isBookDownloaded(bookId);
-      setIsBookAvailableOffline(available);
-      if (available) {
-        const progress = await getDownloadProgress(bookId);
-        setDownloadProgress(progress);
+      try {
+        const available = await isBookDownloaded(bookId);
+        setIsBookAvailableOffline(available);
+        if (available) {
+          const progress = await getDownloadProgress(bookId);
+          setDownloadProgress(progress);
+        }
+      } finally {
+        setAvailabilityChecked(true);
       }
     };
     checkOfflineAvailability();
   }, [bookId]);
 
-  // Show offline error if book not downloaded and user is offline
-  const showOfflineError = isOffline && !isBookAvailableOffline;
+  // Show offline error only after the IndexedDB availability check has
+  // settled — otherwise downloaded books flash the "not available" screen
+  // on first paint before the async check completes.
+  const showOfflineError = isOffline && availabilityChecked && !isBookAvailableOffline;
 
   // Listen for online/offline events
   useEffect(() => {
@@ -132,10 +139,35 @@ const Reader: React.FC<ReaderProps> = ({ bookId, initialChapterId, bookTitle, is
   }
 
   // 1. Fetch Chapter List for Navigation
-  const { data: chapters } = trpc.getAllChapterByBookId.useQuery(
+  const { data: serverChapters } = trpc.getAllChapterByBookId.useQuery(
     { book_id: bookId },
     { enabled: !!bookId && !isOffline }
   );
+
+  // Offline chapter list: when the server list is unavailable (offline
+  // cold start, SW api-cache miss) and the book is downloaded, drive
+  // navigation from the download store. Without this the reader
+  // dead-ends — activeChapterId is never set, so content never loads
+  // even though it sits encrypted in IndexedDB.
+  const [offlineChapters, setOfflineChapters] = useState<Array<{
+    id: string;
+    title: string;
+    chapter_number: number | null;
+    section_type: string;
+  }> | null>(null);
+
+  useEffect(() => {
+    if (serverChapters || !isBookAvailableOffline) return;
+    let cancelled = false;
+    getDownloadedChapterList(bookId)
+      .then((list) => {
+        if (!cancelled && list.length > 0) setOfflineChapters(list);
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [serverChapters, isBookAvailableOffline, bookId]);
+
+  const chapters = serverChapters ?? offlineChapters;
 
   // 2. Fetch Secure Chapter Content (Phase B Requirement)
   const { data: chapterData, isLoading, error } = trpc.getChapterContent.useQuery(

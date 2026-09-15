@@ -92,6 +92,9 @@ export default function BooksPage() {
   // ── Offline state ─────────────────────────────────────────────
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [cachedLibraryData, setCachedLibraryData] = useState<any[] | null>(null);
+  // True once the IndexedDB cache read has settled (found or not) —
+  // prevents flashing the "no cached data" state before we've checked.
+  const [cacheChecked, setCacheChecked] = useState(false);
 
   useEffect(() => {
     const handleOnline = () => setIsOffline(false);
@@ -103,9 +106,18 @@ export default function BooksPage() {
     // Load cached library data on mount
     const loadCachedData = async () => {
       if (isCustomer && !isStaff && userId) {
-        const { getCachedLibraryData } = await import('@/lib/offline-manager');
-        const cached = await getCachedLibraryData(userId);
-        setCachedLibraryData(cached);
+        try {
+          const { getCachedLibraryData } = await import('@/lib/offline-manager');
+          const cached = await getCachedLibraryData(userId);
+          setCachedLibraryData(cached);
+        } catch {
+          // IndexedDB unavailable — offline library simply unavailable
+          setCachedLibraryData(null);
+        } finally {
+          setCacheChecked(true);
+        }
+      } else {
+        setCacheChecked(true);
       }
     };
     loadCachedData();
@@ -140,17 +152,34 @@ export default function BooksPage() {
     }
   );
 
-  // Cache library data when successfully fetched
+  // Cache library data when successfully fetched. The server response
+  // includes full chapter HTML per book — megabytes for a real library —
+  // which makes IndexedDB writes fail silently. Strip everything the
+  // library table doesn't render before caching.
   useEffect(() => {
     if (purchasedBooks && userId && !isOffline) {
-      import('@/lib/offline-manager').then(({ cacheLibraryData }) => {
-        cacheLibraryData(userId, purchasedBooks);
-      });
+      import('@/lib/offline-manager')
+        .then(({ cacheLibraryData }) => {
+          const slim = purchasedBooks.map((entry: any) => {
+            const { chapters, variants, issue_reports, ...bookFields } = entry ?? {};
+            return {
+              ...bookFields,
+              // Keep minimal variant info the table uses for pricing/size
+              _has_variants: Array.isArray(variants) && variants.length > 0,
+            };
+          });
+          return cacheLibraryData(userId, slim);
+        })
+        .catch(() => {
+          // Cache write failure is non-fatal — online list still renders
+        });
     }
   }, [purchasedBooks, userId, isOffline]);
 
-  // Use cached data when offline
-  const effectivePurchasedBooks = isOffline && !purchasedBooks ? cachedLibraryData : purchasedBooks;
+  // Prefer whichever data exists — never gate on the (unreliable)
+  // navigator.onLine flag. React Query retains the last successful
+  // fetch; IndexedDB covers cold starts where that cache is empty.
+  const effectivePurchasedBooks = purchasedBooks ?? cachedLibraryData;
 
   // Fetch authors for the filter dropdown (publisher/admin only)
   const { data: authorsForFilter } = trpc.getAuthorsByUser.useQuery(
@@ -191,9 +220,13 @@ export default function BooksPage() {
   // ── Column selection ──────────────────────────────────────────
   const columns = isStaff ? staffBookColumns : readerBookColumns;
   const isReaderLibrary = isCustomer && !isStaff;
-  const isLibraryLoading = isReaderLibrary && purchasedBooksLoading && !isOffline;
+  const isLibraryLoading =
+    isReaderLibrary &&
+    // Online fetch in flight, or offline before the IndexedDB cache
+    // check has settled — never flash the empty state during that check.
+    (purchasedBooksLoading || (isOffline && !cacheChecked));
   const isLibraryRefreshing = isReaderLibrary && purchasedBooksFetching && !purchasedBooksLoading && !isOffline;
-  const isOfflineWithNoData = isOffline && !effectivePurchasedBooks;
+  const isOfflineWithNoData = isOffline && cacheChecked && !effectivePurchasedBooks;
 
   // ── Staff total value ─────────────────────────────────────────
   const staffTotalValue = isStaff
