@@ -3,7 +3,6 @@ import withPWAInit from "@ducanh2912/next-pwa";
 const withPWA = withPWAInit({
   dest: "public",
   register: true,
-  skipWaiting: false,
   disable: process.env.NODE_ENV === "development",
   sw: "service-worker.js",
   scope: "/",
@@ -11,8 +10,16 @@ const withPWA = withPWAInit({
   extendDefaultRuntimeCaching: true,
   fallbacks: {
     document: "/offline.html",
+    // Failed image requests offline (icons, book covers) serve this
+    // precached placeholder instead of surfacing Response.error() in
+    // the page as "Failed to fetch" TypeErrors.
+    image: "/bookcover.png",
   },
   workboxOptions: {
+    // NOTE: skipWaiting is read from workboxOptions, not the plugin's
+    // top level. false = new service workers wait, the /install page
+    // prompts the user, and {type: "SKIP_WAITING"} activates the update.
+    skipWaiting: false,
     runtimeCaching: [
       {
         // Same-origin API (tRPC) responses. Overrides the plugin default
