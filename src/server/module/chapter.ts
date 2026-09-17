@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import { createChapterSchema, deleteChapterSchema, findChapterByIdSchema } from "@/server/dtos";
 import { publicProcedure } from "@/server/trpc";
+import { TRPCError } from "@trpc/server";
 
 function removeDocxImagePlaceholders(content: string) {
   let removed = 0;
@@ -124,6 +125,18 @@ export const removeChapterImagePlaceholders = publicProcedure
   });
 
 export const getAllChapterByBookId = publicProcedure.input(findChapterByIdSchema).query(async (opts) => {
+  const book = await prisma.book.findUnique({
+    where: { id: opts.input.book_id },
+    select: { preorder_enabled: true, publication_date: true },
+  });
+
+  if (book?.preorder_enabled && book.publication_date && new Date(book.publication_date) > new Date()) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: `This book is not yet available. Release date: ${new Date(book.publication_date).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}.`,
+    });
+  }
+
   return await prisma.chapter.findMany({
     where: {
       book_id: opts.input.book_id ?? "",

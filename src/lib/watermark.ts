@@ -36,10 +36,10 @@ export async function watermarkPdf(
     page.drawText(userEmail, {
       x: width / 6,
       y: height / 3,
-      size: 50,
+      size: 20,
       font: helveticaFont,
       color: rgb(0.8, 0.8, 0.8),
-      opacity: 0.2,
+      opacity: 0.1,
       rotate: degrees(45), 
     });
   });

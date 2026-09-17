@@ -53,6 +53,21 @@ export default function PaymentSuccessPage({ params }: { params: { orderId: stri
           </p>
         </div>
 
+        {/* ── Go to Library CTA ─────────────────────────────────────────── */}
+        <div className="bg-accent border-4 border-black p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div>
+            <p className="font-black uppercase italic text-sm">Your books are ready</p>
+            <p className="text-xs text-black/60 mt-1 font-medium">
+              Head to your library to start reading.
+            </p>
+          </div>
+          <Link href="/app/books">
+            <Button className="bg-black text-accent hover:bg-black/90 font-black uppercase italic text-xs h-12 px-6 rounded-none shrink-0 flex items-center gap-2">
+              Go to Library <ArrowRight size={14} />
+            </Button>
+          </Link>
+        </div>
+
         {/* ── Digital books ───────────────────────────────────────────── */}
         {ebookItems.length > 0 && (
           <div className="space-y-4">

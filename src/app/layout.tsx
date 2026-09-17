@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
@@ -7,12 +7,37 @@ import { SessionProvider } from "next-auth/react";
 import CartDrawer from "@/components/shared/CartDrawer";
 import { PublicTranslationProvider } from "@/components/shared/translation-provider";
 import { Analytics } from "@vercel/analytics/next";
+import BeforeInstallPrompt from "@/components/shared/BeforeInstallPrompt";
+import AutoDownloadManager from "@/components/shared/AutoDownloadManager";
 
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "Iwacumo",
-  description: "",
+  description: "Your personal library, available anywhere",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Iwacumo",
+  },
+  formatDetection: {
+    telephone: false,
+  },
+  icons: {
+    apple: [
+      { url: "/icons/v2/icon-152x152.png", sizes: "152x152" },
+      { url: "/icons/v2/icon-192x192.png", sizes: "192x192" },
+    ],
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#FFD700",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
 };
 
 export default function RootLayout ({ children }: Readonly<{
@@ -27,6 +52,8 @@ export default function RootLayout ({ children }: Readonly<{
               {children}
               <Toaster />
               <CartDrawer />
+              <BeforeInstallPrompt />
+              <AutoDownloadManager />
             </TRPCProvider>
           </SessionProvider>
         </PublicTranslationProvider>

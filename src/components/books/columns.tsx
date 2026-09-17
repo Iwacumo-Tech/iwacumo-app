@@ -306,13 +306,9 @@ function StaffBookAction({ book, meta }: { book: any; meta: any }) {
         </Link>
 
         {/* 3. Edit */}
-        <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="p-0 focus:bg-transparent">
-          <BookForm
-            action="Edit"
-            book={book}
-            trigger={<div className={menuButtonStyle}><Edit3 size={14} /> Edit Book</div>}
-          />
-        </DropdownMenuItem>
+        <Link href={`/app/books/${book.id}/edit`} className={menuButtonStyle} onClick={() => setIsMenuOpen(false)}>
+          <Edit3 size={14} /> Edit Book
+        </Link>
 
         {/* 4. Manage chapters */}
         {!!book.text_url && (

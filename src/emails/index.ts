@@ -8,3 +8,5 @@ export { FulfillmentStatusUpdatedTemplate } from "./fulfillment-status-updated";
 export { BankAccountConnectedTemplate }  from "./bank-account-connected";
 export { KycApprovedTemplate }   from "./kyc-approved";
 export { KycRejectedTemplate }   from "./kyc-rejected";
+export { PreorderReminderTemplate }      from "./preorder-reminder";
+export { PreorderAvailableTemplate }     from "./preorder-available";

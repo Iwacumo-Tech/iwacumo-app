@@ -5,8 +5,10 @@ import { trpc } from "@/app/_providers/trpc-provider";
 import { useBookStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ChevronLeft, ChevronRight, Save, Bookmark, BookmarkPlus, Type } from "lucide-react";
+import { ChevronLeft, ChevronRight, Save, Bookmark, BookmarkPlus, Type, Download, WifiOff, CheckCircle2, Lock } from "lucide-react";
 import { useSession } from "next-auth/react";
+import { isBookDownloaded, getChapterContent, downloadBook, getDownloadProgress, getDownloadedChapterList, type DownloadProgress } from "@/lib/offline-manager";
+import { syncEngine } from "@/lib/sync-engine";
 
 /**
  * Location: src/components/books/reader.tsx
@@ -17,6 +19,9 @@ import { useSession } from "next-auth/react";
 interface ReaderProps {
   bookId: string;
   initialChapterId?: string;
+  bookTitle?: string;
+  isPreorder?: boolean;
+  publicationDate?: string | null;
 }
 
 interface Comment {
@@ -32,9 +37,16 @@ interface ReaderBookmark {
   createdAt: string;
 }
 
-const Reader: React.FC<ReaderProps> = ({ bookId, initialChapterId }) => {
+const Reader: React.FC<ReaderProps> = ({ bookId, initialChapterId, bookTitle, isPreorder, publicationDate }) => {
   const { content, setContent } = useBookStore();
   const { data: session } = useSession();
+  
+  // Offline state
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [isBookAvailableOffline, setIsBookAvailableOffline] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [useOfflineContent, setUseOfflineContent] = useState(false);
   
   // State for Navigation
   const [activeChapterId, setActiveChapterId] = useState<string | undefined>(initialChapterId);
@@ -56,38 +68,166 @@ const Reader: React.FC<ReaderProps> = ({ bookId, initialChapterId }) => {
 
   const progressStorageKey = `reader_progress_local:${bookId}`;
 
+  // Check if book is available offline
+  const [availabilityChecked, setAvailabilityChecked] = useState(false);
+  useEffect(() => {
+    const checkOfflineAvailability = async () => {
+      try {
+        const available = await isBookDownloaded(bookId);
+        setIsBookAvailableOffline(available);
+        if (available) {
+          const progress = await getDownloadProgress(bookId);
+          setDownloadProgress(progress);
+        }
+      } finally {
+        setAvailabilityChecked(true);
+      }
+    };
+    checkOfflineAvailability();
+  }, [bookId]);
+
+  // Show offline error only after the IndexedDB availability check has
+  // settled — otherwise downloaded books flash the "not available" screen
+  // on first paint before the async check completes.
+  const showOfflineError = isOffline && availabilityChecked && !isBookAvailableOffline;
+
+  // Listen for online/offline events
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  const utils = trpc.useUtils();
+
+  // Preorder firewall - block reading if book is preorder and release date hasn't passed
+  if (isPreorder && publicationDate) {
+    const releaseDate = new Date(publicationDate).toLocaleDateString("en-GB", {
+      day: "numeric", month: "long", year: "numeric"
+    });
+    return (
+      <div className="min-h-[80vh] flex items-center justify-center p-6 bg-[#FAF9F6]">
+        <div className="max-w-md w-full bg-white border-[1.5px] border-black rounded-[var(--radius)] p-10 text-center gumroad-shadow">
+          <div className="relative w-24 h-24 mx-auto mb-8">
+            <div className="absolute inset-0 bg-accent rounded-full animate-pulse opacity-20" />
+            <div className="relative bg-white border-[1.5px] border-black rounded-full w-full h-full flex items-center justify-center">
+              <Lock className="w-10 h-10 text-black" />
+            </div>
+            <CheckCircle2 className="absolute -bottom-1 -right-1 w-8 h-8 text-green-500 bg-white rounded-full p-1 border-[1.5px] border-black" />
+          </div>
+          <h2 className="text-3xl font-black uppercase italic tracking-tighter mb-4">
+            Pre-Order<span className="text-accent">.</span>
+          </h2>
+          <div className="space-y-4 mb-10">
+            <p className="text-[11px] font-black uppercase tracking-widest text-gray-400">{bookTitle || "Book"}</p>
+            <div className="p-4 border-2 border-amber-300 bg-amber-50 rounded-lg">
+              <p className="text-[10px] font-black uppercase tracking-widest text-amber-700 mb-1">Available {releaseDate}</p>
+              <p className="text-xs text-amber-900">This book is not yet available for reading. You'll be able to access the content once the release date arrives.</p>
+            </div>
+          </div>
+          <p className="mt-6 text-[9px] font-bold uppercase opacity-30 tracking-tighter">Thank you for your pre-order.</p>
+        </div>
+      </div>
+    );
+  }
+
   // 1. Fetch Chapter List for Navigation
-  const { data: chapters } = trpc.getAllChapterByBookId.useQuery(
+  const { data: serverChapters } = trpc.getAllChapterByBookId.useQuery(
     { book_id: bookId },
-    { enabled: !!bookId }
+    { enabled: !!bookId && !isOffline }
   );
+
+  // Offline chapter list: when the server list is unavailable (offline
+  // cold start, SW api-cache miss) and the book is downloaded, drive
+  // navigation from the download store. Without this the reader
+  // dead-ends — activeChapterId is never set, so content never loads
+  // even though it sits encrypted in IndexedDB.
+  const [offlineChapters, setOfflineChapters] = useState<Array<{
+    id: string;
+    title: string;
+    chapter_number: number | null;
+    section_type: string;
+  }> | null>(null);
+
+  useEffect(() => {
+    if (serverChapters || !isBookAvailableOffline) return;
+    let cancelled = false;
+    getDownloadedChapterList(bookId)
+      .then((list) => {
+        if (!cancelled && list.length > 0) setOfflineChapters(list);
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [serverChapters, isBookAvailableOffline, bookId]);
+
+  const chapters = serverChapters ?? offlineChapters;
 
   // 2. Fetch Secure Chapter Content (Phase B Requirement)
   const { data: chapterData, isLoading, error } = trpc.getChapterContent.useQuery(
     { bookId, chapterId: activeChapterId || "" },
-    { enabled: !!activeChapterId }
+    { enabled: !!activeChapterId && !isOffline }
   );
+  
   const { data: cloudProgress } = trpc.getReaderProgress.useQuery(
     { bookId },
-    { enabled: !!bookId && !!session?.user?.id }
+    { enabled: !!bookId && !!session?.user?.id && !isOffline }
   );
+  
   const saveReaderProgress = trpc.saveReaderProgress.useMutation();
 
+  // Initialize sync engine with the tRPC mutation client (handles batching + SuperJSON)
   useEffect(() => {
-    if (initialChapterId && initialChapterId !== activeChapterId) {
-      setActiveChapterId(initialChapterId);
+    if (session?.user?.id) {
+      syncEngine.setSyncMutation(async (payload: any) => {
+        await saveReaderProgress.mutateAsync({
+          ...payload,
+          pageCount: payload.pageCount ?? 1,
+          bookmarks: payload.bookmarks ?? [],
+        });
+      });
+      syncEngine.registerBackgroundSync();
     }
-  }, [initialChapterId]);
+  }, [session?.user?.id, saveReaderProgress]);
 
-  // Sync initial content to store when chapter changes
+  // Fetch chapter content with offline fallback
   useEffect(() => {
-    if (chapterData?.content) {
-      const savedChapterNotes =
-        activeChapterId ? localStorage.getItem(`book_${bookId}_chapter_${activeChapterId}`) : null;
-      setContent(savedChapterNotes || chapterData.content);
-      setPendingChanges(null);
-    }
-  }, [chapterData, setContent, activeChapterId, bookId]);
+    if (!activeChapterId) return;
+
+    const fetchChapter = async () => {
+      // Try network first when online
+      if (!isOffline && chapterData?.content) {
+        const savedChapterNotes =
+          activeChapterId ? localStorage.getItem(`book_${bookId}_chapter_${activeChapterId}`) : null;
+        setContent(savedChapterNotes || chapterData.content);
+        setPendingChanges(null);
+        setUseOfflineContent(false);
+        return;
+      }
+
+      // Fall back to offline content
+      if (isBookAvailableOffline) {
+        try {
+          const offlineContent = await getChapterContent(bookId, activeChapterId);
+          if (offlineContent) {
+            setContent(offlineContent);
+            setPendingChanges(null);
+            setUseOfflineContent(true);
+          }
+        } catch (error) {
+          console.error('Failed to load offline content:', error);
+        }
+      }
+    };
+
+    fetchChapter();
+  }, [activeChapterId, chapterData, isOffline, isBookAvailableOffline, bookId, setContent]);
 
   // Set first chapter if none provided
   useEffect(() => {
@@ -183,12 +323,27 @@ const Reader: React.FC<ReaderProps> = ({ bookId, initialChapterId }) => {
       localStorage.setItem(progressStorageKey, JSON.stringify(payload));
 
       if (session?.user?.id) {
-        saveReaderProgress.mutate(payload);
+        // Save locally for offline support
+        import('@/lib/offline-manager').then(({ saveProgress }) => {
+          saveProgress(
+            session.user.id,
+            bookId,
+            activeChapterId,
+            currentPage,
+            scrollRatio,
+            fontSize
+          );
+        });
+        
+        // Try to sync immediately if online
+        if (!isOffline) {
+          saveReaderProgress.mutate(payload);
+        }
       }
     }, 600);
 
     return () => window.clearTimeout(timeoutId);
-  }, [activeChapterId, bookId, currentPage, pageCount, fontSize, bookmarks, readerContainer?.scrollTop, session?.user?.id]);
+  }, [activeChapterId, bookId, currentPage, pageCount, fontSize, bookmarks, readerContainer?.scrollTop, session?.user?.id, isOffline, saveReaderProgress]);
 
   // --- Formatting Logic (Maintained from your snippet) ---
 
@@ -322,6 +477,32 @@ const Reader: React.FC<ReaderProps> = ({ bookId, initialChapterId }) => {
     if (chapters && currentIndex > 0) setActiveChapterId(chapters[currentIndex - 1].id);
   };
 
+  const handleDownload = async () => {
+    if (isDownloading) return;
+    
+    setIsDownloading(true);
+    try {
+      // Use the already-fetched data from tRPC hooks
+      if (!chapters) {
+        throw new Error('Book data not available');
+      }
+
+      await downloadBook(
+        bookId,
+        (id) => utils.getBookById.fetch({ id }),
+        async () => chapters,
+        (bid, cid) => utils.getChapterContent.fetch({ bookId: bid, chapterId: cid }),
+        (progress) => setDownloadProgress(progress)
+      );
+      setIsBookAvailableOffline(true);
+    } catch (error: any) {
+      console.error('Download failed:', error);
+      alert(error.message || 'Failed to download book');
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
   if (error) {
     return (
       <div className="p-8 text-center border rounded-lg bg-destructive/10">
@@ -331,16 +512,63 @@ const Reader: React.FC<ReaderProps> = ({ bookId, initialChapterId }) => {
     );
   }
 
+  if (showOfflineError) {
+    return (
+      <div className="p-8 text-center border rounded-lg bg-amber-50">
+        <WifiOff className="mx-auto h-12 w-12 text-amber-600 mb-4" />
+        <h3 className="text-lg font-bold mb-2">Book Not Available Offline</h3>
+        <p className="text-sm text-gray-600 mb-4">
+          This book hasn't been downloaded for offline reading. Connect to the internet or download the book first.
+        </p>
+        <Button onClick={() => window.location.href = `/app/books`}>
+          Back to Library
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col w-full max-w-5xl mx-auto bg-background min-h-[70vh]">
+      {/* Offline Banner */}
+      {isOffline && (
+        <div className="bg-amber-500 text-white text-center py-2 px-4 text-sm font-medium flex items-center justify-center gap-2">
+          <WifiOff size={16} />
+          <span>You're reading offline. Progress will sync when you're back online.</span>
+        </div>
+      )}
+
+      {useOfflineContent && (
+        <div className="bg-blue-500 text-white text-center py-2 px-4 text-sm font-medium flex items-center justify-center gap-2">
+          <CheckCircle2 size={16} />
+          <span>Reading from offline cache</span>
+        </div>
+      )}
+
       {/* Header / Save Bar */}
       <div className="sticky top-0 z-10 border-b bg-background/95 p-3 backdrop-blur md:p-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div className="min-w-0">
-          <h2 className="truncate text-sm font-semibold md:text-base">{chapterData?.title || "Loading Chapter..."}</h2>
+          <h2 className="truncate text-sm font-semibold md:text-base">{chapterData?.title || (useOfflineContent ? "Loading from offline..." : "Loading Chapter...")}</h2>
           {pendingChanges && <span className="text-xs text-orange-500 font-medium animate-pulse">Unsaved changes</span>}
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {!isBookAvailableOffline && !isDownloading && (
+            <Button size="sm" variant="outline" className="h-9 rounded-none px-3 text-xs md:text-sm" onClick={handleDownload}>
+              <Download className="mr-1 h-4 w-4" /> Download for Offline
+            </Button>
+          )}
+          {isDownloading && downloadProgress && (
+            <div className="flex items-center gap-2 text-xs">
+              <Download className="h-4 w-4 animate-pulse" />
+              <span>{Math.round(downloadProgress.progress)}%</span>
+            </div>
+          )}
+          {isBookAvailableOffline && (
+            <div className="flex items-center gap-1 text-xs text-green-600 font-medium">
+              <CheckCircle2 className="h-4 w-4" />
+              <span>Available Offline</span>
+            </div>
+          )}
           <Button size="sm" variant="outline" className="h-9 rounded-none px-3 text-xs md:text-sm" onClick={() => setFontSize((current) => Math.max(14, current - 2))}>
             <Type className="mr-1 h-4 w-4" /> A-
           </Button>

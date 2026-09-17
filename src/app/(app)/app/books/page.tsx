@@ -6,8 +6,8 @@ import { Button } from "@/components/ui/button";
 import { staffBookColumns, readerBookColumns } from "@/components/books/columns";
 import { DataTable } from "@/components/table/data-table";
 import { useSession } from "next-auth/react";
-import { Plus, Users, X, ChevronDown, Loader2, RefreshCcw } from "lucide-react";
-import { useState, useMemo } from "react";
+import { Plus, Users, X, ChevronDown, Loader2, RefreshCcw, Download, Cloud, CheckCircle2, WifiOff } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,9 +16,12 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import { getDownloadedBookCount, getDownloadedBooks, downloadBook } from "@/lib/offline-manager";
+import StorageLimitModal from "@/components/shared/StorageLimitModal";
 
 export default function BooksPage() {
   const { data: session } = useSession();
+  const utils = trpc.useUtils();
   const userId    = session?.user.id as string;
   const userRoles = session?.roles || [];
   const activeProfile = session?.activeProfile;
@@ -34,15 +37,106 @@ export default function BooksPage() {
   const [selectedAuthorId, setSelectedAuthorId] = useState<string | null>(null);
   const canFilterByAuthor = isSuperAdmin || isPublisher;
 
+  // ── Offline storage state ─────────────────────────────────────
+  const [downloadedBookCount, setDownloadedBookCount] = useState(0);
+  const [showStorageLimitModal, setShowStorageLimitModal] = useState(false);
+  const [downloadingBookId, setDownloadingBookId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadDownloadCount = async () => {
+      try {
+        const count = await getDownloadedBookCount();
+        setDownloadedBookCount(count);
+      } catch {
+        // IndexedDB unavailable — offline downloads simply stay hidden
+        setDownloadedBookCount(0);
+      }
+    };
+    loadDownloadCount();
+  }, []);
+
+  const handleDownloadAll = async () => {
+    if (isOffline) return;
+    if (downloadedBookCount >= 10) {
+      setShowStorageLimitModal(true);
+      return;
+    }
+
+    const booksToDownload = (effectivePurchasedBooks ?? []).slice(0, 10 - downloadedBookCount);
+    
+    for (const book of booksToDownload) {
+      try {
+        setDownloadingBookId(book.id);
+        
+        // Use the already-loaded book data from purchasedBooks
+        await downloadBook(
+          book.id,
+          async () => book,
+          async () => book.chapters || [],
+          (bid, cid) => utils.getChapterContent.fetch({ bookId: bid, chapterId: cid })
+        );
+      } catch (error: any) {
+        console.error(`Failed to download ${book.title}:`, error);
+        if (error.message?.includes('Storage limit')) {
+          setShowStorageLimitModal(true);
+          break;
+        }
+      }
+    }
+    
+    setDownloadingBookId(null);
+    const newCount = await getDownloadedBookCount();
+    setDownloadedBookCount(newCount);
+  };
+
+  // ── Offline state ─────────────────────────────────────────────
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [cachedLibraryData, setCachedLibraryData] = useState<any[] | null>(null);
+  // True once the IndexedDB cache read has settled (found or not) —
+  // prevents flashing the "no cached data" state before we've checked.
+  const [cacheChecked, setCacheChecked] = useState(false);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    // Load cached library data on mount
+    const loadCachedData = async () => {
+      if (isCustomer && !isStaff && userId) {
+        try {
+          const { getCachedLibraryData } = await import('@/lib/offline-manager');
+          const cached = await getCachedLibraryData(userId);
+          setCachedLibraryData(cached);
+        } catch {
+          // IndexedDB unavailable — offline library simply unavailable
+          setCachedLibraryData(null);
+        } finally {
+          setCacheChecked(true);
+        }
+      } else {
+        setCacheChecked(true);
+      }
+    };
+    loadCachedData();
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [isCustomer, isStaff, userId]);
+
   // ── Data fetching ─────────────────────────────────────────────
   const { data: allBooks } = trpc.getAllBooks.useQuery(
     undefined,
-    { enabled: activeProfile === "staff" && isSuperAdmin }
+    { enabled: activeProfile === "staff" && isSuperAdmin && !isOffline }
   );
 
   const { data: authorBooks } = trpc.getBookByAuthor.useQuery(
     { id: userId },
-    { enabled: isAuthor || isPublisher }
+    { enabled: (isAuthor || isPublisher) && !isOffline }
   );
 
   const {
@@ -52,8 +146,40 @@ export default function BooksPage() {
     refetch: refetchPurchasedBooks,
   } = trpc.getPurchasedBooksByCustomer.useQuery(
     { id: userId },
-    { enabled: !!isCustomer && !isStaff, refetchOnMount: "always" }
+    {
+      enabled: !!isCustomer && !isStaff && !isOffline,
+      refetchOnMount: "always",
+    }
   );
+
+  // Cache library data when successfully fetched. The server response
+  // includes full chapter HTML per book — megabytes for a real library —
+  // which makes IndexedDB writes fail silently. Strip everything the
+  // library table doesn't render before caching.
+  useEffect(() => {
+    if (purchasedBooks && userId && !isOffline) {
+      import('@/lib/offline-manager')
+        .then(({ cacheLibraryData }) => {
+          const slim = purchasedBooks.map((entry: any) => {
+            const { chapters, variants, issue_reports, ...bookFields } = entry ?? {};
+            return {
+              ...bookFields,
+              // Keep minimal variant info the table uses for pricing/size
+              _has_variants: Array.isArray(variants) && variants.length > 0,
+            };
+          });
+          return cacheLibraryData(userId, slim);
+        })
+        .catch(() => {
+          // Cache write failure is non-fatal — online list still renders
+        });
+    }
+  }, [purchasedBooks, userId, isOffline]);
+
+  // Prefer whichever data exists — never gate on the (unreliable)
+  // navigator.onLine flag. React Query retains the last successful
+  // fetch; IndexedDB covers cold starts where that cache is empty.
+  const effectivePurchasedBooks = purchasedBooks ?? cachedLibraryData;
 
   // Fetch authors for the filter dropdown (publisher/admin only)
   const { data: authorsForFilter } = trpc.getAuthorsByUser.useQuery(
@@ -66,7 +192,7 @@ export default function BooksPage() {
     ? (allBooks    ?? [])
     : (isAuthor || isPublisher)
     ? (authorBooks ?? [])
-    : (purchasedBooks ?? []);
+    : (effectivePurchasedBooks ?? []);
 
   // ── Apply author filter ───────────────────────────────────────
   // Filters by book.author_id when a specific author is selected.
@@ -94,8 +220,13 @@ export default function BooksPage() {
   // ── Column selection ──────────────────────────────────────────
   const columns = isStaff ? staffBookColumns : readerBookColumns;
   const isReaderLibrary = isCustomer && !isStaff;
-  const isLibraryLoading = isReaderLibrary && purchasedBooksLoading;
-  const isLibraryRefreshing = isReaderLibrary && purchasedBooksFetching && !purchasedBooksLoading;
+  const isLibraryLoading =
+    isReaderLibrary &&
+    // Online fetch in flight, or offline before the IndexedDB cache
+    // check has settled — never flash the empty state during that check.
+    (purchasedBooksLoading || (isOffline && !cacheChecked));
+  const isLibraryRefreshing = isReaderLibrary && purchasedBooksFetching && !purchasedBooksLoading && !isOffline;
+  const isOfflineWithNoData = isOffline && cacheChecked && !effectivePurchasedBooks;
 
   // ── Staff total value ─────────────────────────────────────────
   const staffTotalValue = isStaff
@@ -142,6 +273,29 @@ export default function BooksPage() {
               )}
               Refresh Library
             </Button>
+          )}
+          {isReaderLibrary && (
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleDownloadAll}
+                disabled={!!downloadingBookId || isOffline}
+                title={isOffline ? "Connect to the internet to download books" : undefined}
+                className="h-12 px-5 border-[1.5px] rounded-none border-black bg-white text-black font-black uppercase italic text-xs tracking-widest disabled:opacity-40"
+              >
+                {downloadingBookId ? (
+                  <Loader2 size={14} className="mr-2 animate-spin" />
+                ) : (
+                  <Download size={14} className="mr-2" />
+                )}
+                Download All
+              </Button>
+              <div className="flex items-center gap-1 text-xs font-bold">
+                <Cloud size={14} className="text-muted-foreground" />
+                <span>{downloadedBookCount}/10</span>
+              </div>
+            </div>
           )}
           {/* ── Author filter dropdown (publisher + super-admin) ── */}
           {canFilterByAuthor && authorOptions.length > 0 && (
@@ -246,11 +400,17 @@ export default function BooksPage() {
           <div className="flex items-center gap-3">
             {isLibraryLoading || isLibraryRefreshing ? (
               <Loader2 size={16} className="animate-spin" />
+            ) : isOffline ? (
+              <WifiOff size={16} className="text-amber-600" />
             ) : (
               <div className="h-2.5 w-2.5 bg-accent border border-black shrink-0" />
             )}
             <p className="text-[10px] font-black uppercase tracking-widest text-black/60">
-              {isLibraryLoading
+              {isOffline
+                ? isOfflineWithNoData
+                  ? "You're offline. No cached library data available."
+                  : "You're offline. Showing cached library data."
+                : isLibraryLoading
                 ? "Loading your purchased books..."
                 : isLibraryRefreshing
                 ? "Refreshing your library..."
@@ -258,7 +418,7 @@ export default function BooksPage() {
             </p>
           </div>
 
-          {!isLibraryLoading && displayData.length === 0 && (
+          {!isLibraryLoading && !isOffline && displayData.length === 0 && (
             <Button
               type="button"
               variant="outline"
@@ -285,6 +445,18 @@ export default function BooksPage() {
               <p className="text-sm font-black uppercase tracking-widest">Loading Library</p>
               <p className="mt-2 text-xs font-bold text-black/60">
                 Your books should appear here as soon as the purchase records finish loading.
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : isOfflineWithNoData ? (
+        <div className="bg-white border-4 border-black gumroad-shadow p-10 sm:p-14">
+          <div className="flex flex-col items-center justify-center gap-4 text-center">
+            <WifiOff size={28} className="text-amber-600" />
+            <div>
+              <p className="text-sm font-black uppercase tracking-widest">Offline & No Cached Data</p>
+              <p className="mt-2 text-xs font-bold text-black/60">
+                You're offline and no library data is cached. Connect to the internet to view your books.
               </p>
             </div>
           </div>
@@ -319,6 +491,16 @@ export default function BooksPage() {
           </span>
         </div>
       )}
+
+      {/* ── Storage Limit Modal ─────────────────────────────── */}
+      <StorageLimitModal
+        open={showStorageLimitModal}
+        onClose={() => setShowStorageLimitModal(false)}
+        onSpaceFreed={async () => {
+          const newCount = await getDownloadedBookCount();
+          setDownloadedBookCount(newCount);
+        }}
+      />
     </div>
   );
 }

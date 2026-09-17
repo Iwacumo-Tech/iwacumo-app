@@ -6,6 +6,7 @@ import ProfileEdit from "@/components/profile/ProfileEdit";
 import { useSession } from "next-auth/react";
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
+import InstallPrompt from "@/components/shared/InstallPrompt";
 
 export default function ProfilePage() {
   const { data: session } = useSession();
@@ -31,6 +32,12 @@ export default function ProfilePage() {
       ) : (
         <ProfileDetails user={user} setEditProfile={setEditProfile} />
       )}
+      
+      {/* Install App Button */}
+      <div className="border-2 border-black p-6 bg-white">
+        <h3 className="font-black uppercase italic text-sm mb-4">Install App</h3>
+        <InstallPrompt />
+      </div>
     </div>
   );
 }
